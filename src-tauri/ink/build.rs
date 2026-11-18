@@ -4,8 +4,10 @@ fn main() {
     tauri_plugin::Builder::new(&[]).ios_path("ios").build();
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     println!("cargo:rerun-if-changed=native/ink.m");
+    println!("cargo:rerun-if-changed=native/stroke.m");
+    println!("cargo:rerun-if-changed=native/stroke.h");
     if os == "macos" || os == "ios" {
-        cc::Build::new().file("native/ink.m").flag("-fobjc-arc").compile("ilmi_ink");
+        cc::Build::new().file("native/ink.m").file("native/stroke.m").flag("-fobjc-arc").compile("ilmi_ink");
         for f in ["Foundation", "CoreGraphics", "PencilKit", if os == "macos" { "AppKit" } else { "UIKit" }] {
             println!("cargo:rustc-link-lib=framework={f}");
         }

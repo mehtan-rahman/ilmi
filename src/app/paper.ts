@@ -13,7 +13,12 @@
 // (`bookPdf.ts`), the same paper is drawn onto the clip's canvas; in a PDF of
 // the pages the same measures are drawn again (`native/ink.m`). White paper,
 // the rules a pale blue-grey, light enough to write over, the margin a pale
-// red; dark paper and e-ink turn it as they turn a PDF's page (`pdf.css`).
+// red, unless the page setup says a colour for the paper (`paper-color`) or
+// for what is ruled on it (`paper-line`; milestone 87). `paperLook` says the
+// colours a sheet is drawn with, final, in a theme: paper with no colour of
+// its own follows the theme (dark paper as a dark theme turns a PDF's page),
+// a chosen colour is used as chosen in every theme, and ink is drawn the
+// dark way exactly on paper that is dark.
 
 import type { PaperKind, WrittenMeta } from '../format/index.js';
 
@@ -30,6 +35,83 @@ export const PAPER_RULE = '#c3cfdd';
 export const PAPER_DOT = '#a9b7c8';
 /** The margin rule of a ruled sheet. */
 export const PAPER_MARGIN = '#e7b9b9';
+
+/**
+ * Paper that follows a dark theme: what CSS `invert(0.92) hue-rotate(180deg)`
+ * (how a dark theme turns a PDF's page, `pdf.css`) makes of white, of
+ * `PAPER_RULE`, of `PAPER_DOT` and of `PAPER_MARGIN` (`turned`).
+ */
+export const PAPER_DARK = '#141414';
+export const PAPER_RULE_DARK = '#353f4b';
+export const PAPER_DOT_DARK = '#485462';
+export const PAPER_MARGIN_DARK = '#653f3f';
+/** E-ink: white paper, its rules and dots a grey that prints, the margin rule the grey its red comes to. */
+export const PAPER_RULE_EINK = '#8f8f8f';
+export const PAPER_MARGIN_EINK = '#c9c9c9';
+
+/** The paper colours offered by name in `page setup`. */
+export const PAPER_COLORS: readonly { name: string; value: string }[] = [
+  { name: 'white', value: '#ffffff' },
+  { name: 'cream', value: '#fbf6e9' },
+  { name: 'yellow', value: '#fff6c8' },
+  { name: 'grey', value: '#eceef0' },
+  { name: 'dark', value: '#1c1c1e' },
+];
+/** The line colours offered by name: the first is what a sheet has when none is chosen. */
+export const LINE_COLORS: readonly { name: string; value: string }[] = [
+  { name: 'blue-grey', value: PAPER_RULE },
+  { name: 'grey', value: '#c9cdd2' },
+  { name: 'blue', value: '#b5d2f2' },
+  { name: 'red', value: '#f0c2c2' },
+  { name: 'green', value: '#bcdcc0' },
+];
+
+const HEX = /^#[0-9a-f]{6}$/;
+/** A colour as a page setup keeps it: `#rrggbb` in lowercase; null for anything else. */
+export const paperHex = (c: unknown): string | null => (typeof c === 'string' && HEX.test(c.toLowerCase()) ? c.toLowerCase() : null);
+const rgb = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
+const hexOf = (c: readonly number[]): string => `#${c.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('')}`;
+
+/** A colour as a dark theme turns it: what CSS `invert(0.92) hue-rotate(180deg)` makes of it. Light comes out dark with its hue kept. */
+export function turned(hex: string): string {
+  const [r, g, b] = rgb(paperHex(hex) ?? '#ffffff').map((v) => 0.92 - 0.84 * v) as [number, number, number];
+  // the hue turned half way round: the filter's matrix at 180 degrees
+  return hexOf([-0.574 * r + 1.43 * g + 0.144 * b, 0.426 * r + 0.43 * g + 0.144 * b, 0.426 * r + 1.43 * g - 0.856 * b]);
+}
+
+/** Whether a colour is dark enough that ink on it is drawn the dark way: relative luminance under 0.4. */
+export function isDarkColor(hex: string): boolean {
+  const c = paperHex(hex);
+  if (!c) return false;
+  const [r, g, b] = rgb(c).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.4;
+}
+
+/** The colours a sheet is drawn with, final sRGB `#rrggbb` values needing no CSS filter. `dark`: the paper is dark, so ink on it is drawn the dark way (see below). */
+export interface PaperLook { paper: string; rule: string; dot: string; margin: string; dark: boolean }
+
+/**
+ * The colours of a sheet in a theme. With no colour of its own the paper
+ * follows the theme: white in the light one, dark in the dark one (what the
+ * theme makes of a PDF's white page), white with grey rules on e-ink. A
+ * chosen paper colour is the paper in every theme. A chosen line colour is
+ * the rules', the grid's lines' and the dots', as chosen; on paper that
+ * follows a dark theme it is turned as that paper's own rules are, so it
+ * shows. The margin rule keeps its own colour, turned on dark paper. Ink is
+ * drawn the dark way (black and white swapped as PencilKit's dark
+ * appearance has them, lightening what it lies on) exactly when `dark`.
+ */
+export function paperLook(spec: { color?: string | null | undefined; line?: string | null | undefined } | null | undefined, theme: 'light' | 'dark' | 'eink'): PaperLook {
+  const color = paperHex(spec?.color);
+  const line = paperHex(spec?.line);
+  if (color) {
+    const dark = isDarkColor(color);
+    return { paper: color, rule: line ?? (dark ? PAPER_RULE_DARK : PAPER_RULE), dot: line ?? (dark ? PAPER_DOT_DARK : PAPER_DOT), margin: dark ? PAPER_MARGIN_DARK : PAPER_MARGIN, dark };
+  }
+  if (theme === 'dark') return { paper: PAPER_DARK, rule: line ? turned(line) : PAPER_RULE_DARK, dot: line ? turned(line) : PAPER_DOT_DARK, margin: PAPER_MARGIN_DARK, dark: true };
+  if (theme === 'eink') return { paper: PAPER_WHITE, rule: line ?? PAPER_RULE_EINK, dot: line ?? PAPER_RULE_EINK, margin: PAPER_MARGIN_EINK, dark: false };
+  return { paper: PAPER_WHITE, rule: line ?? PAPER_RULE, dot: line ?? PAPER_DOT, margin: PAPER_MARGIN, dark: false };
+}
 
 /** Ruled: a line every 24 points, the first an inch down, unless the page setup says otherwise. */
 export const RULE_STEP = 24;
@@ -58,6 +140,10 @@ export interface PaperSpec {
   /** The sheets run on as one: this one begins `at` points down it, and its ruling carries on from the one before. */
   run: boolean;
   at: number;
+  /** The paper's colour, `#rrggbb`; null where it follows the theme (`paperLook`). */
+  color: string | null;
+  /** The colour of its rules, grid lines and dots, `#rrggbb`; null for the paper's own. */
+  line: string | null;
 }
 
 /** The size of a notebook's sheets, in points. */
@@ -70,7 +156,7 @@ export function sheetSize(w: Pick<WrittenMeta, 'size' | 'turn'> | undefined): { 
 export const ruleOf = (kind: PaperKind): number => (kind === 'ruled' ? RULE_STEP : GRID_STEP);
 
 /** The paper of a notebook's sheet, the `index`th of its sheets (from 0): the page setup its front-matter gives, and what stands in where it gives none. */
-export function paperOf(w: Pick<WrittenMeta, 'paper' | 'rule' | 'margin' | 'top' | 'size' | 'turn' | 'pageless'>, index = 0): PaperSpec {
+export function paperOf(w: Pick<WrittenMeta, 'paper' | 'rule' | 'margin' | 'top' | 'size' | 'turn' | 'pageless' | 'color' | 'line'>, index = 0): PaperSpec {
   const size = sheetSize(w);
   return {
     kind: w.paper, ...size,
@@ -79,11 +165,13 @@ export function paperOf(w: Pick<WrittenMeta, 'paper' | 'rule' | 'margin' | 'top'
     top: w.top ?? RULE_TOP,
     run: !!w.pageless,
     at: w.pageless ? index * size.h : 0,
+    color: paperHex(w.color),
+    line: paperHex(w.line),
   };
 }
 
 /** A paper by its kind alone: a Letter sheet with the measures a new notebook has. */
-const plain = (kind: PaperKind): PaperSpec => ({ kind, w: PAPER_W, h: PAPER_H, rule: ruleOf(kind), margin: null, top: RULE_TOP, run: false, at: 0 });
+const plain = (kind: PaperKind): PaperSpec => ({ kind, w: PAPER_W, h: PAPER_H, rule: ruleOf(kind), margin: null, top: RULE_TOP, run: false, at: 0, color: null, line: null });
 const specOf = (p: PaperKind | PaperSpec): PaperSpec => (typeof p === 'string' ? plain(p) : p);
 
 /**
@@ -141,10 +229,12 @@ export const ruleWidth = (px: number): number => Math.max(1, Math.round(px * 0.5
 /**
  * The paper drawn onto a canvas: the part of the sheet at `x`, `y`, `w` by
  * `h` points, `k` canvas pixels to the point, from the canvas's top left.
- * The rules are a pixel wide and lie on whole pixels.
+ * The rules are a pixel wide and lie on whole pixels. With the colours of
+ * `look`; without one, the paper's own in the light theme.
  */
-export function drawPaper(ctx: CanvasRenderingContext2D, p: PaperKind | PaperSpec, part: { x: number; y: number; w: number; h: number }, k: number): void {
+export function drawPaper(ctx: CanvasRenderingContext2D, p: PaperKind | PaperSpec, part: { x: number; y: number; w: number; h: number }, k: number, look?: PaperLook): void {
   const spec = specOf(p);
+  const { paper, rule: ruleColor, dot: dotColor, margin: marginColor } = look ?? paperLook(spec, 'light');
   const W = part.w * k;
   const H = part.h * k;
   // off the sheet's edge (the room kept round a clip) is the desk's: left as it is
@@ -153,10 +243,10 @@ export function drawPaper(ctx: CanvasRenderingContext2D, p: PaperKind | PaperSpe
   const right = Math.min(W, (spec.w - part.x) * k);
   const bottom = Math.min(H, (spec.h - part.y) * k);
   if (right <= left || bottom <= top) return;
-  ctx.fillStyle = PAPER_WHITE;
+  ctx.fillStyle = paper;
   ctx.fillRect(left, top, right - left, bottom - top);
   const { rows, cols, margin, dots } = paperLines(spec);
-  ctx.fillStyle = PAPER_RULE;
+  ctx.fillStyle = ruleColor;
   for (const y of rows) {
     const at = Math.round((y - part.y) * k);
     if (at >= top && at < bottom) ctx.fillRect(left, at, right - left, 1);
@@ -167,11 +257,11 @@ export function drawPaper(ctx: CanvasRenderingContext2D, p: PaperKind | PaperSpe
   }
   if (margin !== null) {
     const at = Math.round((margin - part.x) * k);
-    ctx.fillStyle = PAPER_MARGIN;
+    ctx.fillStyle = marginColor;
     if (at >= left && at < right) ctx.fillRect(at, top, 1, bottom - top);
   }
   if (!dots) return;
-  ctx.fillStyle = PAPER_DOT;
+  ctx.fillStyle = dotColor;
   const r = Math.max(0.6, (DOT / 2) * k);
   for (const y of dots.ys) {
     const cy = (y - part.y) * k;

@@ -26,7 +26,7 @@ import { CUSTOM, useInkTools } from './inkTools.js';
 import { Icon } from './icons.js';
 import { failed, notify } from './land.js';
 import { hapticTick } from './haptics.js';
-import { MARGIN_AT, MM, PAPER_DOT, PAPER_MARGIN, PAPER_RULE, PAPER_WHITE, RULE_TOP, paperOf, paperPaths, ruleOf, sheetSize, type PaperSpec, ruleWidth } from './paper.js';
+import { LINE_COLORS, MARGIN_AT, MM, PAPER_COLORS, RULE_TOP, paperHex, paperLook, paperOf, paperPaths, ruleOf, sheetSize, type PaperSpec, ruleWidth } from './paper.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import type { PDFDocumentProxy } from './pdfjs.js';
 import { useApp } from './store.js';
@@ -42,12 +42,15 @@ export function PaperSheet({ kind, spec, px }: { kind?: PaperKind; /** The paper
   const p = useMemo(() => paperPaths(of, wide ? { px: px!, w: wide } : undefined), [key, px]);
   // a rule a whole number of the screen's pixels wide, on whole pixels: drawn as it is, nothing to round
   const line = wide ? { strokeWidth: wide / (typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1), shapeRendering: 'auto' as const } : undefined;
+  // its colours as they are in the theme, final: nothing turns them afterwards (87)
+  const theme = useApp((s) => s.theme);
+  const look = paperLook(typeof of === 'string' ? null : of, theme);
   return (
-    <svg className="paper" data-paper={typeof of === 'string' ? of : of.kind} data-rule={typeof of === 'string' ? undefined : of.rule} viewBox={`0 0 ${p.w} ${p.h}`} preserveAspectRatio="none" aria-hidden="true">
-      <rect className="paper-sheet" width={p.w} height={p.h} fill={PAPER_WHITE} />
-      {p.rules && <path className="paper-rule" d={p.rules} stroke={PAPER_RULE} vectorEffect="non-scaling-stroke" style={line} />}
-      {p.margin && <path className="paper-rule paper-margin" d={p.margin} stroke={PAPER_MARGIN} vectorEffect="non-scaling-stroke" style={line} />}
-      {p.dots && <path className="paper-dot" d={p.dots} stroke={PAPER_DOT} strokeWidth={p.width} strokeDasharray={`0 ${p.pitch}`} />}
+    <svg className="paper" data-paper={typeof of === 'string' ? of : of.kind} data-rule={typeof of === 'string' ? undefined : of.rule} data-ink-dark={look.dark ? '1' : undefined} viewBox={`0 0 ${p.w} ${p.h}`} preserveAspectRatio="none" aria-hidden="true">
+      <rect className="paper-sheet" width={p.w} height={p.h} fill={look.paper} />
+      {p.rules && <path className="paper-rule" d={p.rules} stroke={look.rule} vectorEffect="non-scaling-stroke" style={line} />}
+      {p.margin && <path className="paper-rule paper-margin" d={p.margin} stroke={look.margin} vectorEffect="non-scaling-stroke" style={line} />}
+      {p.dots && <path className="paper-dot" d={p.dots} stroke={look.dot} strokeWidth={p.width} strokeDasharray={`0 ${p.pitch}`} />}
     </svg>
   );
 }
@@ -129,7 +132,8 @@ export async function sharePages(of: PagesOf, at: { x: number; y: number; w: num
       // the foot of the one before is drawn at the head of this one
       const spec = paperOf(of.written!, i);
       const before = of.written!.pageless && i > 0 && of.inked.has(all[i - 1]!) ? pageKey(of.hash, all[i - 1]!) : null;
-      return { w: spec.w, h: spec.h, paper: spec.kind, rule: spec.rule, margin: spec.margin, top: spec.top, at: spec.run ? spec.at : null, ink: of.inked.has(s) ? pageKey(of.hash, s) : null, above: before };
+      // its colours as a light theme shows them: the paper's chosen one (none: white), the ruling's, and whether ink on it is drawn the dark way (87)
+      return { w: spec.w, h: spec.h, paper: spec.kind, rule: spec.rule, margin: spec.margin, top: spec.top, at: spec.run ? spec.at : null, ink: of.inked.has(s) ? pageKey(of.hash, s) : null, above: before, color: spec.color, line: spec.line, dark: paperLook(spec, 'light').dark };
     })
     : (of.pages ?? []).map((p) => ({ w: p.w, h: p.h, source: p.page, ink: of.inked.has(p.page) ? pageKey(of.hash, p.page) : null }));
   if (!pages.length) return null;
@@ -185,6 +189,9 @@ function Thumb({ hash, page, w, h, rev, paper, pdf, seen }: { hash: string | nul
   const [ink, setInk] = useState<string | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const drawn = useRef(false);
+  // a notebook's sheet says whether what is written on it is drawn the dark way; a PDF's page goes by the theme (`pdf.css`)
+  const theme = useApp((s) => s.theme);
+  const dark = paper ? paperLook(paper, theme).dark : false;
   useEffect(() => {
     const fs = inkStore();
     if (!fs || !hash || rev === undefined || !seen) { if (rev === undefined) setInk(null); return; }
@@ -217,7 +224,7 @@ function Thumb({ hash, page, w, h, rev, paper, pdf, seen }: { hash: string | nul
   return (
     <span className="pg-sheet" style={{ aspectRatio: `${w} / ${h}` }}>
       {paper ? <PaperSheet spec={paper} /> : <canvas ref={canvas} />}
-      {ink && <img className="page-ink" src={ink} alt="" draggable={false} />}
+      {ink && <img className="page-ink" data-paper={paper?.kind} data-ink-dark={dark ? '1' : undefined} src={ink} alt="" draggable={false} />}
     </span>
   );
 }
@@ -343,7 +350,7 @@ export function PageGrid({ id, into, written, hash, base, sizes, current, inked,
           <span className="pg-papers" role="group" aria-label="paper">
             {PAPERS.map((k) => (
               <button key={k} type="button" className="pg-paper" data-pg-paper={k} aria-label={`${k} paper`} title={`${k} paper`} aria-pressed={written.paper === k} onClick={() => { if (written.paper !== k) void setPaper(id, k).catch(failed('paper')); }}>
-                <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, top: 22, run: false, at: 0 }} />
+                <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, top: 22, run: false, at: 0, color: written.color ?? null, line: written.line ?? null }} />
               </button>
             ))}
           </span>
@@ -396,9 +403,70 @@ const mm = (points: number): string => `${(points / MM).toFixed(1)} mm`;
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
 /**
+ * A row of colours in `page setup` (milestone 87): the first swatch is none
+ * chosen (the paper follows the theme, the ruling is the paper's own), then
+ * the ones offered by name, then one taken from the colour wheel: the
+ * system's on a device (`ink_color`, as the writing tools' is), the
+ * browser's on a Mac. The one chosen has a ring round it and is named at the
+ * row's end; a named one pressed again is none chosen.
+ */
+function Colours({ name, label, none, presets, value, shown, pick }: { name: 'color' | 'line'; label: string; /** What the row says with none chosen. */ none: string; presets: readonly { name: string; value: string }[]; value: string | null; /** The colour drawn with none chosen: where the wheel starts. */ shown: string; pick(color: string | null): void }) {
+  const mobile = useApp((s) => s.mobile);
+  const named = presets.find((c) => c.value === value);
+  /** The colour last taken from the wheel: its swatch keeps it while another is chosen. */
+  const [own, setOwn] = useState<string | null>(value !== null && !named ? value : null);
+  useEffect(() => { if (value !== null && !presets.some((c) => c.value === value)) setOwn(value); }, [value, presets]);
+  const [busy, setBusy] = useState(false);
+  const field = useRef<HTMLInputElement>(null);
+  const wheel = async (el: HTMLElement) => {
+    // its own colour, once it has one and another is chosen, is chosen first; pressed again it is the wheel
+    if (own && value !== own) { pick(own); return; }
+    if (!mobile) {
+      const input = field.current;
+      if (!input) return;
+      // (where the browser has no way to show it, a press on the field itself does)
+      try { if (typeof input.showPicker === 'function') input.showPicker(); else input.click(); } catch { input.click(); }
+      return;
+    }
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = el.getBoundingClientRect();
+      const got = await invoke<{ color: string | null }>('ink_color', { color: own ?? value ?? shown, at: { x: r.left, y: r.top, w: r.width, h: r.height } });
+      const c = paperHex(got?.color);
+      if (c) { setOwn(c); pick(c); }
+    } catch (e) { console.error(e); } finally { setBusy(false); }
+  };
+  const mine = value !== null && !named;
+  return (
+    <div className="ps-colours" data-ps-row={name}>
+      <div className="ps-row ps-ch">
+        <span className="ps-l">{label}</span>
+        <span className="ps-cv" data-ps={`${name}-said`}>{value === null ? none : named ? named.name : value}</span>
+      </div>
+      <div className="ps-sws" role="group" aria-label={label}>
+        <button type="button" className="ps-sw" data-ps={`${name}-none`} aria-label={none} title={none} aria-pressed={value === null} onClick={() => pick(null)}>
+          <span className="ps-dot ps-none" />
+        </button>
+        {presets.map((c) => (
+          <button key={c.name} type="button" className="ps-sw" data-ps={`${name}-${c.name}`} data-color={c.value} aria-label={value === c.value ? `${c.name}, press again for ${none}` : c.name} title={c.name} aria-pressed={value === c.value} onClick={() => pick(value === c.value ? null : c.value)}>
+            <span className="ps-dot" style={{ background: c.value }} />
+          </button>
+        ))}
+        <button type="button" className="ps-sw ps-wheel" data-ps={`${name}-wheel`} data-color={own ?? undefined} aria-label="colours" title="colours" aria-haspopup="dialog" aria-expanded={mobile ? busy : undefined} aria-pressed={mine} onClick={(e) => void wheel(e.currentTarget)}>
+          <span className="ps-dot ps-ring"><span className="ps-core" style={own ? { background: own } : undefined} /></span>
+        </button>
+        {!mobile && <input ref={field} type="color" className="ps-pick" tabIndex={-1} data-ps={`${name}-input`} aria-label={`${label}: colours`} value={own ?? value ?? shown} onChange={(e) => { const c = paperHex(e.currentTarget.value); if (c) { setOwn(c); pick(c); } }} />}
+      </div>
+    </div>
+  );
+}
+
+/**
  * `page setup`: one panel over a notebook's pages, which change behind it
  * as it is used. The paper; how far apart its rules, lines or dots are; a
- * ruled sheet's margin rule and the room over its first rule; whether its
+ * ruled sheet's margin rule and the room over its first rule; the paper's
+ * colour and the ruling's (`Colours`); whether its
  * sheets are pages or run on as one; a page's size and which way it lies;
  * and `use for new notebooks`, which keeps all of it as what this device's
  * new notebooks start with. Only the paper moves: what is written stays
@@ -433,6 +501,8 @@ export function PageSetup({ id, into, written, onClose }: { id: string; into: HT
   }, [onClose]);
 
   const kind = draft.paper;
+  const theme = useApp((s) => s.theme);
+  const look = paperLook(draft, theme);
   const rule = draft.rule ?? ruleOf(kind);
   const top = draft.top ?? RULE_TOP;
   const seg = <T extends string>(name: string, label: string, value: T, options: readonly { v: T; word: string }[], pick: (v: T) => void) => (
@@ -452,7 +522,7 @@ export function PageSetup({ id, into, written, onClose }: { id: string; into: HT
       <div className="ps-papers" role="group" aria-label="paper">
         {PAPERS.map((k) => (
           <button key={k} type="button" className="ps-paper" data-ps={`paper-${k}`} aria-pressed={kind === k} onClick={() => change({ paper: k })}>
-            <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, top: 22, run: false, at: 0 }} />
+            <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, top: 22, run: false, at: 0, color: draft.color, line: draft.line }} />
             <span>{k}</span>
           </button>
         ))}
@@ -489,6 +559,10 @@ export function PageSetup({ id, into, written, onClose }: { id: string; into: HT
           </label>
         </div>
       )}
+      <div className="ps-block">
+        <Colours name="color" label="paper colour" none="follows the theme" presets={PAPER_COLORS} value={draft.color} shown={look.paper} pick={(color) => change({ color })} />
+        {kind !== 'blank' && <Colours name="line" label="line colour" none="default" presets={LINE_COLORS} value={draft.line} shown={look.rule} pick={(line) => change({ line })} />}
+      </div>
       <div className="ps-block">
         {seg('layout', 'layout', draft.pageless ? 'pageless' : 'pages', [{ v: 'pages', word: 'pages' }, { v: 'pageless', word: 'pageless' }] as const, (v) => change({ pageless: v === 'pageless' }))}
         {!draft.pageless && seg('size', 'size', draft.size ?? 'letter', [{ v: 'letter', word: 'letter' }, { v: 'a4', word: 'a4' }] as const, (v) => change({ size: v === 'a4' ? 'a4' : null }))}

@@ -281,16 +281,14 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 /* the read bar: from the first page to the read point */
 .book .pdf-body .read-bar { left: -20px; width: 3px; }
 
-/* a written notebook's sheet (milestone 82, `paper.ts`): white paper, its rules hairlines that stay a pixel at any zoom,
-   its dots growing with the page. Dark paper turns it as it turns a PDF's page, and e-ink greys it; a sheet far from
-   the view is not drawn, and is the colour its paper would be */
+/* a written notebook's sheet (milestone 82, `paper.ts`): its rules hairlines that stay a pixel at any zoom, its dots
+   growing with the page. Its colours are said where it is drawn (`paperLook`, milestone 87): the paper's own where
+   one is chosen, else the theme's (white; dark as a dark theme turns a PDF's page; grey rules on e-ink), final, so
+   nothing here turns it. A sheet whose paper is dark is marked `data-ink-dark`, whatever the theme */
 .pdf-page > .paper { display: block; width: 100%; height: 100%; }
 .paper .paper-rule { fill: none; stroke-width: 1; shape-rendering: crispEdges; }
 .paper .paper-dot { fill: none; stroke-linecap: round; }
-[data-theme="dark"] .pdf-page > .paper { filter: invert(0.92) hue-rotate(180deg); }
-[data-theme="dark"] .pdf-page[data-paper] { background: #141414; }
-[data-theme="eink"] .pdf-page > .paper { filter: grayscale(1) contrast(1.1); }
-[data-theme="eink"] .paper .paper-rule, [data-theme="eink"] .paper .paper-dot { stroke: #8f8f8f; }
+.pdf-page[data-paper][data-ink-dark] { background: #141414; }
 /* under a notebook's last page: one more, a sheet's width of the desk with a dashed edge */
 .book .add-page {
   display: block; box-sizing: border-box; min-height: 48px; margin: 18px 0 0; padding: 0;
@@ -305,14 +303,19 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 /* what is written on the pages (milestone 67): a picture of each page's strokes over it, under the boxes; on dark paper it is turned as the page is */
 /* it lies on the page as ink does on paper (milestone 82): a highlighter's stroke over text leaves the text dark. The
    layer is blended, not each picture: its z-index makes it a group of its own, and a picture inside would blend with
-   nothing. On dark paper the page and the picture are both turned, so what darkened lightens */
+   nothing. On dark paper the page and the picture are both turned, so what darkened lightens. A PDF's page is dark
+   when the theme is; a notebook's sheet (`data-paper`) when its paper is (`data-ink-dark`, milestone 87): a chosen
+   light paper in the dark theme has its ink as written, a chosen dark one in the light theme has it turned */
 .pdf-ink { position: absolute; inset: 0; pointer-events: none; z-index: 2; mix-blend-mode: multiply; }
-[data-theme="dark"] .pdf-ink { mix-blend-mode: screen; }
+[data-theme="dark"] .pdf-ink:not([data-paper]) { mix-blend-mode: screen; }
+.pdf-ink[data-ink-dark] { mix-blend-mode: screen; }
 .page-ink { position: absolute; display: block; pointer-events: none; -webkit-user-select: none; user-select: none; }
 /* a canvas lies over this page: the same strokes */
 .page-ink[data-live] { visibility: hidden; }
-[data-theme="dark"] .page-ink { filter: invert(0.92) hue-rotate(180deg); }
+[data-theme="dark"] .page-ink:not([data-paper]) { filter: invert(0.92) hue-rotate(180deg); }
+.page-ink[data-ink-dark] { filter: invert(0.92) hue-rotate(180deg); }
 [data-theme="eink"] .page-ink { filter: grayscale(1) contrast(1.1); }
+[data-theme="eink"] .page-ink[data-ink-dark] { filter: invert(0.92) hue-rotate(180deg) grayscale(1) contrast(1.1); }
 
 /* what the notes say about the pages: each passage's boxes, its name beside the page or a § in the gutter */
 .pdf-marks { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
@@ -394,8 +397,10 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 .crop:hover { box-shadow: 0 0 0 1px var(--accent); }
 .crop canvas { display: block; max-width: 100%; height: auto !important; }
 [data-theme="dark"] .crop { background: #e9e9e6; }
-[data-theme="dark"] .crop canvas { filter: invert(0.92) hue-rotate(180deg); }
-[data-theme="eink"] .crop canvas { filter: grayscale(1) contrast(1.1); }
+/* (a clip of a notebook's sheet, `data-sheet`, is drawn in its paper's own colours with its ink turned where the paper is dark: nothing turns it here; 87) */
+[data-theme="dark"] .crop:not([data-sheet]) canvas { filter: invert(0.92) hue-rotate(180deg); }
+[data-theme="dark"] .crop[data-sheet] { background: var(--paper); }
+[data-theme="eink"] .crop:not([data-sheet]) canvas { filter: grayscale(1) contrast(1.1); }
 .inline-boxes { margin: 0 0 14px; user-select: none; }
 .pbreak { font-family: var(--sans); font-size: var(--t-xs); color: var(--fg-4); text-align: center; padding: 5px 0; }
 .pbreak::before, .pbreak::after { content: ""; display: inline-block; width: 60px; height: 1px; background: var(--line-1); vertical-align: middle; margin: 0 10px; }
@@ -554,9 +559,11 @@ html[data-mobile="1"] .book .pdf-pages { will-change: transform; transform-origi
 }
 .page-grid .pg-sheet > .paper, .page-grid .pg-sheet > canvas { display: block; width: 100%; height: 100%; }
 .page-grid .pg-sheet > .page-ink { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: multiply; }
-[data-theme="dark"] .page-grid .pg-sheet > .paper, [data-theme="dark"] .page-grid .pg-sheet > canvas, [data-theme="dark"] .page-grid .pg-paper .paper { filter: invert(0.92) hue-rotate(180deg); }
+/* a PDF's page small is turned with the theme; a notebook's sheet has its paper's own colours, and its ink turned where the paper is dark (87) */
+[data-theme="dark"] .page-grid .pg-sheet > canvas { filter: invert(0.92) hue-rotate(180deg); }
 [data-theme="dark"] .page-grid .pg-sheet { background: #141416; }
-[data-theme="dark"] .page-grid .pg-sheet > .page-ink { mix-blend-mode: screen; }
+[data-theme="dark"] .page-grid .pg-sheet > .page-ink:not([data-paper]) { mix-blend-mode: screen; }
+.page-grid .pg-sheet > .page-ink[data-ink-dark] { mix-blend-mode: screen; }
 .page-grid .pg-item[data-current="1"] .pg-sheet { box-shadow: 0 0 0 2px var(--accent), 0 1px 4px color-mix(in oklab, var(--fg) 12%, transparent); }
 .page-grid .pg-go:active .pg-sheet { opacity: 0.86; }
 .page-grid .pg-foot { display: flex; align-items: center; justify-content: center; gap: 2px; height: 34px; width: 100%; max-width: 168px; position: relative; }
@@ -597,7 +604,24 @@ html[data-mobile="1"] .book .pdf-view[data-tools="1"] ~ .page-setup, html[data-m
 .page-setup .ps-paper .paper { display: block; width: 48px; height: 62px; border-radius: 2px; box-shadow: 0 0 0 1px color-mix(in oklab, var(--fg) 20%, transparent); }
 .page-setup .ps-paper[aria-pressed="true"] { color: var(--fg-1); background: var(--line-3); }
 .page-setup .ps-paper[aria-pressed="true"] .paper { box-shadow: 0 0 0 1.5px var(--paper), 0 0 0 3px var(--accent); }
-[data-theme="dark"] .page-setup .ps-paper .paper { filter: invert(0.92) hue-rotate(180deg); }
+/* the paper's colour and the ruling's (87): a line saying which, then a row of rounds, each a finger's; the one chosen has a ring of the ink round it, as a tool's colour has */
+.page-setup .ps-colours + .ps-colours { border-top: 1px solid var(--line-3); }
+.page-setup .ps-ch { min-height: 34px; padding-top: 4px; }
+.page-setup .ps-ch .ps-l { flex: 1 1 auto; }
+.page-setup .ps-cv { flex: 0 1 auto; white-space: nowrap; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.page-setup .ps-sws { display: flex; align-items: center; position: relative; margin: 0 -6px; padding-bottom: 4px; }
+.page-setup .ps-sw { flex: 1 1 0; min-width: 0; max-width: 46px; height: 44px; margin: 0; padding: 0; border: 0; border-radius: 6px; background: none; display: inline-flex; align-items: center; justify-content: center; cursor: default; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.page-setup .ps-sw:active { background: var(--line-2); }
+.page-setup .ps-sw:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -3px; }
+.page-setup .ps-dot { display: block; box-sizing: border-box; width: 26px; height: 26px; border-radius: 50%; border: 1px solid color-mix(in oklab, var(--fg) 22%, transparent); transition: transform 120ms ease; }
+.page-setup .ps-sw[aria-pressed="true"] .ps-dot { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--fg-1); transform: scale(0.88); }
+/* none chosen: half a light sheet, half a dark one */
+.page-setup .ps-none { background: linear-gradient(135deg, #ffffff 0 50%, #1c1c1e 50% 100%); }
+.page-setup .ps-ring { display: flex; align-items: center; justify-content: center; border: 0; background: conic-gradient(from 0deg, #e5484d, #f5a524, #f2d43d, #46a758, #3aa7d9, #4f5bd5, #a044c4, #e5484d); }
+.page-setup .ps-core { display: block; box-sizing: border-box; width: 15px; height: 15px; border-radius: 50%; background: var(--paper); }
+/* a Mac's colour field: there to be opened from the wheel's round, not seen */
+.page-setup .ps-pick { position: absolute; right: 6px; bottom: 4px; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+[data-theme="eink"] .page-setup .ps-dot { border-color: var(--fg-1); }
 .page-setup .ps-block { border-top: 1px solid var(--line-3); padding: 4px 0; }
 .page-setup .ps-row { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 .page-setup .ps-l { flex: 0 0 88px; color: var(--fg-3); }
@@ -631,3 +655,24 @@ html[data-mobile="1"] .book .pdf-view[data-tools="1"] ~ .page-setup, html[data-m
 /* a page drawn small: its ruling fainter, so the page reads as paper and what is written on it shows */
 .page-grid .pg-sheet .paper-rule { stroke-opacity: 0.5; stroke-width: 0.5; }
 .page-grid .pg-sheet .paper-dot { stroke-opacity: 0.6; }
+
+/* ── a notebook's pages as a surface of the system's own (milestone 87, `surface.ts`): an iPad's ──
+   The bar is the pane's top, and what is under it is the place the surface lies over: nothing here scrolls. The place
+   is the desk's colour, so what shows where the surface is cut away for a menu is the desk. Its colours are read by
+   the surface from here: the desk (its background), a tag's words (its colour), a box's and a tag's line (its outline
+   and its border), a tag's plate (its column rule). */
+.book .book-pages .reader-wrap[data-native="1"] { padding: 0; height: 100%; min-height: 0; box-sizing: border-box; align-items: stretch; }
+.book .reader-wrap[data-native="1"] > .pdf-view { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; width: auto; max-width: none; margin: 0; }
+.book .reader-wrap[data-native="1"] > .pdf-view > .meta { position: relative; top: auto; margin: 0; flex: none; }
+.book .reader-wrap[data-native="1"] > .pdf-view > .pdf-bar { position: absolute; top: 46px; left: 0; right: 0; margin: 0; z-index: 7; }
+html[data-mobile="1"] .book .reader-wrap[data-native="1"] > .pdf-view > .meta[data-ink="1"] ~ .pdf-bar { top: 98px; }
+.book .reader-wrap[data-native="1"] .pdf-body { flex: 1 1 auto; min-height: 0; position: relative; display: block; }
+.note-surface {
+  position: absolute; inset: 0; overflow: hidden; background: var(--desk);
+  color: var(--fg-2); outline: 0 solid var(--accent); border: 0 solid var(--line-1); column-rule: 0 solid var(--paper);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.note-surface > .pend { z-index: 8; }
+.note-surface > .ink-menu { z-index: 8; }
+/* where a sheet lies under the surface: a place, with nothing to see or press */
+.note-surface > .sheet-place { position: absolute; visibility: hidden; pointer-events: none; box-shadow: none; animation: none; }

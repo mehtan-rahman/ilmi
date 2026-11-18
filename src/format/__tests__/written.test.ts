@@ -140,6 +140,45 @@ describe('written notes', () => {
     expect(serialize(doc)).toBe(text);
   });
 
+  it('a paper colour and a line colour are six hex digits, written in lowercase after the rest of the page setup', () => {
+    const text = `---\nwritten: ${ID}\npaper: ruled\nsheets: 1 2\npaper-rule: 30\npageless: true\npaper-color: #fbf6e9\npaper-line: #c9cdd2\n---\n`;
+    const { doc, diagnostics } = parse(text);
+    expect(diagnostics).toEqual([]);
+    expect(meta(doc).written).toEqual({ id: ID, paper: 'ruled', sheets: [1, 2], rule: 30, pageless: true, color: '#fbf6e9', line: '#c9cdd2' });
+    expect(serialize(doc)).toBe(text);
+    // each alone; absent, there is none
+    expect(meta(parse(`---\nwritten: ${ID}\npaper-color: #1c1c1e\n---\n`).doc).written).toEqual({ id: ID, paper: 'blank', sheets: [1], color: '#1c1c1e' });
+    expect(meta(parse(`---\nwritten: ${ID}\npaper-line: #b5d2f2\n---\n`).doc).written).toEqual({ id: ID, paper: 'blank', sheets: [1], line: '#b5d2f2' });
+    expect(meta(parse(`---\nwritten: ${ID}\n---\n`).doc).written).toEqual({ id: ID, paper: 'blank', sheets: [1] });
+    // capitals are read, and written in lowercase
+    const caps = parse(`---\nwritten: ${ID}\npaper-color: #FBF6E9\n---\n`).doc;
+    expect(meta(caps).written!.color).toBe('#fbf6e9');
+    expect(serialize(caps)).toBe(`---\nwritten: ${ID}\npaper-color: #fbf6e9\n---\n`);
+    // set on a notebook with none, they go after what is there
+    const fresh = parse(`---\nwritten: ${ID}\npaper: grid\nsheets: 1\n---\n`).doc;
+    setField(fresh, 'pageless', true);
+    setField(fresh, 'paper-color', '#fbf6e9');
+    setField(fresh, 'paper-line', '#c9cdd2');
+    expect(serialize(fresh)).toBe(`---\nwritten: ${ID}\npaper: grid\nsheets: 1\npageless: true\npaper-color: #fbf6e9\npaper-line: #c9cdd2\n---\n`);
+    setField(fresh, 'paper-color', null);
+    setField(fresh, 'paper-line', null);
+    expect(meta(fresh).written).toEqual({ id: ID, paper: 'grid', sheets: [1], pageless: true });
+    // without written they mean nothing, and are kept
+    const note = '---\npaper-color: #fbf6e9\n---\n\nA note.\n';
+    expect(meta(parse(note).doc).written).toBeUndefined();
+    expect(serialize(parse(note).doc)).toBe(note);
+  });
+
+  it('a colour the file says wrongly is kept raw with a diagnostic, and the paper is as if it said none', () => {
+    for (const bad of ['fbf6e9', '#fff', '#fbf6e9aa', 'cream', '#gggggg', 'rgb(1, 2, 3)', '# fbf6e9']) {
+      const text = `---\nwritten: ${ID}\npaper: ruled\npaper-color: ${bad}\npaper-line: ${bad}\n---\n`;
+      const { doc, diagnostics } = parse(text);
+      expect(diagnostics.map((d) => d.message), bad).toEqual(['bad value for "paper-color"', 'bad value for "paper-line"']);
+      expect(meta(doc).written, bad).toEqual({ id: ID, paper: 'ruled', sheets: [1] });
+      expect(serialize(doc), bad).toBe(text);
+    }
+  });
+
   it('a page setup is set, changed and cleared in place', () => {
     const { doc } = parse(`---\nwritten: ${ID}\npaper: ruled\nsheets: 1\n---\n`);
     setField(doc, 'paper-rule', 30);

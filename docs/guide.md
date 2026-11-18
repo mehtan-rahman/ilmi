@@ -339,7 +339,16 @@ it as you use it. The paper: blank, ruled, grid or dotted. The spacing of
 its rules, lines or dots, by a slider that says it in millimetres or by
 name (`narrow`, `college`, `wide` for ruled paper; 5, 7 and 10 mm for a
 grid and dots). For ruled paper a `margin line` and how far from the edge
-it stands, and the `top space` over the first rule. The layout: `pages`,
+it stands, and the `top space` over the first rule. The `paper colour`
+and, for paper with anything ruled on it, the `line colour`: a row of
+rounds each, the first of which is none chosen, then the ones with names
+(white, cream, yellow, grey and dark for paper; blue-grey, grey, blue, red
+and green for lines), then one from the colour wheel. With none chosen the
+paper follows the theme, white in the light one and dark in the dark one;
+a colour you choose is the paper in every theme. The line colour is the
+rules', the grid's and the dots'; the margin line stays red. Ink is always
+drawn to be read on its paper: on dark paper black ink shows white, and on
+light paper it is as you wrote it, whatever the theme. The layout: `pages`,
 or `pageless`, where the sheets run on as one long sheet with nothing
 between them and the ruling carries on down it; a pageless notebook has no
 page count, nothing to add or delete, and grows as you write near its
@@ -920,9 +929,11 @@ The tools are a row under the bar over the pages, on an iPad only:
 - At the right, `undo` and `redo`, grey when there is nothing to take back
   or put back; `draw with finger` (off, the Pencil writes and a finger
   scrolls; on, a finger writes too and two fingers scroll); and `hide
-  tools`, which tucks the row away for reading. A pen in the bar's first
-  row brings it back. Tucked away, the Pencil still writes with the tool
-  it had, and a finger never draws.
+  tools`, which tucks the row away for reading. The tool in use, in the
+  bar's first row, brings it back: a pen or a highlighter with its colour
+  under it, the eraser, or the lasso, so the Pencil's double tap to the
+  eraser and back shows there. Tucked away, the Pencil still writes with
+  the tool it had, and a finger never draws.
 
 Press the tool in use again and its settings open under it. The pen's: its
 ink (`pen`, `fine`, `fountain`, `pencil`, as many as the iPad has), the

@@ -151,11 +151,14 @@ final class TouchRig: XCTestCase {
         case "pinch" where n.count >= 8:
           let f = app.frame
           let at = { (i: Int) in CGPoint(x: f.minX + n[i] * f.width, y: f.minY + n[i + 1] * f.height) }
-          // down, a rest, then twenty steps to where they end, and a rest there before they lift
+          // down, a rest, then steps to where they end, and a rest there before they lift; a ninth number is how many
+          // seconds the fingers take on the way (0.7 with none: a slow pinch takes two or three, a quick one a fifth)
+          let secs = n.count >= 9 ? max(0.05, n[8]) : 0.7
+          let steps = max(8, min(120, Int(secs * 40)))
           let way = { (from: CGPoint, to: CGPoint) -> [(CGPoint, Double)] in
             var out: [(CGPoint, Double)] = [(from, 0)]
-            for i in 1...20 { let t = Double(i) / 20; out.append((CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t), 0.2 + t * 0.7)) }
-            out.append((to, 1.15))
+            for i in 1...steps { let t = Double(i) / Double(steps); out.append((CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t), 0.2 + t * secs)) }
+            out.append((to, 0.2 + secs + 0.25))
             return out
           }
           if !fingers([way(at(0), at(4)), way(at(2), at(6))]) { print("rig: no pinch in this Xcode: \(ask)") }

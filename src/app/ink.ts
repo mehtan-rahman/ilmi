@@ -154,6 +154,35 @@ export type FingerEvent =
   | { kind: 'double'; host: string; x: number; y: number }
   | { kind: 'pinch'; phase: 'begin' | 'change' | 'end' | 'cancel' | 'settled'; k: number; x: number; y: number; native?: boolean; host?: string; lx?: number; ly?: number };
 
+/**
+ * What a notebook's surface says (milestone 87, `surface.ts`): the page in
+ * view and the zoom as the pages move (`view`) and when a zoom ends
+ * (`zoomed`), sheets come near whose strokes it wants (`want`), a stroke
+ * begun low on the last sheet (`grow`), `add page` pressed (`add`), a box
+ * drawn by a held finger (`boxed`), a passage's tag pressed (`tag`), a tap on
+ * the pages (`tap`), the pages beginning to move (`moving`), and that
+ * they were touched at all (`touch`: what closes at a press elsewhere closes).
+ */
+export interface SurfaceEvent {
+  kind: 'surface';
+  id: string;
+  what: 'view' | 'zoomed' | 'want' | 'grow' | 'add' | 'boxed' | 'boxing' | 'tag' | 'tap' | 'moving' | 'touch';
+  page?: number; pages?: number; zoom?: number; top?: number; x?: number; y?: number; w?: number; h?: number;
+  moving?: boolean; pend?: Box; sheets?: string[]; sheet?: number; key?: string;
+  /** Where the first sheet lies on the surface (left, top, width, height) and how far it is from one sheet's top to the next's, px. */
+  lay?: number[];
+}
+
+const surfaceEars = new Map<string, (e: SurfaceEvent) => void>();
+/** `f` hears what the surface named `id` says. Returns the undoing. */
+export function onSurface(id: string, f: (e: SurfaceEvent) => void): () => void {
+  (window as unknown as { __ink?: (e: Heard) => void }).__ink = heard;
+  surfaceEars.set(id, f);
+  return () => { if (surfaceEars.get(id) === f) surfaceEars.delete(id); };
+}
+
+type Heard = PenEvent | ToolEvent | LassoEvent | FingerEvent | SurfaceEvent;
+
 const fingerEars = new Set<(e: FingerEvent) => void>();
 /** `f` hears what two and three fingers do, wherever on the page: each lens takes what falls on it. Returns the undoing. */
 export function onFingers(f: (e: FingerEvent) => void): () => void {
@@ -326,9 +355,17 @@ let said = '';
 let afters: (() => void)[] = [];
 
 /** What the page lays over the sheets: the canvases lie over the web view, and stand aside for these. */
-const OVER = '[data-ink-over], .pop-menu, .ctx-menu, .sel-cue, .pdf-peek, .pdf-bar, .palette-panel, .notice';
+export const OVER = '[data-ink-over], .pop-menu, .ctx-menu, .sel-cue, .pdf-peek, .pdf-bar, .palette-panel, .notice';
+
+const layoutEars = new Set<() => void>();
+/** `f` whenever the page's layout may have changed (what `sceneSoon` is called for): a notebook's surface looks again at where it lies. Returns the undoing. */
+export function onLayout(f: () => void): () => void {
+  layoutEars.add(f);
+  return () => { layoutEars.delete(f); };
+}
 
 async function sendScene(): Promise<void> {
+  for (const f of layoutEars) f();
   if (frozen) return;
   const hosts = [...surfaces].map((s) => s.host()).filter((h): h is HostSpec => h !== null);
   const dark = document.documentElement.dataset.theme === 'dark';
@@ -349,6 +386,9 @@ async function sendScene(): Promise<void> {
   for (const f of afters.splice(0)) f();
 }
 
+/** A sheet whose canvas or surface holds nothing the page knows of: the next `fillSheet` gives it what the store holds. */
+export const forgetSheet = (sheet: string): void => { bases.delete(sheet); };
+
 /** `f` once the scene being made has reached the canvases: a sheet in it is there to be told something. */
 export const afterScene = (f: () => void): void => { afters.push(f); sceneSoon(); };
 
@@ -358,7 +398,8 @@ export function sceneSoon(): void {
   timer = setTimeout(() => { timer = null; void sendScene().catch(console.error); }, 0);
 }
 
-function heard(e: PenEvent | ToolEvent | LassoEvent | FingerEvent): void {
+function heard(e: Heard): void {
+  if (e.kind === 'surface') { surfaceEars.get(e.id)?.(e); return; }
   if (e.kind === 'fingers' || e.kind === 'pinch' || e.kind === 'double') { for (const f of fingerEars) f(e); return; }
   if (e.kind === 'history' || e.kind === 'color' || e.kind === 'pencil') { toolsHeard(e); return; }
   if (e.kind === 'picked') { useLasso.setState({ picked: { sheet: e.sheet, host: e.host, count: e.count, clip: e.clip, box: { x: e.x, y: e.y, w: e.w, h: e.h } }, rest: null }); sceneSoon(); return; }

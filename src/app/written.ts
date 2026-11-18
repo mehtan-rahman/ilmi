@@ -6,7 +6,7 @@
 // or after another, taken out, made again, moved: milestone 85) and its paper.
 
 import { PAPERS, PAPER_MARGIN_RANGE, PAPER_RULE_RANGE, PAPER_TOP_RANGE, meta, pagesLabel, parseBoxes, setField, type Box, type PaperKind, type WrittenMeta } from '../format/index.js';
-import { RULE_TOP, ruleOf } from './paper.js';
+import { RULE_TOP, paperHex, ruleOf } from './paper.js';
 import { passageMarksOf } from '../pdf/index.js';
 import { isPdfPath, newId, passageId, type InkStroke, type PassageMark, type StoreFs } from '../vault/index.js';
 import { askNote, loadMarks, openNotes, setMark } from './book.js';
@@ -205,10 +205,14 @@ export interface Setup {
   size: 'a4' | null;
   turn: 'landscape' | null;
   pageless: boolean;
+  /** The paper's colour, `#rrggbb`; null where it follows the theme. */
+  color: string | null;
+  /** The colour of the rules, the grid's lines and the dots, `#rrggbb`; null for the paper's own. */
+  line: string | null;
 }
 
 /** A notebook's page setup. */
-export const setupOf = (w: WrittenMeta): Setup => ({ paper: w.paper, rule: w.rule ?? null, margin: w.margin ?? null, top: w.top ?? null, size: w.size ?? null, turn: w.turn ?? null, pageless: !!w.pageless });
+export const setupOf = (w: WrittenMeta): Setup => ({ paper: w.paper, rule: w.rule ?? null, margin: w.margin ?? null, top: w.top ?? null, size: w.size ?? null, turn: w.turn ?? null, pageless: !!w.pageless, color: w.color ?? null, line: w.line ?? null });
 
 /**
  * Some of a notebook's page setup changed (milestone 85). Only the paper
@@ -232,6 +236,9 @@ export async function setSetup(path: string, change: Partial<Setup>): Promise<vo
     setField(doc, 'paper-size', next.size);
     setField(doc, 'paper-turn', next.turn);
     setField(doc, 'pageless', next.pageless ? true : null);
+    setField(doc, 'paper-color', paperHex(next.color));
+    // (kept on blank paper too: it is there again when the paper is ruled again)
+    setField(doc, 'paper-line', paperHex(next.line));
   });
 }
 
@@ -249,6 +256,7 @@ export function parseSetup(raw: string | null | undefined): Setup | null {
       paper: PAPERS.includes(t.paper as PaperKind) ? (t.paper as PaperKind) : 'ruled',
       rule: n(t.rule, PAPER_RULE_RANGE), margin: n(t.margin, PAPER_MARGIN_RANGE), top: n(t.top, PAPER_TOP_RANGE),
       size: t.size === 'a4' ? 'a4' : null, turn: t.turn === 'landscape' ? 'landscape' : null, pageless: t.pageless === true,
+      color: paperHex(t.color), line: paperHex(t.line),
     };
   } catch { return null; }
 }

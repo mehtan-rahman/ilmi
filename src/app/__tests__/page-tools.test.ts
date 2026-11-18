@@ -111,7 +111,7 @@ beforeEach(async () => {
   saveTo = null;
   open = true;
   first = 1;
-  useApp.setState({ mobile: true, phone: false, notice: null });
+  useApp.setState({ mobile: true, phone: false, notice: null, theme: 'light' });
   useLasso.setState({ picked: null, rest: null });
   // (the canvases hear of this page from here on: `window.__ink` is there)
   ink.addSurface({ host: () => null, paper: () => null, kept: async () => {} });
@@ -663,7 +663,7 @@ describe('the pages as a PDF', () => {
   const AT = { x: 700, y: 20, w: 30, h: 30 };
   const nb = { name: 'lecture', hash: ID, written: { id: ID, paper: 'grid' as const, sheets: [1, 3, 7] }, inked: new Set([3]) };
   /** A sheet as `pages_pdf` is told it, with nothing of a page setup said. */
-  const sheet = (more: Record<string, unknown> = {}) => ({ w: 612, h: 792, paper: 'grid', rule: 20, margin: null, top: 72, at: null, ink: null, above: null, ...more });
+  const sheet = (more: Record<string, unknown> = {}) => ({ w: 612, h: 792, paper: 'grid', rule: 20, margin: null, top: 72, at: null, ink: null, above: null, color: null, line: null, dark: false, ...more });
   const HASH = 'f'.repeat(64);
   const book = { name: 'lindqvist', hash: HASH, pages: [{ page: 41, w: 600, h: 800 }, { page: 42, w: 595, h: 842 }], inked: new Set([42]) };
 
@@ -685,9 +685,32 @@ describe('the pages as a PDF', () => {
     answers.pages_pdf = () => '/var/share/lecture.pdf';
     await sharePages({ ...nb, written: { id: ID, paper: 'ruled', sheets: [1, 3], rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape' } }, AT);
     expect((said('pages_pdf')[0]!.pages as unknown[])).toEqual([
-      { w: 842, h: 595, paper: 'ruled', rule: 30, margin: 90, top: 100, at: null, ink: null, above: null },
-      { w: 842, h: 595, paper: 'ruled', rule: 30, margin: 90, top: 100, at: null, ink: `p.${ID}.3`, above: null },
+      { w: 842, h: 595, paper: 'ruled', rule: 30, margin: 90, top: 100, at: null, ink: null, above: null, color: null, line: null, dark: false },
+      { w: 842, h: 595, paper: 'ruled', rule: 30, margin: 90, top: 100, at: null, ink: `p.${ID}.3`, above: null, color: null, line: null, dark: false },
     ]);
+  });
+
+  it('each sheet is told its paper\'s colour and its ruling\'s where one is chosen, and whether its ink is drawn the dark way: by the paper, not the theme', async () => {
+    answers.pages_pdf = () => '/var/share/lecture.pdf';
+    const colours = async (written: Record<string, unknown>) => {
+      calls.length = 0;
+      await sharePages({ ...nb, written: { id: ID, paper: 'grid', sheets: [1], ...written } }, AT);
+      const p = (said('pages_pdf')[0]!.pages as { color: unknown; line: unknown; dark: unknown }[])[0]!;
+      return [p.color, p.line, p.dark];
+    };
+    expect(await colours({ color: '#fbf6e9', line: '#bcdcc0' })).toEqual(['#fbf6e9', '#bcdcc0', false]);
+    expect(await colours({ color: '#1c1c1e' })).toEqual(['#1c1c1e', null, true]);
+    expect(await colours({ line: '#f0c2c2' })).toEqual([null, '#f0c2c2', false]);
+    // paper that follows the theme is white in a PDF, whatever the theme is here
+    useApp.setState({ theme: 'dark' });
+    try {
+      expect(await colours({})).toEqual([null, null, false]);
+      expect(await colours({ color: '#1c1c1e' })).toEqual(['#1c1c1e', null, true]);
+    } finally { useApp.setState({ theme: 'light' }); }
+    // a PDF's own pages say none of it
+    calls.length = 0;
+    await sharePages(book, AT);
+    expect(Object.keys((said('pages_pdf')[0]!.pages as object[])[0]!).sort()).toEqual(['h', 'ink', 'source', 'w']);
   });
 
   it('a notebook whose sheets run on as one is cut into its sheets: each says how far down the long sheet it begins, and what was written past the foot of the one before', async () => {
@@ -745,7 +768,7 @@ describe('the pages as a PDF', () => {
 describe('page setup', () => {
   let into: HTMLDivElement;
   let closed = 0;
-  const NEW = { paper: 'ruled', rule: null, margin: null, top: null, size: null, turn: null, pageless: false };
+  const NEW = { paper: 'ruled', rule: null, margin: null, top: null, size: null, turn: null, pageless: false, color: null, line: null };
   const panel = (written: Record<string, unknown> = {}) => createElement(PageSetup, { id: NB, into, written: { id: ID, paper: 'ruled' as PaperKind, sheets: [1, 2], ...written }, onClose: () => { closed += 1; } });
   const q = <T extends HTMLElement>(sel: string) => into.querySelector<T>(sel);
   const qa = <T extends HTMLElement>(sel: string) => Array.from(into.querySelectorAll<T>(sel));
@@ -898,6 +921,122 @@ describe('page setup', () => {
     await click(ps('stop-wide'));
     expect([ps('keep').textContent, ps('keep').getAttribute('aria-pressed')]).toEqual(['use for new notebooks', 'false']);
     expect(asked.filter((a) => a[0] === 'keepSetup').length).toBe(1);
+  });
+
+  it('has a row for the paper\'s colour and one for the ruling\'s: none chosen, the ones offered by name, and the wheel\'s', async () => {
+    await mount(panel());
+    expect(qa('.ps-colours').map((r) => [r.dataset.psRow, r.querySelector('.ps-l')!.textContent, r.querySelector('.ps-cv')!.textContent])).toEqual([['color', 'paper colour', 'follows the theme'], ['line', 'line colour', 'default']]);
+    expect(qa('[data-ps-row="color"] .ps-sw').map((b) => [b.dataset.ps, b.getAttribute('aria-label'), b.getAttribute('aria-pressed')])).toEqual([
+      ['color-none', 'follows the theme', 'true'], ['color-white', 'white', 'false'], ['color-cream', 'cream', 'false'], ['color-yellow', 'yellow', 'false'], ['color-grey', 'grey', 'false'], ['color-dark', 'dark', 'false'], ['color-wheel', 'colours', 'false'],
+    ]);
+    expect(qa('[data-ps-row="line"] .ps-sw').map((b) => [b.dataset.ps, b.getAttribute('aria-label'), b.getAttribute('aria-pressed')])).toEqual([
+      ['line-none', 'default', 'true'], ['line-blue-grey', 'blue-grey', 'false'], ['line-grey', 'grey', 'false'], ['line-blue', 'blue', 'false'], ['line-red', 'red', 'false'], ['line-green', 'green', 'false'], ['line-wheel', 'colours', 'false'],
+    ]);
+    expect(qa('.ps-colours [role="group"]').map((g) => g.getAttribute('aria-label'))).toEqual(['paper colour', 'line colour']);
+    // every word of it lowercase
+    for (const el of qa('.ps-colours .ps-l, .ps-colours .ps-cv')) expect(el.textContent).toBe(el.textContent!.toLowerCase());
+    // blank paper has nothing ruled on it to colour
+    await click(ps('paper-blank'));
+    expect(qa('.ps-colours').map((r) => r.dataset.psRow)).toEqual(['color']);
+  });
+
+  it('a colour pressed is the notebook\'s at once; pressed again, or the first swatch, it is none again', async () => {
+    await mount(panel());
+    await click(ps('color-cream'));
+    expect([pressed('color'), ps('color-said').textContent, ps('color-cream').getAttribute('aria-label')]).toEqual([['color-cream'], 'cream', 'cream, press again for follows the theme']);
+    // the small sheets show it
+    expect(qa('.ps-papers .paper-sheet').map((r) => r.getAttribute('fill'))).toEqual(['#fbf6e9', '#fbf6e9', '#fbf6e9', '#fbf6e9']);
+    await settle();
+    expect(setups()).toEqual([{ ...NEW, color: '#fbf6e9' }]);
+    await click(ps('line-green'));
+    await settle();
+    expect(setups().at(-1)).toEqual({ ...NEW, color: '#fbf6e9', line: '#bcdcc0' });
+    expect(q('.ps-papers [data-ps="paper-ruled"] .paper-rule')!.getAttribute('stroke')).toBe('#bcdcc0');
+    // pressed again: none
+    await click(ps('color-cream'));
+    expect([pressed('color'), ps('color-said').textContent]).toEqual([['color-none'], 'follows the theme']);
+    await settle();
+    expect(setups().at(-1)).toEqual({ ...NEW, line: '#bcdcc0' });
+    // the first swatch: none
+    await click(ps('line-none'));
+    expect([pressed('line'), ps('line-said').textContent]).toEqual([['line-none'], 'default']);
+    await settle();
+    expect(setups().at(-1)).toEqual(NEW);
+    // `use for new notebooks` takes the colours with the rest
+    await click(ps('color-dark'));
+    await click(ps('line-blue'));
+    await click(ps('keep'));
+    expect(asked.filter((a) => a[0] === 'keepSetup')).toEqual([['keepSetup', { ...NEW, color: '#1c1c1e', line: '#b5d2f2' }]]);
+  });
+
+  it('says the colours the file says: one offered by its name, any other as the wheel\'s own', async () => {
+    await mount(panel({ paper: 'grid', color: '#1c1c1e', line: '#123456' }));
+    expect([pressed('color'), ps('color-said').textContent]).toEqual([['color-dark'], 'dark']);
+    expect([pressed('line'), ps('line-said').textContent, ps('line-wheel').dataset.color]).toEqual([['line-wheel'], '#123456', '#123456']);
+    // changed by another hand
+    await act(async () => { root!.render(panel({ paper: 'grid', line: '#f0c2c2' })); await wait(); });
+    expect([pressed('color'), pressed('line')]).toEqual([['color-none'], ['line-red']]);
+    // the wheel keeps the colour it had, and a press on it chooses that again
+    expect(ps('line-wheel').dataset.color).toBe('#123456');
+    await click(ps('line-wheel'));
+    await settle();
+    expect(setups()).toEqual([{ ...NEW, paper: 'grid', line: '#123456' }]);
+  });
+
+  it('on a Mac the wheel is the browser\'s colour field, live; on a device the system\'s, from the swatch, with the colour in use', async () => {
+    useApp.setState({ mobile: false });
+    await mount(panel());
+    const field = ps<HTMLInputElement>('color-input');
+    expect([field.type, field.value, field.getAttribute('aria-label')]).toEqual(['color', '#ffffff', 'paper colour: colours']);
+    let shown = 0;
+    (field as unknown as { showPicker(): void }).showPicker = () => { shown += 1; };
+    await click(ps('color-wheel'));
+    expect([shown, said('ink_color')]).toEqual([1, []]);
+    await slide('color-input', '#aabbcc' as unknown as number);
+    expect([pressed('color'), ps('color-said').textContent]).toEqual([['color-wheel'], '#aabbcc']);
+    await settle();
+    expect(setups()).toEqual([{ ...NEW, color: '#aabbcc' }]);
+    act(() => root!.unmount());
+    root = null;
+    asked.length = 0;
+    useApp.setState({ mobile: true });
+    try {
+      await mount(panel({ color: '#fbf6e9' }));
+      expect(q('[data-ps="color-input"]')).toBeNull();
+      answers.ink_color = () => ({ color: '#DDEEFF' });
+      await click(ps('line-wheel'));
+      expect(said('ink_color')).toEqual([{ color: '#c3cfdd', at: { x: 0, y: 0, w: 0, h: 0 } }]);
+      expect([pressed('line'), ps('line-said').textContent]).toEqual([['line-wheel'], '#ddeeff']);
+      await settle();
+      expect(setups()).toEqual([{ ...NEW, color: '#fbf6e9', line: '#ddeeff' }]);
+      // closed with none chosen: as it was
+      answers.ink_color = () => ({ color: null });
+      await click(ps('line-wheel'));
+      await settle();
+      expect([said('ink_color').length, setups().length, pressed('line')]).toEqual([2, 1, ['line-wheel']]);
+    } finally { useApp.setState({ mobile: true }); }
+  });
+
+  it('a sheet is drawn in its colours as the theme has them, and says when its ink is drawn the dark way', async () => {
+    const look = () => { const s = host.querySelector('svg.paper')!; return [s.querySelector('.paper-sheet')!.getAttribute('fill'), s.querySelector('.paper-rule:not(.paper-margin)')!.getAttribute('stroke'), s.querySelector('.paper-margin')!.getAttribute('stroke'), s.getAttribute('data-ink-dark')]; };
+    await mount(createElement(PaperSheet, { spec: paperOf({ paper: 'ruled', margin: 90 }) }));
+    expect(look()).toEqual(['#ffffff', '#c3cfdd', '#e7b9b9', null]);
+    // the theme changes under it
+    await act(async () => { useApp.setState({ theme: 'dark' }); await wait(); });
+    expect(look()).toEqual(['#141414', '#353f4b', '#653f3f', '1']);
+    await act(async () => { useApp.setState({ theme: 'eink' }); await wait(); });
+    expect(look()).toEqual(['#ffffff', '#8f8f8f', '#c9c9c9', null]);
+    act(() => root!.unmount());
+    host.remove();
+    // a chosen paper is itself in every theme
+    await act(async () => { useApp.setState({ theme: 'dark' }); });
+    await mount(createElement(PaperSheet, { spec: paperOf({ paper: 'ruled', margin: 90, color: '#fbf6e9', line: '#bcdcc0' }) }));
+    expect(look()).toEqual(['#fbf6e9', '#bcdcc0', '#e7b9b9', null]);
+    act(() => root!.unmount());
+    host.remove();
+    await act(async () => { useApp.setState({ theme: 'light' }); });
+    await mount(createElement(PaperSheet, { spec: paperOf({ paper: 'ruled', margin: 90, color: '#1c1c1e' }) }));
+    expect(look()).toEqual(['#1c1c1e', '#353f4b', '#653f3f', '1']);
   });
 
   it('closes by its button, esc, or a press anywhere else; a change not yet written is written as it goes', async () => {

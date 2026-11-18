@@ -299,10 +299,21 @@ export function InkBar({ id, fixed = false }: { id: string; /** Always there, wi
   );
 }
 
-/** The word that brings the row back, in the bar's first row: there while the row is tucked away. */
+/**
+ * What brings the row back, in the bar's first row: there while the row is
+ * tucked away. It is the tool in use, as the row draws it (a pen and a
+ * highlighter with the colour they write in), so the Pencil's double tap to
+ * the eraser and back shows here while the row is away.
+ */
 export function InkToggle(): JSX.Element | null {
   const pad = useApp((s) => s.mobile && !s.phone);
-  const shown = useInkTools((s) => s.kept.shown);
-  if (!pad || !hasCanvas() || shown) return null;
-  return <button type="button" className="pt-btn" data-tool="ink-tools" aria-label="show tools" title="show tools" aria-pressed="false" onClick={() => setShown(true)}><Icon name="pen" /></button>;
+  const kept = useInkTools((s) => s.kept);
+  if (!pad || !hasCanvas() || kept.shown) return null;
+  const kind = kept.tool;
+  return (
+    <button type="button" className="pt-btn ink-toggle" data-tool="ink-tools" data-kind={kind} aria-label="show tools" title="show tools" aria-pressed="false" onClick={() => setShown(true)}>
+      <Icon name={TOOL_ICON[kind]} />
+      {isInked(kind) && <span className="ib-ink" data-color={colorOf(kept, kind)} style={{ background: colorOf(kept, kind) }} />}
+    </button>
+  );
 }

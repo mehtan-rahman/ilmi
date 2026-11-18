@@ -363,8 +363,8 @@ struct Touched: Encodable {
 }
 
 struct State: Encodable {
-  let sheets: [SheetState]
-  let hosts: [HostState]
+  var sheets: [SheetState]
+  var hosts: [HostState]
   /// PencilKit's picker, which is gone: always false.
   let tools: Bool
   let tool: ToolSpec
@@ -388,6 +388,8 @@ struct State: Encodable {
   let scribble: Int
   let touched: Touched?
   let lastTouched: [Touched]
+  /// The notebooks open as surfaces of their own (87).
+  var surfaces: [SurfaceState] = []
 }
 
 /// Over the web view: takes no touch, and is told of every one first.
@@ -516,9 +518,17 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
   }
 }
 
+/// Who hears what the Pencil does: the canvases over the web view's pages, or a notebook's surface.
+protocol PenEars: AnyObject {
+  func penDown(_ t: UITouch)
+  func penMoved(_ t: UITouch)
+  func penUp(rested: TimeInterval)
+  func penJoined()
+}
+
 /// Sees the Pencil go by and takes nothing: the moment it lands and where it goes.
 final class PenWatch: UIGestureRecognizer, UIGestureRecognizerDelegate {
-  weak var plugin: InkPlugin?
+  weak var ears: PenEars?
   private var touch: UITouch?
   /// Where the touch last was when it moved more than a tremor, and when: a Pencil resting has not moved since.
   private var stillAt = CGPoint.zero
@@ -538,13 +548,13 @@ final class PenWatch: UIGestureRecognizer, UIGestureRecognizerDelegate {
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
     guard touch == nil, let t = touches.first else {
       // a second finger beside the one writing: the two scroll
-      plugin?.penJoined()
+      ears?.penJoined()
       return
     }
     touch = t
     stillAt = t.location(in: view)
     stillSince = t.timestamp
-    plugin?.penDown(t)
+    ears?.penDown(t)
   }
 
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
@@ -554,14 +564,14 @@ final class PenWatch: UIGestureRecognizer, UIGestureRecognizerDelegate {
       stillAt = p
       stillSince = t.timestamp
     }
-    plugin?.penMoved(t)
+    ears?.penMoved(t)
   }
 
   private func finish(_ touches: Set<UITouch>) {
     guard let t = touch, touches.contains(t) else { return }
     touch = nil
     state = .failed
-    plugin?.penUp(rested: t.timestamp - stillSince)
+    ears?.penUp(rested: t.timestamp - stillSince)
   }
 
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { finish(touches) }
@@ -674,8 +684,11 @@ private struct Picked {
   var drawing: PKDrawing
 }
 
-class InkPlugin: Plugin {
+class InkPlugin: Plugin, PenEars {
   private weak var web: WKWebView?
+  var webView: WKWebView? { web }
+  /// The notebooks open as surfaces of their own (87), by the name the page gives each.
+  private var surfaces: [String: NoteSurface] = [:]
   private var layer: InkLayer?
   private var watch: PenWatch?
   private var hosts: [String: Host] = [:]
@@ -689,18 +702,18 @@ class InkPlugin: Plugin {
   private var standIn = false
   /// The page's `draw with finger`: a finger writes as the Pencil does, and two scroll.
   private var finger = false
-  private var fingerWrites: Bool { standIn || finger }
+  var fingerWrites: Bool { standIn || finger }
   /// The tool held, and the ink every canvas has: the last pen or highlighter.
-  private var tool = ToolSpec(kind: "pen", color: "#000000", width: 2.2)
-  private var ink = PKInkingTool(.pen, color: .black, width: 2.2)
-  private var ours: Bool { tool.kind == "eraser" || tool.kind == "select" }
+  private(set) var tool = ToolSpec(kind: "pen", color: "#000000", width: 2.2)
+  private(set) var ink = PKInkingTool(.pen, color: .black, width: 2.2)
+  var ours: Bool { tool.kind == "eraser" || tool.kind == "select" }
   /// Every canvas's undo manager.
-  fileprivate let history = UndoManager()
+  let history = UndoManager()
   private var told = (false, false)
   private var telling = false
   private var keeping = false
   /// Until when a change is kept at once: an undo's or a redo's.
-  private var hurry: TimeInterval = 0
+  var hurry: TimeInterval = 0
   private var own: Own?
   /// A second finger came down, or the tool changed, in mid-gesture: the rest of it does nothing.
   private var spent = false
@@ -711,13 +724,13 @@ class InkPlugin: Plugin {
   private let grip = CAShapeLayer()
   private let reach = CAShapeLayer()
   /// What was cut or copied, and what it covered where it lay.
-  private var clip: [PKStroke] = []
-  private var clipBox = CGRect.zero
+  var clip: [PKStroke] = []
+  var clipBox = CGRect.zero
   /// The Pencil resting under the lasso: where, until it moves or lifts.
   private var resting: DispatchWorkItem?
   /// A stroke just ended with the Pencil resting on this sheet, which held this many strokes before it.
   private var snap: (sheet: Sheet, count: Int, until: TimeInterval)?
-  private var lastShape: String?
+  var lastShape: String?
   private var pinched: [String: CGFloat] = [:]
   /// The host two fingers are zooming, and its scroller's pan, which waits while they do.
   private weak var zooming: Host?
@@ -745,14 +758,14 @@ class InkPlugin: Plugin {
   private var lastTouched: [Touched] = []
 
   /// How long the writing is left alone before it is kept.
-  private let quietAfter = 2.5
+  let quietAfter = 2.5
   /// How near the lower edge the Pencil is when an area grows.
   private let edge: CGFloat = 72
   /// How long the Pencil rests at a stroke's end for the stroke to be a shape, and under the lasso for `paste`.
-  private let restFor = 0.42
-  private let pasteAfter = 0.55
+  let restFor = 0.42
+  let pasteAfter = 0.55
   /// How near the handle the Pencil comes down to take it, in the screen's points.
-  private let gripReach: CGFloat = 22
+  let gripReach: CGFloat = 22
 
   override func load(webview: WKWebView) {
     web = webview
@@ -878,7 +891,7 @@ class InkPlugin: Plugin {
     parent.insertSubview(l, aboveSubview: web)
     layer = l
     let w = PenWatch(target: nil, action: nil)
-    w.plugin = self
+    w.ears = self
     web.addGestureRecognizer(w)
     watch = w
     let direct = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -1119,7 +1132,7 @@ class InkPlugin: Plugin {
 
   // ── what is a Pencil here ──
 
-  private var penTypes: [NSNumber] {
+  var penTypes: [NSNumber] {
     fingerWrites ? [NSNumber(value: UITouch.TouchType.pencil.rawValue), NSNumber(value: UITouch.TouchType.direct.rawValue)] : [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
   }
 
@@ -1215,7 +1228,7 @@ class InkPlugin: Plugin {
     return CGPoint(x: p.x / z, y: p.y / z)
   }
 
-  fileprivate func penDown(_ t: UITouch) {
+  func penDown(_ t: UITouch) {
     guard isPen(t), let s = armed, let h = armedHost, layer != nil else { return }
     let now = ProcessInfo.processInfo.systemUptime
     down = true
@@ -1266,13 +1279,13 @@ class InkPlugin: Plugin {
   }
 
   /// A second finger beside the one that writes: under a tool of the plugin's own the gesture is over, and the two scroll.
-  fileprivate func penJoined() {
+  func penJoined() {
     guard down, own != nil, !spent else { return }
     spent = true
     hide(loop)
   }
 
-  fileprivate func penMoved(_ t: UITouch) {
+  func penMoved(_ t: UITouch) {
     guard down, let s = active, let h = s.host else { return }
     if var m = touched, m.moved == nil {
       m.moved = (t.timestamp - touchedAt) * 1000
@@ -1327,7 +1340,7 @@ class InkPlugin: Plugin {
     }
   }
 
-  fileprivate func penUp(rested: TimeInterval = 0) {
+  func penUp(rested: TimeInterval) {
     guard down, let s = active else { return }
     down = false
     active = nil
@@ -1385,7 +1398,7 @@ class InkPlugin: Plugin {
     }
   }
 
-  private func far(_ p: CGPoint, from a: CGPoint, to b: CGPoint) -> CGFloat {
+  func far(_ p: CGPoint, from a: CGPoint, to b: CGPoint) -> CGFloat {
     let dx = b.x - a.x, dy = b.y - a.y
     let len = dx * dx + dy * dy
     if len < 0.000001 { return hypot(p.x - a.x, p.y - a.y) }
@@ -1394,7 +1407,7 @@ class InkPlugin: Plugin {
   }
 
   /// A stroke's points as they lie in the drawing, one every `by` points along it, each with half its width.
-  private func along(_ k: PKStroke, by: CGFloat, _ f: (CGPoint, CGFloat) -> Bool) {
+  func along(_ k: PKStroke, by: CGFloat, _ f: (CGPoint, CGFloat) -> Bool) {
     let path = k.path
     if path.count == 0 { return }
     if path.count == 1 {
@@ -1528,7 +1541,7 @@ class InkPlugin: Plugin {
 
   /// A stroke as another of the same look: made a moment later, so the store knows it for a new one (a stroke's
   /// name is made of when it was drawn, where its points are and how it lies, `native/ink.m`).
-  private func renamed(_ k: PKStroke, transform: CGAffineTransform) -> PKStroke {
+  func renamed(_ k: PKStroke, transform: CGAffineTransform) -> PKStroke {
     let path = PKStrokePath(controlPoints: Array(k.path), creationDate: k.path.creationDate.addingTimeInterval(0.002))
     return PKStroke(ink: k.ink, path: path, transform: transform, mask: k.mask)
   }
@@ -1619,7 +1632,7 @@ class InkPlugin: Plugin {
   }
 
   /// The page hears what can be undone and redone, when that is not what it last heard.
-  private func historySoon() {
+  func historySoon() {
     if telling { return }
     telling = true
     DispatchQueue.main.async { [weak self] in
@@ -1633,14 +1646,14 @@ class InkPlugin: Plugin {
   }
 
   /// A sheet that may be in the undo manager is going: nothing is left to undo, so no step acts on a canvas that is gone.
-  private func forget() {
+  func forget() {
     history.removeAllActions()
     for s in sheets.values { s.stepped = false }
     historySoon()
   }
 
   /// Every sheet that has changed is kept now, not when it has been quiet: after an undo or a redo.
-  private func keepSoon() {
+  func keepSoon() {
     if keeping { return }
     keeping = true
     DispatchQueue.main.async { [weak self] in
@@ -1650,12 +1663,19 @@ class InkPlugin: Plugin {
         s.quiet?.cancel()
         self.emit(["kind": "quiet", "sheet": s.id])
       }
+      for f in self.surfaces.values {
+        for l in f.dirtyLeaves() {
+          l.quiet?.cancel()
+          self.emit(["kind": "quiet", "sheet": l.id])
+        }
+      }
     }
   }
 
-  private func turn(back: Bool) {
-    if down { return }
+  func turn(back: Bool) {
+    if down || surfaces.values.contains(where: { $0.isDown }) { return }
     unpick()
+    for f in surfaces.values { f.unpick() }
     hurry = ProcessInfo.processInfo.systemUptime + 1
     if back {
       if history.canUndo { history.undo() }
@@ -1903,6 +1923,19 @@ class InkPlugin: Plugin {
     let args = try invoke.parseArgs(SheetArgs.self)
     DispatchQueue.main.async {
       guard let s = self.sheets[args.sheet] else {
+        // a notebook's sheet on its surface (87)
+        if let (f, l) = self.leaf(args.sheet) {
+          var d = PKDrawing()
+          if let b = args.drawing, !b.isEmpty {
+            guard let data = Data(base64Encoded: b), let read = try? PKDrawing(data: data) else {
+              invoke.reject("not a drawing")
+              return
+            }
+            d = read
+          }
+          invoke.resolve(Took(took: f.fill(l, d)))
+          return
+        }
         invoke.reject("no such sheet")
         return
       }
@@ -1936,6 +1969,11 @@ class InkPlugin: Plugin {
     let args = try invoke.parseArgs(SheetArgs.self)
     DispatchQueue.main.async {
       guard let s = self.sheets[args.sheet] else {
+        if let (f, l) = self.leaf(args.sheet) {
+          let (n, data) = f.taken(l)
+          invoke.resolve(Taken(strokes: n, drawing: data))
+          return
+        }
         invoke.resolve(Taken(strokes: 0, drawing: nil))
         return
       }
@@ -1965,6 +2003,7 @@ class InkPlugin: Plugin {
     let args = try invoke.parseArgs(SheetArgs.self)
     DispatchQueue.main.async {
       self.sheets[args.sheet]?.canvas.drawing = PKDrawing()
+      if let (f, l) = self.leaf(args.sheet) { f.wipe(l) }
       invoke.resolve()
     }
   }
@@ -1986,6 +2025,7 @@ class InkPlugin: Plugin {
       self.webSeesPen(true)
       self.standIn = args.on
       self.setTouchTypes()
+      for f in self.surfaces.values { f.setTouchTypes() }
       self.armed?.canvas.drawingGestureRecognizer.isEnabled = false
       self.armed = nil
       self.armedHost = nil
@@ -2023,6 +2063,7 @@ class InkPlugin: Plugin {
         self.ink = ink
         for s in self.sheets.values { s.canvas.tool = ink }
       }
+      for f in self.surfaces.values { f.toolChanged() }
       invoke.resolve()
     }
   }
@@ -2050,6 +2091,7 @@ class InkPlugin: Plugin {
       self.webSeesPen(true)
       self.finger = args.on
       self.setTouchTypes()
+      for f in self.surfaces.values { f.setTouchTypes() }
       self.armed?.canvas.drawingGestureRecognizer.isEnabled = false
       self.armed = nil
       self.armedHost = nil
@@ -2192,6 +2234,17 @@ class InkPlugin: Plugin {
   @objc public func selection(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(SelectionArgs.self)
     DispatchQueue.main.async {
+      // what the lasso holds on a notebook's surface, where it holds something there
+      if let f = self.surfaces.values.first(where: { $0.selected > 0 }) {
+        if !f.selection(args.op, color: args.color.flatMap { colour($0) }) {
+          invoke.reject("not something done with a selection")
+          return
+        }
+        self.hurry = ProcessInfo.processInfo.systemUptime + 1
+        self.keepSoon()
+        invoke.resolve(Selected(selected: f.selected, clip: self.clip.count))
+        return
+      }
       if !self.selection(args.op, color: args.color.flatMap { colour($0) }) {
         invoke.reject(self.picked == nil ? "nothing is selected" : "not something done with a selection")
         return
@@ -2206,6 +2259,14 @@ class InkPlugin: Plugin {
   @objc public func paste(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(PasteArgs.self)
     DispatchQueue.main.async {
+      if let (f, l) = self.leaf(args.sheet) {
+        guard f.paste(on: l, at: CGPoint(x: args.x, y: args.y)) else {
+          invoke.reject("nothing was cut or copied")
+          return
+        }
+        invoke.resolve(Selected(selected: f.selected, clip: self.clip.count))
+        return
+      }
       guard let s = self.sheets[args.sheet], self.paste(on: s, at: CGPoint(x: args.x, y: args.y)) else {
         invoke.reject(self.clip.isEmpty ? "nothing was cut or copied" : "no such sheet")
         return
@@ -2260,7 +2321,9 @@ class InkPlugin: Plugin {
   @objc public func pencilDev(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(PencilArgs.self)
     DispatchQueue.main.async {
-      if args.what == "three", let h = self.hosts.values.first(where: { $0.clip.frame.height > 0 }), let web = self.web, let layer = self.layer {
+      if args.what == "three", let f = self.surfaces.values.first {
+        f.threeTapped()
+      } else if args.what == "three", let h = self.hosts.values.first(where: { $0.clip.frame.height > 0 }), let web = self.web, let layer = self.layer {
         // three fingers tapped at the middle of the pages: what the recogniser says when it sees them (no rig's three fingers are taken for a tap)
         let p = layer.convert(CGPoint(x: h.clip.frame.midX, y: h.clip.frame.midY), to: web.scrollView)
         self.emit(["kind": "fingers", "n": 3, "x": p.x, "y": p.y])
@@ -2276,6 +2339,16 @@ class InkPlugin: Plugin {
   @objc public func stroke(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(StrokeArgs.self)
     DispatchQueue.main.async {
+      if let (f, l) = self.leaf(args.sheet), args.points.count >= 1 {
+        let w = self.ink.width
+        let pts = args.points.enumerated().map { i, p in
+          PKStrokePoint(location: CGPoint(x: p[0], y: p[1]), timeOffset: Double(i) * 0.01, size: CGSize(width: p.count > 2 ? p[2] : w * 1.3, height: p.count > 2 ? p[2] : w * 1.3), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
+        }
+        self.lastShape = nil
+        f.write(l, PKStroke(ink: self.ink.ink, path: PKStrokePath(controlPoints: pts, creationDate: Date()), transform: .identity, mask: nil), rest: args.rest)
+        invoke.resolve()
+        return
+      }
       guard let s = self.sheets[args.sheet], args.points.count >= 2 else {
         invoke.reject("no such sheet")
         return
@@ -2318,6 +2391,10 @@ class InkPlugin: Plugin {
   @objc public func picture(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(PictureArgs.self)
     DispatchQueue.main.async {
+      if let (f, l) = self.leaf(args.sheet) {
+        if let made = f.pictures(l, name: args.name) { invoke.resolve(made) } else { invoke.reject("no picture") }
+        return
+      }
       guard let s = self.sheets[args.sheet] else {
         invoke.reject("no such sheet")
         return
@@ -2377,11 +2454,77 @@ class InkPlugin: Plugin {
       let hosts = self.hosts.values.sorted { $0.id < $1.id }.map { h in
         HostState(id: h.id, follows: h.scroll != nil, offset: Double(h.scroll?.contentOffset.y ?? -1), port: Box(h.clip.frame), zoomer: self.pagesLayer(of: h) != nil, layers: self.layersOver(h), phase: h.live?.phase.rawValue)
       }
-      invoke.resolve(State(sheets: sheets, hosts: hosts, tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: self.picked?.at.count ?? 0, held: heldAt, clip: self.clip.count, shape: self.lastShape, pinch: Double(self.hosts.values.compactMap { $0.live?.k }.first ?? self.pinched.values.first ?? 1), sharing: self.sharing, down: self.down, scribble: self.scribble, touched: self.touched, lastTouched: self.lastTouched))
+      let onSurface = self.surfaces.values.first(where: { $0.selected > 0 })
+      if let f = onSurface { heldAt = f.heldAt() }
+      var whole = State(sheets: sheets, hosts: hosts, tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: onSurface?.selected ?? self.picked?.at.count ?? 0, held: heldAt, clip: self.clip.count, shape: self.lastShape, pinch: Double(self.hosts.values.compactMap { $0.live?.k }.first ?? self.pinched.values.first ?? 1), sharing: self.sharing, down: self.down || self.surfaces.values.contains(where: { $0.isDown }), scribble: self.scribble, touched: self.touched, lastTouched: self.lastTouched)
+      whole.surfaces = self.surfaces.values.sorted { $0.id < $1.id }.map { $0.state() }
+      for f in self.surfaces.values.sorted(by: { $0.id < $1.id }) {
+        whole.sheets += f.sheetStates()
+        whole.hosts.append(f.hostState())
+      }
+      invoke.resolve(whole)
     }
   }
 
-  fileprivate func emit(_ m: [String: Any]) {
+  // ── a notebook's surface (87; `Surface.swift`) ──
+
+  /// A sheet of some notebook's surface, by the name its strokes are kept under.
+  func leaf(_ id: String) -> (NoteSurface, Leaf)? {
+    for f in surfaces.values { if let l = f.leaf(named: id) { return (f, l) } }
+    return nil
+  }
+
+  /// Where a notebook's pages lie and what they hold; with no place, the surface goes.
+  @objc public func surface(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(SurfaceArgs.self)
+    DispatchQueue.main.async {
+      guard let web = self.web, let parent = web.superview else {
+        invoke.reject("no web view yet")
+        return
+      }
+      guard let at = args.at else {
+        if let f = self.surfaces[args.id] {
+          f.remove()
+          self.surfaces[args.id] = nil
+        }
+        invoke.resolve()
+        return
+      }
+      let f = self.surfaces[args.id] ?? {
+        let made = NoteSurface(id: args.id, plugin: self)
+        self.surfaces[args.id] = made
+        return made
+      }()
+      // over the web view, and over the canvases' layer where there is one
+      f.take(args, on: parent, above: self.layer ?? web, at: web.scrollView.convert(at.rect, to: parent))
+      invoke.resolve()
+    }
+  }
+
+  /// A surface asked to go to a place or a zoom.
+  @objc public func surfaceDo(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(SurfaceDoArgs.self)
+    DispatchQueue.main.async {
+      guard let f = self.surfaces[args.id] else {
+        invoke.reject("no such surface")
+        return
+      }
+      switch args.op {
+      case "go":
+        if let p = args.place { f.go(p, animated: args.animated ?? false) }
+        invoke.resolve()
+      case "zoom":
+        if let z = args.zoom { f.zoom(to: CGFloat(z), animated: args.animated ?? true) }
+        invoke.resolve()
+      case "settle":
+        f.whenSharp { invoke.resolve() }
+      default:
+        invoke.reject("not something a surface does")
+      }
+    }
+  }
+
+  func emit(_ m: [String: Any]) {
     guard let web = web, let data = try? JSONSerialization.data(withJSONObject: m.mapValues { v -> Any in
       if let f = v as? CGFloat { return Double(f) }
       return v

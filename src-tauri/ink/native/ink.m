@@ -20,6 +20,9 @@
 #import <UIKit/UIKit.h>
 #endif
 
+#import <ImageIO/ImageIO.h>
+#import "stroke.h"
+
 #define INK_AVAILABLE @available(macOS 11.0, iOS 14.0, *)
 
 static int give(NSData *d, uint8_t **out, size_t *out_len) {
@@ -162,6 +165,32 @@ int ilmi_ink_join(const uint8_t *recs, size_t len, uint8_t **out, size_t *out_le
   }
 }
 
+/// The part `r` of a drawing, in its points, as a PNG on nothing, `scale` pixels to the point: every stroke drawn by
+/// `stroke.m` (87; an edge about a pixel wide, where PencilKit's own picture has it nearly two), in its light colours.
+API_AVAILABLE(macos(11.0), ios(14.0))
+static NSData *drawn(PKDrawing *d, CGRect r, double scale) {
+  size_t w = (size_t)MAX(1, ceil(r.size.width * scale)), h = (size_t)MAX(1, ceil(r.size.height * scale));
+  // (never more than a picture can hold)
+  if ((double)w * (double)h > 64e6) { double f = sqrt(64e6 / ((double)w * (double)h)); scale *= f; w = (size_t)MAX(1, ceil(r.size.width * scale)); h = (size_t)MAX(1, ceil(r.size.height * scale)); }
+  CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+  CGContextRef c = CGBitmapContextCreate(NULL, w, h, 8, 0, cs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+  CGColorSpaceRelease(cs);
+  if (!c) return nil;
+  CGContextTranslateCTM(c, 0, h);
+  CGContextScaleCTM(c, scale, -scale);
+  CGContextTranslateCTM(c, -r.origin.x, -r.origin.y);
+  ilmi_drawing_draw((__bridge void *)d, c, 0);
+  CGImageRef img = CGBitmapContextCreateImage(c);
+  CGContextRelease(c);
+  if (!img) return nil;
+  NSMutableData *png = [NSMutableData data];
+  CGImageDestinationRef to = CGImageDestinationCreateWithData((__bridge CFMutableDataRef)png, CFSTR("public.png"), 1, NULL);
+  BOOL ok = NO;
+  if (to) { CGImageDestinationAddImage(to, img, NULL); ok = CGImageDestinationFinalize(to); CFRelease(to); }
+  CGImageRelease(img);
+  return ok ? png : nil;
+}
+
 /// The drawing's own bounds and a margin, at `scale`, on nothing: the page it is shown on is the reader's. Empty for no strokes.
 int ilmi_ink_picture(const uint8_t *recs, size_t len, double scale, uint8_t **out, size_t *out_len) {
   @autoreleasepool {
@@ -170,20 +199,7 @@ int ilmi_ink_picture(const uint8_t *recs, size_t len, double scale, uint8_t **ou
       PKDrawing *d = joined(recs, len);
       if (!d) return 2;
       if (!d.strokes.count) return give([NSData data], out, out_len);
-      CGRect r = CGRectIntegral(CGRectInset(d.bounds, -12, -12));
-      __block NSData *png = nil;
-#if TARGET_OS_OSX
-      // black ink is drawn white under a dark appearance: the picture is always the light one
-      [[NSAppearance appearanceNamed:NSAppearanceNameAqua] performAsCurrentDrawingAppearance:^{
-        NSImage *img = [d imageFromRect:r scale:scale];
-        CGImageRef cg = [img CGImageForProposedRect:NULL context:nil hints:nil];
-        if (cg) png = [[[NSBitmapImageRep alloc] initWithCGImage:cg] representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
-      }];
-#else
-      [[UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleLight] performAsCurrentTraitCollection:^{
-        png = UIImagePNGRepresentation([d imageFromRect:r scale:scale]);
-      }];
-#endif
+      NSData *png = drawn(d, CGRectIntegral(CGRectInset(d.bounds, -12, -12)), scale);
       if (!png) return 2;
       return give(png, out, out_len);
     }
@@ -199,19 +215,7 @@ int ilmi_ink_page(const uint8_t *recs, size_t len, double w, double h, double sc
     if (INK_AVAILABLE) {
       PKDrawing *d = joined(recs, len);
       if (!d || !(w > 0) || !(h > 0)) return 2;
-      CGRect r = CGRectMake(0, 0, ceil(w), ceil(h));
-      __block NSData *png = nil;
-#if TARGET_OS_OSX
-      [[NSAppearance appearanceNamed:NSAppearanceNameAqua] performAsCurrentDrawingAppearance:^{
-        NSImage *img = [d imageFromRect:r scale:scale];
-        CGImageRef cg = [img CGImageForProposedRect:NULL context:nil hints:nil];
-        if (cg) png = [[[NSBitmapImageRep alloc] initWithCGImage:cg] representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
-      }];
-#else
-      [[UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleLight] performAsCurrentTraitCollection:^{
-        png = UIImagePNGRepresentation([d imageFromRect:r scale:scale]);
-      }];
-#endif
+      NSData *png = drawn(d, CGRectMake(0, 0, ceil(w), ceil(h)), scale);
       if (!png) return 2;
       return give(png, out, out_len);
     }
@@ -273,21 +277,30 @@ int ilmi_ink_sample(uint32_t lines, uint32_t per, uint32_t seed, uint8_t **out, 
 //
 // A notebook's sheets, or a PDF's pages, with what is written on them, as one PDF to pass on. Each page is drawn
 // as it is: a notebook's paper as its lines and dots (the measures are `src/app/paper.ts`'s), a PDF's page as the
-// PDF's own page (its text stays text), and the ink over it as a picture of what the strokes cover, four pixels to
-// the point, blended as the reader blends it (a highlighter leaves print dark). PencilKit draws strokes to pictures
-// alone, so the ink is the one part that is not lines.
+// PDF's own page (its text stays text), and the ink over it as shapes (87: each stroke's outline, `stroke.m`; a
+// fountain pen's and a pencil's as PencilKit's picture of them), blended as the reader blends it (a highlighter
+// leaves print dark).
 //
 // `spec` is a record a page: six little-endian doubles (width, height, in points; the paper's rule, its margin
 // rule's place or a number under 0, its top, and where the piece begins on a pageless notebook's long sheet or a
 // number under 0), a u32 paper (0 none, 1 blank, 2 ruled, 3 grid, 4 dotted), a u32 page of the PDF at `src` (from 1;
-// 0 none), two u32 lengths, and that many bytes each of stroke records as `ilmi_ink_join` takes
-// them: the page's own, and those of the sheet before it, drawn a page's height up.
+// 0 none), two u32 lengths, the paper's colour and its lines' (0xffrrggbb where one was chosen, else 0), a u32 that
+// is 1 where the paper is dark, a u32 of nothing, and that many bytes each of stroke records as `ilmi_ink_join`
+// takes them: the page's own, and those of the sheet before it, drawn a page's height up.
 
 /// A sheet's paper: `rule` between its rules, lines or dots; `margin` where a ruled sheet's margin rule stands
 /// (under 0 for none); `top` how far down a ruled sheet's first rule is; `at` how far down the long sheet of a
 /// pageless notebook this piece begins (under 0 for a page on its own). As `paperLines` has them.
-static void paper(CGContextRef c, uint32_t kind, double w, double h, double rule, double margin, double top, double at) {
-  CGContextSetRGBFillColor(c, 1, 1, 1, 1);
+static void rgb(uint32_t v, uint32_t otherwise, double *k) {
+  uint32_t u = (v >> 24) ? v : otherwise;
+  k[0] = ((u >> 16) & 0xff) / 255.0; k[1] = ((u >> 8) & 0xff) / 255.0; k[2] = (u & 0xff) / 255.0;
+}
+
+static void paper(CGContextRef c, uint32_t kind, double w, double h, double rule, double margin, double top, double at, uint32_t color, uint32_t line, int dark) {
+  // the colours a page setup chose, else white paper and its pale rules; on dark paper the rules are their dark selves
+  double pc[3], lc[3], dc[3], mc[3];
+  rgb(color, 0xffffff, pc); rgb(line, dark ? 0x353f4b : 0xc3cfdd, lc); rgb(line, dark ? 0x485462 : 0xa9b7c8, dc); rgb(0, dark ? 0x653f3f : 0xe7b9b9, mc);
+  CGContextSetRGBFillColor(c, pc[0], pc[1], pc[2], 1);
   CGContextFillRect(c, CGRectMake(0, 0, w, h));
   if (!(rule >= 2)) rule = kind == 2 ? 24 : 20;
   bool run = at >= 0;
@@ -300,7 +313,7 @@ static void paper(CGContextRef c, uint32_t kind, double w, double h, double rule
     return first + k * rule - at;
   };
   if (kind == 2 || kind == 3) {
-    CGContextSetRGBStrokeColor(c, 0xc3 / 255.0, 0xcf / 255.0, 0xdd / 255.0, 1);
+    CGContextSetRGBStrokeColor(c, lc[0], lc[1], lc[2], 1);
     CGContextSetLineWidth(c, 0.5);
     if (kind == 2) {
       double end = run ? h - 1e-6 : h - rule + 1e-6;
@@ -312,44 +325,31 @@ static void paper(CGContextRef c, uint32_t kind, double w, double h, double rule
     }
     CGContextStrokePath(c);
     if (kind == 2 && margin > 0 && margin < w) {
-      CGContextSetRGBStrokeColor(c, 0xe7 / 255.0, 0xb9 / 255.0, 0xb9 / 255.0, 1);
+      CGContextSetRGBStrokeColor(c, mc[0], mc[1], mc[2], 1);
       CGContextMoveToPoint(c, margin, 0); CGContextAddLineToPoint(c, margin, h);
       CGContextStrokePath(c);
     }
   } else if (kind == 4) {
-    CGContextSetRGBFillColor(c, 0xa9 / 255.0, 0xb7 / 255.0, 0xc8 / 255.0, 1);
+    CGContextSetRGBFillColor(c, dc[0], dc[1], dc[2], 1);
     double end = run ? h - 1e-6 : h - offY - rule + 1e-6;
     for (double y = from(offY + rule); y <= end; y += rule)
       for (double x = offX + rule; x <= w - offX - rule + 1e-6; x += rule) CGContextFillEllipseInRect(c, CGRectMake(x - 0.75, y - 0.75, 1.5, 1.5));
   }
 }
 
-/// A drawing's strokes over the page, as a picture of what of them lies on it, moved `dy` down the page.
+/// A drawing's strokes over the page, moved `dy` down it: shapes, cut to the page.
 API_AVAILABLE(macos(11.0), ios(14.0))
-static void inked(CGContextRef c, PKDrawing *d, CGRect box, double dy) {
+static void inked(CGContextRef c, PKDrawing *d, CGRect box, double dy, int dark) {
   if (!d || !d.strokes.count) return;
-  // the part of the drawing that falls on the page once it is moved
-  CGRect r = CGRectIntersection(CGRectIntegral(CGRectInset(d.bounds, -4, -4)), CGRectOffset(box, 0, -dy));
-  if (CGRectIsEmpty(r)) return;
-  __block CGImageRef img = NULL;
-#if TARGET_OS_OSX
-  [[NSAppearance appearanceNamed:NSAppearanceNameAqua] performAsCurrentDrawingAppearance:^{
-    img = CGImageRetain([[d imageFromRect:r scale:4] CGImageForProposedRect:NULL context:nil hints:nil]);
-  }];
-#else
-  [[UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleLight] performAsCurrentTraitCollection:^{
-    img = CGImageRetain([d imageFromRect:r scale:4].CGImage);
-  }];
-#endif
-  if (!img) return;
   CGContextSaveGState(c);
-  CGContextSetBlendMode(c, kCGBlendModeMultiply);
-  // a picture is drawn from its foot up
-  CGContextTranslateCTM(c, r.origin.x, r.origin.y + dy + r.size.height);
-  CGContextScaleCTM(c, 1, -1);
-  CGContextDrawImage(c, CGRectMake(0, 0, r.size.width, r.size.height), img);
+  CGContextClipToRect(c, box);
+  // (the ink as one layer laid on the page: a stroke over another is over it, and all of it darkens what is under)
+  CGContextSetBlendMode(c, dark ? kCGBlendModeScreen : kCGBlendModeMultiply);
+  CGContextBeginTransparencyLayer(c, NULL);
+  CGContextTranslateCTM(c, 0, dy);
+  ilmi_drawing_draw((__bridge void *)d, c, dark);
+  CGContextEndTransparencyLayer(c);
   CGContextRestoreGState(c);
-  CGImageRelease(img);
 }
 
 int ilmi_ink_pdf(const uint8_t *spec, size_t len, const uint8_t *src, size_t src_len, const uint8_t *out_path, size_t out_len) {
@@ -368,13 +368,14 @@ int ilmi_ink_pdf(const uint8_t *spec, size_t len, const uint8_t *src, size_t src
       if (!c) { if (from) CGPDFDocumentRelease(from); return 2; }
       int bad = 0;
       size_t at = 0;
-      while (at + 64 <= len) {
+      while (at + 80 <= len) {
         double w, h, rule, margin, top, run;
-        uint32_t kind, page, n, m;
+        uint32_t kind, page, n, m, color, line, dark;
         memcpy(&w, spec + at, 8); memcpy(&h, spec + at + 8, 8);
         memcpy(&rule, spec + at + 16, 8); memcpy(&margin, spec + at + 24, 8); memcpy(&top, spec + at + 32, 8); memcpy(&run, spec + at + 40, 8);
         memcpy(&kind, spec + at + 48, 4); memcpy(&page, spec + at + 52, 4); memcpy(&n, spec + at + 56, 4); memcpy(&m, spec + at + 60, 4);
-        at += 64;
+        memcpy(&color, spec + at + 64, 4); memcpy(&line, spec + at + 68, 4); memcpy(&dark, spec + at + 72, 4);
+        at += 80;
         if (at + n + m > len || !(w > 0) || !(h > 0)) { bad = 2; break; }
         PKDrawing *d = n ? joined(spec + at, n) : nil;
         at += n;
@@ -398,9 +399,9 @@ int ilmi_ink_pdf(const uint8_t *spec, size_t len, const uint8_t *src, size_t src
         CGContextSaveGState(c);
         CGContextTranslateCTM(c, 0, h);
         CGContextScaleCTM(c, 1, -1);
-        if (kind) paper(c, kind, w, h, rule, margin, top, run);
-        inked(c, above, box, -h);
-        inked(c, d, box, 0);
+        if (kind) paper(c, kind, w, h, rule, margin, top, run, color, line, dark != 0);
+        inked(c, above, box, -h, kind && dark);
+        inked(c, d, box, 0, kind && dark);
         CGContextRestoreGState(c);
         CGContextEndPage(c);
       }

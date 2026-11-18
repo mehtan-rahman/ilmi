@@ -510,7 +510,7 @@ describe('a notebook\'s pages put in order', () => {
 describe('a notebook\'s page setup', () => {
   let nb: string;
   let id: string;
-  const NEW = { paper: 'ruled', rule: null, margin: null, top: null, size: null, turn: null, pageless: false } as const;
+  const NEW = { paper: 'ruled', rule: null, margin: null, top: null, size: null, turn: null, pageless: false, color: null, line: null } as const;
   const head = (lines: string[]) => ['---', `written: ${id}`, ...lines, '---', ''].join('\n');
 
   it('is what its file says, and nothing where the file says nothing', async () => {
@@ -518,7 +518,8 @@ describe('a notebook\'s page setup', () => {
     await written.whenKnown(nb);
     id = (await front(nb)).written!.id;
     expect(written.setupOf((await front(nb)).written!)).toEqual(NEW);
-    expect(written.setupOf({ id, paper: 'grid', sheets: [1], rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true })).toEqual({ paper: 'grid', rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true });
+    expect(written.setupOf({ id, paper: 'grid', sheets: [1], rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true })).toEqual({ paper: 'grid', rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true, color: null, line: null });
+    expect(written.setupOf({ id, paper: 'ruled', sheets: [1], color: '#fbf6e9', line: '#c9cdd2' })).toEqual({ ...NEW, color: '#fbf6e9', line: '#c9cdd2' });
   });
 
   it('changed, the file says only what was chosen: a measure the paper has anyway is not written', async () => {
@@ -534,6 +535,25 @@ describe('a notebook\'s page setup', () => {
     await written.setSetup(nb, { size: 'a4', turn: 'landscape', pageless: true });
     expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], margin: 90, size: 'a4', turn: 'landscape', pageless: true });
     await written.setSetup(nb, { size: null, turn: null, pageless: false, margin: null });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
+  });
+
+  it('a paper colour and a line colour are written as chosen, in lowercase, and taken away again; one that is no colour is none', async () => {
+    await written.setSetup(nb, { color: '#FBF6E9' });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1', 'paper-color: #fbf6e9']));
+    await written.setSetup(nb, { line: '#c9cdd2' });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1', 'paper-color: #fbf6e9', 'paper-line: #c9cdd2']));
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], color: '#fbf6e9', line: '#c9cdd2' });
+    // a change to something else leaves them
+    await written.setSetup(nb, { rule: 18 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], rule: 18, color: '#fbf6e9', line: '#c9cdd2' });
+    // on blank paper the line's colour is kept for when it is ruled again
+    await written.setSetup(nb, { paper: 'blank' });
+    expect((await front(nb)).written).toEqual({ id, paper: 'blank', sheets: [1], color: '#fbf6e9', line: '#c9cdd2' });
+    await written.setSetup(nb, { paper: 'ruled', rule: null, color: 'cream', line: '#fff' });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
+    await written.setSetup(nb, { color: '#1c1c1e', line: '#b5d2f2' });
+    await written.setSetup(nb, { color: null, line: null });
     expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
   });
 
@@ -581,10 +601,12 @@ describe('a notebook\'s page setup', () => {
     expect(written.parseSetup('not json')).toBeNull();
     expect(written.parseSetup('null')).toBeNull();
     expect(written.parseSetup('3')).toBeNull();
-    const kept = { paper: 'dotted', rule: 28.35, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true };
+    const kept = { paper: 'dotted', rule: 28.35, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true, color: '#fbf6e9', line: '#c9cdd2' };
     expect(written.parseSetup(JSON.stringify(kept))).toEqual(kept);
     expect(written.parseSetup('{}')).toEqual(NEW);
-    expect(written.parseSetup(JSON.stringify({ paper: 'lined', rule: 2, margin: 'wide', top: 999, size: 'letter', turn: 'portrait', pageless: 'yes' }))).toEqual(NEW);
+    expect(written.parseSetup(JSON.stringify({ paper: 'lined', rule: 2, margin: 'wide', top: 999, size: 'letter', turn: 'portrait', pageless: 'yes', color: 'cream', line: 7 }))).toEqual(NEW);
+    // a colour kept in capitals is the colour
+    expect(written.parseSetup(JSON.stringify({ color: '#FBF6E9', line: '#C9CDD2' }))).toEqual({ ...NEW, color: '#fbf6e9', line: '#c9cdd2' });
   });
 
   it('`use for new notebooks`: a notebook made on this device from then on starts with it; with none kept, ruled Letter', async () => {
@@ -601,6 +623,16 @@ describe('a notebook\'s page setup', () => {
       // the notebook it was kept from is not changed by it, nor is one there already
       expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1, 2] });
       await removeNode(made);
+    } finally {
+      localStorage.removeItem(written.SETUP_KEY);
+    }
+    // its colours go with it
+    try {
+      written.keepSetup({ ...NEW, color: '#1c1c1e', line: '#b5d2f2' });
+      const dark = await written.createWritten('', 'started dark');
+      const d = (await front(dark)).written!;
+      expect(d).toEqual({ id: d.id, paper: 'ruled', sheets: [1], color: '#1c1c1e', line: '#b5d2f2' });
+      await removeNode(dark);
     } finally {
       localStorage.removeItem(written.SETUP_KEY);
     }

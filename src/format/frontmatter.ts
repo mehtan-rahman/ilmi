@@ -203,6 +203,11 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
     case 'paper-size': return stripComment(raw) === 'a4' ? { key, value: 'a4' } : null;
     case 'paper-turn': return stripComment(raw) === 'landscape' ? { key, value: 'landscape' } : null;
     case 'pageless': return stripComment(raw) === 'true' ? { key, value: true } : null;
+    case 'paper-color': case 'paper-line': {
+      // (a colour begins with `#`: nothing after it on the line is a comment)
+      const v = stripComment(raw.trim()).toLowerCase();
+      return /^#[0-9a-f]{6}$/.test(v) ? { key, value: v } : null;
+    }
   }
 }
 
@@ -374,6 +379,7 @@ export function formatField(f: Field): string {
     case 'paper-rule': case 'paper-margin': case 'paper-top': return `${f.key}: ${formatPoints(f.value)}`;
     case 'paper-size': case 'paper-turn': return `${f.key}: ${f.value}`;
     case 'pageless': return 'pageless: true';
+    case 'paper-color': case 'paper-line': return `${f.key}: ${f.value.toLowerCase()}`;
   }
 }
 
@@ -429,7 +435,9 @@ export interface Meta {
  * lines or dots are, `margin` where a margin rule stands (none without it),
  * `top` how far down the first rule is, `size` and `turn` its sheets' size
  * and whether they lie on their side (Letter, upright, without them), and
- * `pageless` that its sheets run on as one.
+ * `pageless` that its sheets run on as one. `color` is its paper's colour
+ * and `line` its ruling's (milestone 87), each `#rrggbb`; without them the
+ * paper follows the theme.
  */
 export interface WrittenMeta {
   id: string;
@@ -441,6 +449,8 @@ export interface WrittenMeta {
   size?: 'a4';
   turn?: 'landscape';
   pageless?: true;
+  color?: string;
+  line?: string;
 }
 
 /**
@@ -489,6 +499,8 @@ export function meta(doc: Doc): Meta {
       case 'paper-size': setup.size = e.value; break;
       case 'paper-turn': setup.turn = e.value; break;
       case 'pageless': setup.pageless = e.value; break;
+      case 'paper-color': setup.color = e.value; break;
+      case 'paper-line': setup.line = e.value; break;
     }
   }
   if (id !== undefined) out.written = { id, paper: paper ?? 'blank', sheets: sheets ?? [1], ...setup };

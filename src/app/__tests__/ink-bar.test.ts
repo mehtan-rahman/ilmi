@@ -1405,6 +1405,40 @@ describe('the row of tools', () => {
     expect(pop()).toBeNull();
   });
 
+  it('tucked away, the button that brings the row back is the tool in use: the Pencil\'s double tap to the eraser and back shows on it', async () => {
+    const a = await launch();
+    await show(a);
+    await press('[data-ink-do="tuck"]');
+    const toggle = () => host.querySelector<HTMLElement>('[data-tool="ink-tools"]')!;
+    const icon = () => toggle().querySelector('svg')!.outerHTML;
+    const mark = () => toggle().querySelector<HTMLElement>('.ib-ink')?.dataset.color ?? null;
+    // the icons the row itself has for its tools
+    await press('[data-tool="ink-tools"]');
+    const row = (t: string) => host.querySelector(`[data-ink-tool="${t}"] svg`)!.outerHTML;
+    const icons = { pen: row('pen'), highlighter: row('highlighter'), eraser: row('eraser'), select: row('select') };
+    expect(new Set(Object.values(icons)).size).toBe(4);
+    await press('[data-ink-do="tuck"]');
+    expect([toggle().dataset.kind, icon(), mark(), toggle().getAttribute('aria-label')]).toEqual(['pen', icons.pen, '#1c1c1e', 'show tools']);
+    // the Pencil tapped twice: the eraser, which has no colour
+    await act(async () => { a.tools.toolsHeard({ kind: 'pencil', what: 'tap', prefer: 'eraser' }); });
+    expect([toggle().dataset.kind, icon(), mark()]).toEqual(['eraser', icons.eraser, null]);
+    // and back
+    await act(async () => { a.tools.toolsHeard({ kind: 'pencil', what: 'tap', prefer: 'eraser' }); });
+    expect([toggle().dataset.kind, icon(), mark()]).toEqual(['pen', icons.pen, '#1c1c1e']);
+    // a highlighter carries its colour, and the one it is changed to
+    await act(async () => { a.tools.setTool('highlighter'); });
+    expect([toggle().dataset.kind, icon(), mark()]).toEqual(['highlighter', icons.highlighter, '#ffe03a']);
+    await act(async () => { a.tools.setSwatch('highlighter', 2); });
+    expect(mark()).toBe('#ff8fc0');
+    expect(toggle().querySelector<HTMLElement>('.ib-ink')!.style.background).not.toBe('');
+    await act(async () => { a.tools.setTool('select'); });
+    expect([toggle().dataset.kind, icon(), mark()]).toEqual(['select', icons.select, null]);
+    // the row stays away through all of it, and comes back at a press
+    expect(host.querySelector('.inkbar')).toBeNull();
+    await press('[data-tool="ink-tools"]');
+    expect(host.querySelector('.inkbar')!.getAttribute('data-tool')).toBe('select');
+  });
+
   it('stays tucked after a reload; a row that is fixed is always there and has nothing to tuck it with', async () => {
     const a = await launch();
     a.tools.setShown(false);

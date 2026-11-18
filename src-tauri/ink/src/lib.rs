@@ -175,6 +175,11 @@ pub struct PdfPage {
     pub at: Option<f64>,
     /// What is written on the sheet before, which may run past its foot onto this one.
     pub above: Vec<Vec<u8>>,
+    /// The paper's colour and its lines', as 0xrrggbb, where they were chosen (87); `dark` when the paper is dark, and
+    /// ink is drawn on it as PencilKit shows it on a dark canvas.
+    pub color: Option<u32>,
+    pub line: Option<u32>,
+    pub dark: bool,
 }
 
 /// `pages` written as one PDF at `out`: each its paper or its page of the PDF at `source`, drawn as they are, and
@@ -191,7 +196,9 @@ pub fn pages_pdf(pages: &[PdfPage], source: Option<&str>, out: &str) -> Result<(
         for v in [p.w, p.h, p.rule.unwrap_or(0.0), p.margin.unwrap_or(-1.0), p.top.unwrap_or(72.0), p.at.unwrap_or(-1.0)] {
             spec.extend_from_slice(&v.to_le_bytes());
         }
-        for v in [paper, p.source.unwrap_or(0), recs.len() as u32, above.len() as u32] {
+        // (colours: the top byte says one was chosen)
+        let colour = |c: Option<u32>| c.map(|v| 0xff00_0000 | (v & 0x00ff_ffff)).unwrap_or(0);
+        for v in [paper, p.source.unwrap_or(0), recs.len() as u32, above.len() as u32, colour(p.color), colour(p.line), u32::from(p.dark), 0] {
             spec.extend_from_slice(&v.to_le_bytes());
         }
         spec.extend_from_slice(&recs);
@@ -384,6 +391,15 @@ impl<R: Runtime> Ink<R> {
     /// A dev run's: a sheet's drawing as PencilKit draws a picture of it at the screen's own pixels, where its canvas lies now, written as `<name>.png` in the app's Documents.
     pub async fn picture(&self, sheet: &str, name: &str) -> Result<serde_json::Value, String> {
         self.call("picture", serde_json::json!({ "sheet": sheet, "name": name })).await
+    }
+    /// A notebook's pages as a surface of the system's own (87): where it lies on the page and what it holds, as
+    /// `Surface.swift` reads it; with no place, the surface goes.
+    pub async fn surface(&self, surface: serde_json::Value) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("surface", surface).await.map(|_| ())
+    }
+    /// A surface asked to go to a place or a zoom: `{ id, op, place, zoom, animated }`.
+    pub async fn surface_do(&self, ask: serde_json::Value) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("surfaceDo", ask).await.map(|_| ())
     }
     /// How the canvases stand, for the checks.
     pub async fn state(&self) -> Result<serde_json::Value, String> {

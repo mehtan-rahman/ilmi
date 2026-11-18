@@ -110,7 +110,7 @@ import { passagesOf, pointOn, sectionState, type Passage } from '../schedule/ind
 import { INKS, passageId, childDirOf, isPdfPath, type InkStroke, type Mark, type Portal, type Quad, type StoreFs } from '../vault/index.js';
 import { PAPERS, SHEET_H, SHEET_W, addSheet, addSheetAfter, addWritten, duplicateSheet, placeOfSheet as placeAmong, removeSheet, setPaper, sheetAt as sheetAmong, type PaperKind } from './written.js';
 import { InkMenu, PageGrid, PageSetup, PaperSheet, sharePages } from './PageTools.js';
-import { paperOf, sheetSize, type PaperSpec } from './paper.js';
+import { paperLook, paperOf, sheetSize, type PaperSpec } from './paper.js';
 import { InkBar, InkToggle } from './InkBar.js';
 import { redo as inkRedo, undo as inkUndo, useInkTools } from './inkTools.js';
 import { CueActions } from '../plugins/CueActions.js';
@@ -124,7 +124,8 @@ import {
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
-import { addSurface, afterScene, covered, fillSheet, hasCanvas, holdScenes, inContent, onFingers, pagePaper, pinchSheets, portOf, sceneSoon, settleSheets, type PenEvent, type SheetSpec, type Surface } from './ink.js';
+import { addSurface, afterScene, covered, fillSheet, forgetSheet, hasCanvas, holdScenes, inContent, onFingers, onLayout, onSurface, pagePaper, pinchSheets, portOf, sceneSoon, settleSheets, type Box as InkBox, type PenEvent, type SheetSpec, type Surface } from './ink.js';
+import { dropSurface, hexOf, holesOver, paperArgs, sendSurface, surfaceGo, surfaceZoom, type SurfaceMark } from './surface.js';
 import { Icon } from './icons.js';
 import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
@@ -332,6 +333,11 @@ export function pageTops(sizes: readonly { w: number; h: number }[], scale: numb
 
 interface Rect { left: number; top: number; width: number; height: number }
 
+/** Each notebook open as a surface of the system's own has a name of its own (milestone 87). */
+let surfaceSeq = 0;
+/** Room left round a notebook's pages on its surface, px at fit: as the reader leaves round a PDF's. */
+const SURFACE_PAD = { top: 18, side: 30, bottom: 80 };
+
 // ── highlights: the CSS Custom Highlight API, one registry for every lens ──
 
 type HighlightKind = 'ilmi-extract' | 'ilmi-hit' | 'ilmi-at';
@@ -418,7 +424,7 @@ const inkStore = (): StoreFs | null => {
 };
 
 /** What is written on a page, laid over it: a picture of the whole page made from its strokes, on nothing. `rev` moves when the strokes change. */
-function PageInk({ hash, page, at, w, h, rev, rect, live: canvasOn, onShown }: { hash: string; /** The page as the store knows it: a PDF's page, a notebook's sheet. */ page: number; /** Its place in the column. */ at: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
+function PageInk({ hash, page, at, w, h, rev, rect, live: canvasOn, paper, dark, onShown }: { /** A notebook's sheet: its paper, and whether that is dark, so its ink is drawn the dark way (87); a PDF's page goes by the theme. */ paper?: string | undefined; dark?: boolean; hash: string; /** The page as the store knows it: a PDF's page, a notebook's sheet. */ page: number; /** Its place in the column. */ at: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
   const [url, setUrl] = useState<string | null>(null);
   // as fine as the screen shows it at the size the page is drawn (85): zoomed into, the writing stays sharp
   const fine = inkScale(w, h, rect.width / w, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
@@ -441,7 +447,7 @@ function PageInk({ hash, page, at, w, h, rev, rect, live: canvasOn, onShown }: {
     return () => { live = false; };
   }, [hash, page, w, h, rev, fine, canvasOn]);
   useEffect(() => () => { if (shown.current) URL.revokeObjectURL(shown.current); }, []);
-  return url ? <img className="page-ink" data-page={at} data-sheet={page} data-rev={rev} data-fine={fine} data-live={canvasOn ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
+  return url ? <img className="page-ink" data-page={at} data-sheet={page} data-rev={rev} data-fine={fine} data-paper={paper} data-ink-dark={dark ? '1' : undefined} data-live={canvasOn ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
 }
 
 /** A notebook's pages, as many as it has sheets. */
@@ -487,6 +493,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const written = info?.written;
   /** Its sheets run on as one (85): no gaps, no page count, nothing to add or delete by hand; it grows as it is written on. */
   const pageless = !!written?.pageless;
+  /** A notebook's paper is dark (its own colour, or the theme's where it has none): what is written on it is drawn the dark way (87). */
+  const inkDark = useApp((s) => (written ? paperLook(written, s.theme).dark : false));
   /** The page setup's panel is up. */
   const [setup, setSetup] = useState(false);
   /** Its sheets' size, as its page setup has it (85). */
@@ -597,6 +605,19 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const vault = currentVault();
     return rel && vault && status !== 'gone' && status !== 'unreadable' ? inkStore()?.blobAt(vault.abs(rel)) ?? null : null;
   }, [rel, status, writtenId]);
+  /**
+   * On an iPad a notebook's pages are a surface of the system's own (milestone 87, `surface.ts`): one native scroll
+   * view over the place the pages would be, its scroll and its zoom the system's, its paper and ink drawn there.
+   * The bar, the menus, page setup, the overview and the box's bar stay this page's, over it.
+   */
+  const native = !!written && mobile && !phone && hasCanvas() && hash !== null;
+  const surfaceId = useMemo(() => `surface:${++surfaceSeq}`, []);
+  const [surfaceEl, setSurfaceEl] = useState<HTMLDivElement | null>(null);
+  /** What the surface last said: where the last box drawn lies (on the page), and whether the pages are moving. */
+  const [surfaceAt, setSurfaceAt] = useState<{ pend: InkBox | null; moving: boolean; lay: readonly number[] | null }>({ pend: null, moving: false, lay: null });
+  /** The zoom the surface has: what the store says is sent to it only when it is another. */
+  const surfaceZoomAt = useRef<number | null>(null);
+  const theme = useApp((s) => s.theme);
   /** What is left on the pages: the PDF's marks, read once and held (`book.ts`). */
   const marks = useMarks(hash);
   const marksRef = useRef(marks);
@@ -638,7 +659,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   useEffect(() => {
     const fs = inkStore();
     const sc = wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body');
-    if (!hash || !fs || !sc || !hasCanvas() || status !== 'ok') return;
+    if (!hash || !fs || !sc || !hasCanvas() || status !== 'ok' || native) return;
     const hostId = `pages:${id}`;
     const sheetOf = (n: number) => `p.${hash}.${n}`;
     const pageOfSheet = (sheet: string): number | null => (sheet.startsWith(`p.${hash}.`) ? Number(sheet.slice(hash.length + 3)) : null);
@@ -716,7 +737,55 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const onScroll = () => sceneSoon();
     sc.addEventListener('scroll', onScroll, { passive: true });
     return () => { sc.removeEventListener('scroll', onScroll); off(); };
-  }, [hash, status, id, sheetAt]);
+  }, [hash, status, id, sheetAt, native]);
+  // ── a notebook's surface (87): what it says, and what it is given of the store ──
+  const surfaceHears = useRef<(e: import('./ink.js').SurfaceEvent) => void>(() => {});
+  useEffect(() => {
+    const fs = inkStore();
+    if (!native || !hash || !fs) return;
+    const sheetOf = (n: number) => `p.${hash}.${n}`;
+    const pageOfSheet = (sheet: string): number | null => (sheet.startsWith(`p.${hash}.`) ? Number(sheet.slice(hash.length + 3)) : null);
+    /** The sheets the surface has asked for, each with the count its strokes were last given at. */
+    const given = new Map<number, number>();
+    const fill = (n: number) => {
+      given.set(n, inkedRef.current[n] ?? 0);
+      const sheet = sheetOf(n);
+      void fillSheet(sheet, pagePaper(fs, hash, n), () => fs.pageInkFile(hash, n, 'drawing'), true).catch((e: unknown) => { given.delete(n); console.error(e); });
+    };
+    wantedRef.current = { given, fill };
+    // what is written on its sheets is kept through the same door as a canvas's: it has no host of the page's
+    const surface: Surface = {
+      host: () => null,
+      paper(sheet) {
+        const n = pageOfSheet(sheet);
+        return n === null ? null : pagePaper(fs, hash, n);
+      },
+      async kept() { /* the surface shows what it holds */ },
+    };
+    const off = addSurface(surface);
+    const offEars = onSurface(surfaceId, (e) => {
+      if (e.what === 'want') {
+        for (const sheet of e.sheets ?? []) {
+          const n = pageOfSheet(sheet);
+          if (n === null) continue;
+          // the surface holds nothing of it yet: it is given what the store holds, whatever was given before
+          forgetSheet(sheet);
+          fill(n);
+        }
+        return;
+      }
+      surfaceHears.current(e);
+    });
+    return () => { off(); offEars(); wantedRef.current = null; };
+  }, [native, hash, surfaceId]);
+  /** The sheets the surface holds, and how one is given what the store holds. */
+  const wantedRef = useRef<{ given: Map<number, number>; fill(n: number): void } | null>(null);
+  // strokes come by a merge, or written on another device: a sheet the surface holds is given them
+  useEffect(() => {
+    const w = wantedRef.current;
+    if (!native || !w) return;
+    for (const [n, was] of w.given) if ((inked[n] ?? 0) !== was) w.fill(n);
+  }, [native, inked]);
   // ── a notebook's pages: its sheets, with nothing to load ──
   useEffect(() => {
     if (writtenId === undefined) return;
@@ -1287,6 +1356,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   }, [status, id]);
 
   const scrollTo = (n: number) => {
+    if (native) { void surfaceGo(surfaceId, { page: Math.max(first, Math.min(last, n)), y: 0 }); return; }
     const el = pageEls.current.get(Math.max(first, Math.min(last, n)));
     const sc = scroller();
     const x = sc?.scrollLeft;
@@ -1314,6 +1384,12 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const goPlace = (p: { page: number; y: number; x?: number | null }, room = 0) => {
     const sc = scroller();
     const n = Math.max(first, Math.min(last, p.page));
+    if (native) {
+      landed.current = true;
+      void surfaceGo(surfaceId, { page: n, y: p.y, x: p.x ?? null });
+      place.current = { page: n, y: p.y };
+      return;
+    }
     const el = pageEls.current.get(n);
     if (!sc || !el) return;
     const pr = el.getBoundingClientRect();
@@ -1380,12 +1456,20 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   }, [notes, loadedNotes, marks, sheets]);
   const drawnRef = useRef(drawn);
   drawnRef.current = drawn;
+  const nativeRef = useRef(native);
+  nativeRef.current = native;
+  const surfaceIdRef = useRef(surfaceId);
 
   /** Scroll the pages to a passage's first box, unless it is in view; `always` scrolls regardless. */
   const scrollToPassage = useCallback((text: string, always = false) => {
     const d = drawnRef.current.find((x) => x.key === text);
     const sc = scroller();
     const b = d?.boxes[0];
+    if (nativeRef.current) {
+      // a notebook's surface: its first box a little under the top of the view, unless it is the page in view already
+      if (b && (always || place.current?.page !== b.page)) { landed.current = true; void surfaceGo(surfaceIdRef.current, { page: b.page, y: Math.max(0, b.y - 0.06) }); }
+      return;
+    }
     const el = b ? pageEls.current.get(b.page) : undefined;
     if (!sc || !b || !el) return;
     const sr = sc.getBoundingClientRect();
@@ -1705,6 +1789,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const passageMenu = (e: React.MouseEvent, d: Drawn) => {
     e.preventDefault();
     e.stopPropagation();
+    passageMenuAt((e.currentTarget as HTMLElement).getBoundingClientRect(), d);
+  };
+  const passageMenuAt = (tr: { left: number; bottom: number }, d: Drawn) => {
     if (d.section) { goToSection(d.section, d.sectionIn); return; }
     if (!hash || !d.sched) return;
     const h = hash;
@@ -1712,7 +1799,6 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     setLit(d.key);
     const undoable = (said: string) => (undo: (() => Promise<void>) | null) => notify(said, null, undo ?? undefined);
     // under the tag itself, wherever on it the press fell
-    const tr = (e.currentTarget as HTMLElement).getBoundingClientRect();
     popMenu({ left: tr.left, top: tr.bottom + 4, bottom: tr.bottom + 4 }, [
       { label: chipWhen(sched, appNow()), act: 'passage-when' },
       d.dismissed
@@ -2641,6 +2727,146 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     }).finally(() => setPoint(null)).catch(console.error);
   };
 
+  // ── a notebook's surface (87): told where it lies and what it holds; heard ──
+  surfaceHears.current = (e) => {
+    if (e.what === 'view') {
+      if (e.page !== undefined) setCurrent(e.page);
+      if (e.top !== undefined && e.y !== undefined) {
+        place.current = { page: e.top, y: e.y };
+        placeX.current = e.x ?? null;
+        if (landed.current) places.set(id, { top: 0, at: place.current, x: placeX.current });
+      }
+      // the bar's zoom follows the fingers (its own text node, the one React holds)
+      const t = viewRef.current?.querySelector('.pt-pct')?.firstChild;
+      if (t && t.nodeType === 3 && e.zoom !== undefined) t.nodeValue = `${Math.round(e.zoom * 100)}%`;
+      const pend = e.pend ?? null;
+      const moving = !!e.moving;
+      const lay = e.lay ?? null;
+      setSurfaceAt((was) => (was.moving === moving && was.pend?.x === pend?.x && was.pend?.y === pend?.y && was.pend?.w === pend?.w && was.pend?.h === pend?.h && (was.lay?.join(' ') ?? '') === (lay?.join(' ') ?? '') ? was : { pend, moving, lay }));
+      landed.current = true;
+      return;
+    }
+    if (e.what === 'moving') { setSurfaceAt((was) => (was.moving ? was : { ...was, moving: true })); return; }
+    if (e.what === 'touch') {
+      // the pages are not this page's to be pressed: what listens for a press anywhere else (a menu, a tool's settings) is told of one there
+      const el = surfaceEl;
+      if (!el) return;
+      const init = { bubbles: true, cancelable: true, clientX: -1, clientY: -1 };
+      el.dispatchEvent(typeof PointerEvent === 'function' ? new PointerEvent('pointerdown', { ...init, pointerType: 'touch', isPrimary: true }) : new Event('pointerdown', init));
+      el.dispatchEvent(new MouseEvent('mousedown', init));
+      return;
+    }
+    if (e.what === 'zoomed') {
+      if (e.zoom === undefined) return;
+      surfaceZoomAt.current = e.zoom;
+      if (Math.abs(e.zoom - zoomRef.current) > 0.0005) setBookZoom(id, e.zoom);
+      return;
+    }
+    if (e.what === 'grow') {
+      // a notebook never runs out of paper: a stroke begun low on its last page adds the next, once for that page
+      const list = sheetsRef.current;
+      if (!list || e.sheet !== list[list.length - 1] || addedAfter.current === e.sheet) return;
+      addedAfter.current = e.sheet ?? null;
+      void addSheet(id).catch((err: unknown) => { addedAfter.current = null; console.error(err); });
+      return;
+    }
+    if (e.what === 'add') { morePage(); return; }
+    if (e.what === 'boxing') { settle(); return; }
+    if (e.what === 'boxed') {
+      if (e.page === undefined || e.x === undefined || e.y === undefined || e.w === undefined || e.h === undefined) return;
+      const b: Box = { page: e.page, x: e.x, y: e.y, w: e.w, h: e.h };
+      setPending((was) => [...was, b]);
+      return;
+    }
+    if (e.what === 'tag') {
+      const d = drawnRef.current.find((x) => x.key === e.key);
+      if (d && e.x !== undefined && e.y !== undefined) passageMenuAt({ left: e.x, bottom: e.y + (e.h ?? 0) }, d);
+      return;
+    }
+    // a tap on the pages lets go of the boxes drawn and not yet made into anything
+    if (e.what === 'tap' && st.current.pending.length) setPending([]);
+  };
+  /** The passages' boxes and the boxes drawn, as the surface draws them. */
+  const surfaceMarks = useMemo((): SurfaceMark[] => {
+    if (!native) return [];
+    const out: SurfaceMark[] = [];
+    for (const d of drawn) {
+      d.boxes.forEach((b, i) => {
+        const name = plainMath(d.name);
+        out.push({ key: d.key, page: b.page, x: b.x, y: b.y, w: b.w, h: b.h, tag: i ? `↳ ${name} (${i + 1}/${d.boxes.length})` : `§ ${name}${d.cards > 0 ? ` ◆${d.cards}` : ''}`, ...(lit === d.key ? { cur: true } : {}), ...(d.dismissed ? { dis: true } : {}), ...(flash?.text === d.key ? { flash: true } : {}) });
+      });
+    }
+    pending.forEach((b, i) => out.push({ key: `pending:${i}`, page: b.page, x: b.x, y: b.y, w: b.w, h: b.h, pending: true, ...(pending.length > 1 ? { no: i + 1 } : {}) }));
+    return out;
+  }, [native, drawn, pending, lit, flash]);
+  const surfaceOpen = useRef<{ page: number; y: number; x: number | null } | null | undefined>(undefined);
+  const sendRef = useRef<() => void>(() => {});
+  sendRef.current = () => {
+    const el = surfaceEl;
+    if (!native || !written || !hash || !el || !sheets) return;
+    const r = el.getBoundingClientRect();
+    // a tab not shown has no surface
+    if (!el.isConnected || r.width < 8 || r.height < 8) { dropSurface(surfaceId); surfaceOpen.current = undefined; return; }
+    const book = el.closest<HTMLElement>('.book');
+    const css = getComputedStyle(el);
+    const look = paperLook(written, theme);
+    // where it opens: where these pages were left, read once (it says where it is from then on)
+    if (surfaceOpen.current === undefined) { const was = places.get(id); surfaceOpen.current = was?.at ? { page: was.at.page, y: was.at.y, x: was.x } : null; }
+    const spec = paperOf(written, 0);
+    sendSurface({
+      id: surfaceId,
+      at: { x: r.left, y: r.top, w: r.width, h: r.height },
+      key: hash,
+      sheets,
+      paper: paperArgs(spec),
+      look: { ...look, desk: hexOf(css.backgroundColor, '#e9e9e9'), accent: hexOf(css.getPropertyValue('--surface-accent') || css.outlineColor, '#b58a2a'), fg: hexOf(css.color, '#333333'), line: hexOf(css.borderTopColor, '#cccccc'), tag: hexOf(book ? getComputedStyle(book).getPropertyValue('--surface-tag') || css.columnRuleColor : css.columnRuleColor, '#ffffff') },
+      pad: SURFACE_PAD,
+      zoom: zoomRef.current,
+      open: surfaceOpen.current,
+      marks: surfaceMarks,
+      holes: holesOver(el),
+      add: !pageless,
+      tagRoom: TAG_ROOM,
+    });
+  };
+  // told again whenever this draws, the page's layout changes, something is laid over the pages or taken away
+  useEffect(() => { if (native) sendRef.current(); });
+  useEffect(() => {
+    if (!native || !surfaceEl) return;
+    let timers: ReturnType<typeof setTimeout>[] = [];
+    const soon = () => {
+      for (const t of timers) clearTimeout(t);
+      // (and again as what slid or faded in comes to rest)
+      timers = [0, 140, 360, 700].map((ms) => setTimeout(() => sendRef.current(), ms));
+    };
+    const ro = new ResizeObserver(soon);
+    ro.observe(surfaceEl);
+    const mo = new MutationObserver(soon);
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open', 'data-open', 'data-on'] });
+    const off = onLayout(soon);
+    window.addEventListener('resize', soon);
+    document.addEventListener('transitionend', soon, true);
+    document.addEventListener('animationend', soon, true);
+    soon();
+    return () => {
+      for (const t of timers) clearTimeout(t);
+      ro.disconnect(); mo.disconnect(); off();
+      window.removeEventListener('resize', soon);
+      document.removeEventListener('transitionend', soon, true);
+      document.removeEventListener('animationend', soon, true);
+    };
+  }, [native, surfaceEl]);
+  useEffect(() => {
+    if (!native) return;
+    return () => { dropSurface(surfaceId); surfaceOpen.current = undefined; };
+  }, [native, surfaceId]);
+  // the bar's zoom steps, ⌘0: the surface goes to the zoom the store has, when it is not the one it said
+  useEffect(() => {
+    if (!native) return;
+    if (surfaceZoomAt.current === null) { surfaceZoomAt.current = zoom; return; }
+    if (Math.abs(surfaceZoomAt.current - zoom) > 0.0005) { surfaceZoomAt.current = zoom; void surfaceZoom(surfaceId, zoom, true); }
+  }, [native, zoom, surfaceId]);
+
   if (status === 'unreadable' && info) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">could not open this pdf</div></div></div>;
   }
@@ -2671,10 +2897,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
 
   return (
-    <div className="reader-wrap" ref={outerRef} data-wide={wide ? '1' : undefined}>
-      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} data-written={written ? '1' : undefined} data-layout={pageless ? 'pageless' : undefined} data-tools={inkRow ? '1' : undefined} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
+    <div className="reader-wrap" ref={outerRef} data-wide={wide && !native ? '1' : undefined} data-native={native ? '1' : undefined}>
+      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} data-written={written ? '1' : undefined} data-layout={pageless ? 'pageless' : undefined} data-tools={inkRow ? '1' : undefined} data-surface={native ? surfaceId : undefined} style={native ? undefined : colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
         {/* the bar over the pages, as wide as the pane whatever the page's width: what the book is, its notes, the zoom, the page, search */}
-        <div className="meta pdf-tools" data-ink={inkRow ? '1' : undefined} style={colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
+        <div className="meta pdf-tools" data-ink={inkRow ? '1' : undefined} style={native ? undefined : colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
           {/* the bar's first row: the row itself only where the tools make a second under it (an iPad); anywhere else its words are the bar's own */}
           <div className="pt-row">
           {status === 'ok' && !written && <button type="button" className="pt-btn" data-tool="contents" title="contents t" aria-label="contents" onClick={() => openContents(id)}><Icon name="menu" /></button>}
@@ -2780,7 +3006,23 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               <div className="read-edge" style={{ top: barHeight }}><span className="read-knob" /></div>
             </>
           )}
-          <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
+          {/* an iPad's notebook: its pages are a surface of the system's own, lying over this place (87); what stands on the pages is drawn here, over it */}
+          {native && (
+            <div className="note-surface" ref={setSurfaceEl} data-moving={surfaceAt.moving ? '1' : undefined}>
+              {/* where each sheet in view lies under the surface, as the surface last said: nothing is drawn here, but what asks where a page is (a menu's place, a check) finds it */}
+              {surfaceAt.lay && sheets && sheets.map((n, i) => {
+                const [x, y, w, h, pitch] = surfaceAt.lay as [number, number, number, number, number];
+                return <div key={n} className="pdf-page sheet-place" data-page={i + 1} data-sheet={n} data-paper={written?.paper} data-rule={written ? paperOf(written, i).rule : undefined} aria-hidden="true" style={{ left: x, top: y + i * pitch, width: w, height: h }} />;
+              })}
+              {surfaceAt.pend && !surfaceAt.moving && pending.length > 0 && (
+                <div data-hit="1" data-ink-over="" className="pend" style={{ left: Math.max(6, Math.min(surfaceAt.pend.x, (surfaceEl?.clientWidth ?? 9999) - 250)), top: surfaceAt.pend.y + surfaceAt.pend.h + 6 > (surfaceEl?.clientHeight ?? 9999) - 52 ? Math.max(6, surfaceAt.pend.y - 52) : surfaceAt.pend.y + surfaceAt.pend.h + 6 }}>
+                  <button type="button" data-k="e" {...press(() => void makeSection().catch(console.error))}><span className="pe-l">passage{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</span></button>
+                  <button type="button" data-k="m" {...press(() => void cardOrClip().catch(console.error))}><span className="pe-l">card</span></button>
+                </div>
+              )}
+            </div>
+          )}
+          {!native && <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (
               // a notebook's page is its sheet: known by the sheet's number, so a page deleted before it leaves it as it is
@@ -2790,6 +3032,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 data-page={base + i + 1}
                 data-sheet={sheets ? sheets[i] : undefined}
                 data-paper={written?.paper}
+                data-ink-dark={inkDark ? '1' : undefined}
                 ref={(el) => { if (el) pageEls.current.set(base + i + 1, el); else pageEls.current.delete(base + i + 1); }}
                 style={{ width: onPixel(s.w * scale, dpr), height: onPixel(s.h * scale, dpr), top: tops.at[i + 1] }}
               >
@@ -2798,7 +3041,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               </div>
             ))}
             {hash && Object.keys(inked).length > 0 && (
-              <div className="pdf-ink">
+              <div className="pdf-ink" data-paper={written?.paper} data-ink-dark={inkDark ? '1' : undefined}>
                 {sizes.map((s, i) => {
                   const n = base + i + 1;
                   // what is written on it is kept under the page's own number: a notebook's sheet
@@ -2807,7 +3050,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                   const r = page !== null && inked[page] !== undefined && (sheets ? isNear(n) : rendered.current.has(n)) ? pageRect(n) : null;
                   // (a pageless sheet's picture reaches past its foot, as its canvas does)
                   const over = pageless ? 1 + RUN_OVER : 1;
-                  return r && page !== null && <PageInk key={page} hash={hash} page={page} at={n} w={s.w} h={s.h * over} rev={inked[page]!} rect={over === 1 ? r : { ...r, height: r.height * over }} live={liveInk.has(page)} onShown={pictureShown} />;
+                  return r && page !== null && <PageInk key={page} hash={hash} page={page} at={n} w={s.w} h={s.h * over} rev={inked[page]!} rect={over === 1 ? r : { ...r, height: r.height * over }} live={liveInk.has(page)} paper={written?.paper} dark={inkDark} onShown={pictureShown} />;
                 })}
               </div>
             )}
@@ -2900,12 +3143,12 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 </div>
               )}
             </div>
-          </div>
+          </div>}
           {/* under a notebook's last page: one more */}
-          {written && status === 'ok' && !pageless && (
+          {written && status === 'ok' && !pageless && !native && (
             <button type="button" className="add-page" data-tool="add-page" style={{ width: pageW }} onClick={morePage}>add page</button>
           )}
-          {canWrite && <InkMenu host={`pages:${id}`} scroller={scrollerEl} />}
+          {canWrite && (native ? <InkMenu host={surfaceId} scroller={surfaceEl} /> : <InkMenu host={`pages:${id}`} scroller={scrollerEl} />)}
           {setup && written && bookEl && <PageSetup id={id} into={bookEl} written={written} onClose={() => setSetup(false)} />}
           {grid && bookEl && status === 'ok' && (
             <PageGrid id={id} into={bookEl} written={written} hash={hash} base={base} sizes={sizes} current={current} inked={inked} pdf={pdf}

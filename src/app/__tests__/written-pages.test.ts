@@ -20,6 +20,13 @@
 // for as fine as the screen shows it; the paper is the notebook's page setup
 // (`page setup` in `more`: its ruling, a margin, A4 or on its side, or its
 // sheets run on as one with nothing between them).
+// Milestone 87: on an iPad a notebook's pages are not this page's but one
+// surface of the system's own (`surface.ts`), laid over the place the pages
+// would be: the lens says where it lies and what it holds (its sheets by
+// their numbers, the paper, the passages' boxes), gives a sheet its strokes
+// when the surface wants them, asks it to go to a page or a zoom, and hears
+// what it says. The surface is stood in for here by what was asked of it. A
+// Mac's and a phone's notebook, and a PDF's pages anywhere, are as before.
 
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -29,8 +36,9 @@ import { Vault, storeFs, type InkStroke, type StoreFs } from '../../vault/index.
 import { memDrawing, memPagePicture, memSplit, memStore } from '../../vault/mem-store.js';
 import { passageMarksOf } from '../../pdf/index.js';
 import { emptyPanes, openTab } from '../panes.js';
-import { PAPER_DOT, PAPER_MARGIN, PAPER_RULE, PAPER_WHITE, drawPaper, paperLines, paperOf, paperPaths, ruleWidth, sheetSize } from '../paper.js';
+import { LINE_COLORS, PAPER_COLORS, PAPER_DOT, PAPER_MARGIN, PAPER_RULE, PAPER_WHITE, drawPaper, isDarkColor, paperLines, paperLook, paperOf, paperPaths, ruleWidth, sheetSize, turned } from '../paper.js';
 import { useApp, type DocInfo } from '../store.js';
+import { paperArgs, type SurfaceSpec } from '../surface.js';
 
 const ROOT = '/collections/paper';
 const NB = 'notes/lecture.md';
@@ -49,13 +57,17 @@ let fs: StoreFs;
 
 const scenes: { hosts: { id: string; sheets: { id: string; frame: { y: number; h: number }; hit?: { y: number; h: number } }[] }[] }[] = [];
 let drawn: InkStroke[] | null = null;
-/** What else the canvases were asked: to take a stroke back, to stretch with the pages. */
+/** What else the canvases were asked: to take a stroke back, to stretch with the pages, to hold a sheet's strokes; and a notebook's surface, to go somewhere. */
 const asks: { cmd: string; args: Record<string, unknown> }[] = [];
+/** What a notebook's surface was told (87): where it lies and what it holds, or its name alone when it goes. */
+const told: (SurfaceSpec | { id: string })[] = [];
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (cmd: string, args: Record<string, unknown>) => {
     if (cmd === 'ink_undo' || cmd === 'ink_redo' || cmd === 'ink_pinch') { asks.push({ cmd, args }); return cmd === 'ink_pinch' ? null : { undo: false, redo: false }; }
     if (cmd === 'ink_scene') { scenes.push(args.scene as (typeof scenes)[number]); return null; }
-    if (cmd === 'ink_fill') return { took: true };
+    if (cmd === 'ink_surface') { told.push(args.surface as SurfaceSpec); return null; }
+    if (cmd === 'ink_surface_do') { asks.push({ cmd, args }); return null; }
+    if (cmd === 'ink_fill') { asks.push({ cmd, args }); return { took: true }; }
     if (cmd === 'ink_take') { const d = drawn; drawn = null; return { strokes: d?.length ?? 0, drawing: d ? b64(memDrawing(d)) : null }; }
     if (cmd === 'ink_split') return memSplit(Uint8Array.from(atob(args.drawing as string), (c) => c.charCodeAt(0)));
     return null;
@@ -143,12 +155,15 @@ const rectOf = HTMLElement.prototype.getBoundingClientRect;
 HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
   if (this.classList.contains('pdf-page')) return new DOMRect(0, (Number(this.dataset.page) - 1) * (H + GAP), W, H);
   if (this.classList.contains('book-pages')) return new DOMRect(0, 0, W, 900);
+  // where a notebook's surface lies on an iPad: under the bar
+  if (this.classList.contains('note-surface')) return new DOMRect(0, 60, 700, 840);
   return rectOf.call(this);
 };
 HTMLElement.prototype.getClientRects = function (this: HTMLElement) { return [this.getBoundingClientRect()] as unknown as DOMRectList; };
 /** The pane's width as the lens measures it (`.reader-wrap`'s); 0, as jsdom has it, draws a page a pixel to the point whatever the zoom. */
-let pane = 0;
-Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList.contains('reader-wrap') ? pane : 0; } });
+const pane = 0;
+Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList.contains('reader-wrap') ? pane : this.classList.contains('note-surface') ? 700 : 0; } });
+Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.classList.contains('note-surface') ? 840 : 0; } });
 
 let host: HTMLDivElement;
 let root: Root | null = null;
@@ -184,8 +199,8 @@ const docsWith = (sheets: number[], paper: PaperKind = 'ruled'): Record<string, 
   [TYPED]: { type: 'note', frozen: false, cards: 0, due: 0, of: NB },
   [PDF]: { type: 'source', frozen: false, cards: 0, due: 0, pdf: PDF },
 });
-const mount = async (id: string, sheets = [1, 2, 3], paper: PaperKind = 'ruled', mobile = false) => {
-  useApp.setState({ docs: docsWith(sheets, paper), mobile, phone: false, panes: openTab(emptyPanes(), id), notice: null, bookZooms: {} });
+const mount = async (id: string, sheets = [1, 2, 3], paper: PaperKind = 'ruled', mobile = false, phone = false) => {
+  useApp.setState({ docs: docsWith(sheets, paper), mobile, phone, panes: openTab(emptyPanes(), id), notice: null, bookZooms: {} });
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
   await act(async () => { root!.render(createElement(Pdf, { id })); });
@@ -212,6 +227,7 @@ beforeEach(async () => {
   asked.after.length = 0;
   asked.again.length = 0;
   asks.length = 0;
+  told.length = 0;
   asked.setup.length = 0;
   useInkTools.setState((t) => ({ kept: { ...t.kept, shown: true } }));
   for (const n of [1, 2, 3, 4, 5]) await fs.setPageInk(ID, n, []);
@@ -310,6 +326,80 @@ describe('the paper', () => {
   });
 });
 
+describe('the colours a sheet is drawn with', () => {
+  const DARK = { paper: '#141414', rule: '#353f4b', dot: '#485462', margin: '#653f3f', dark: true };
+  const LIGHT = { paper: PAPER_WHITE, rule: PAPER_RULE, dot: PAPER_DOT, margin: PAPER_MARGIN, dark: false };
+  const EINK = { paper: '#ffffff', rule: '#8f8f8f', dot: '#8f8f8f', margin: '#c9c9c9', dark: false };
+
+  it('with none chosen the paper follows the theme: white, dark as a dark theme turns a page, grey rules on e-ink', () => {
+    for (const none of [null, undefined, {}, { color: null, line: null }, paperOf({ paper: 'ruled' }), { color: 'cream', line: '#fff' }]) {
+      expect(paperLook(none, 'light')).toEqual(LIGHT);
+      expect(paperLook(none, 'dark')).toEqual(DARK);
+      expect(paperLook(none, 'eink')).toEqual(EINK);
+    }
+    // the dark ones are what `invert(0.92) hue-rotate(180deg)` makes of the light ones
+    expect([PAPER_WHITE, PAPER_RULE, PAPER_DOT, PAPER_MARGIN].map(turned)).toEqual([DARK.paper, DARK.rule, DARK.dot, DARK.margin]);
+    expect([turned('#000000'), turned('#1c1c1e'), turned('not a colour')]).toEqual(['#ebebeb', '#d3d3d5', '#141414']);
+  });
+
+  it('a chosen paper colour is the paper in every theme, with its ruling as it reads on it', () => {
+    for (const theme of ['light', 'dark', 'eink'] as const) {
+      expect(paperLook({ color: '#fbf6e9' }, theme)).toEqual({ ...LIGHT, paper: '#fbf6e9' });
+      expect(paperLook({ color: '#1c1c1e', line: null }, theme)).toEqual({ ...DARK, paper: '#1c1c1e' });
+      // with a line chosen too, both are as chosen
+      expect(paperLook({ color: '#fbf6e9', line: '#f0c2c2' }, theme)).toEqual({ ...LIGHT, paper: '#fbf6e9', rule: '#f0c2c2', dot: '#f0c2c2' });
+      expect(paperLook({ color: '#1c1c1e', line: '#f0c2c2' }, theme)).toEqual({ ...DARK, paper: '#1c1c1e', rule: '#f0c2c2', dot: '#f0c2c2' });
+      expect(paperLook({ color: '#FBF6E9' }, theme).paper).toBe('#fbf6e9');
+    }
+    expect(paperLook(paperOf({ paper: 'grid', color: '#fbf6e9', line: '#bcdcc0' }), 'dark')).toEqual({ ...LIGHT, paper: '#fbf6e9', rule: '#bcdcc0', dot: '#bcdcc0' });
+  });
+
+  it('a chosen line colour on paper that follows the theme is as chosen where that is light, and turned with the paper where it is dark', () => {
+    expect(paperLook({ line: '#f0c2c2' }, 'light')).toEqual({ ...LIGHT, rule: '#f0c2c2', dot: '#f0c2c2' });
+    expect(paperLook({ line: '#f0c2c2' }, 'eink')).toEqual({ ...EINK, rule: '#f0c2c2', dot: '#f0c2c2' });
+    expect(paperLook({ line: '#f0c2c2' }, 'dark')).toEqual({ ...DARK, rule: turned('#f0c2c2'), dot: turned('#f0c2c2') });
+    expect(isDarkColor(turned('#f0c2c2'))).toBe(true);
+    // the paper's own, chosen, is what the dark paper has anyway
+    expect(paperLook({ line: PAPER_RULE }, 'dark').rule).toBe(DARK.rule);
+  });
+
+  it('a colour is dark when its relative luminance is under 0.4: ink on it is drawn the dark way', () => {
+    expect(['#000000', '#141414', '#1c1c1e', '#555555', '#0000ff', '#ff0000', '#808080', '#aaaaaa'].map(isDarkColor)).toEqual([true, true, true, true, true, true, true, false]);
+    expect(['#ffffff', '#fbf6e9', '#fff6c8', '#eceef0', '#00ff00', '#ffff00', '#b0b0b0'].map(isDarkColor)).toEqual([false, false, false, false, false, false, false]);
+    // (0.4 falls between these two greys)
+    expect([isDarkColor('#a9a9a9'), isDarkColor('#ababab')]).toEqual([true, false]);
+    expect([isDarkColor('black'), isDarkColor(''), isDarkColor('#1C1C1E')]).toEqual([false, false, true]);
+  });
+
+  it('the colours offered by name: five papers, five lines, the first line the paper\'s own', () => {
+    expect(PAPER_COLORS.map((c) => c.name)).toEqual(['white', 'cream', 'yellow', 'grey', 'dark']);
+    expect(LINE_COLORS.map((c) => c.name)).toEqual(['blue-grey', 'grey', 'blue', 'red', 'green']);
+    expect([PAPER_COLORS[0]!.value, PAPER_COLORS[4]!.value, LINE_COLORS[0]!.value]).toEqual(['#ffffff', '#1c1c1e', PAPER_RULE]);
+    for (const c of [...PAPER_COLORS, ...LINE_COLORS]) expect(c.value, c.name).toMatch(/^#[0-9a-f]{6}$/);
+    expect(PAPER_COLORS.map((c) => isDarkColor(c.value))).toEqual([false, false, false, false, true]);
+    expect(new Set(PAPER_COLORS.map((c) => c.value)).size + new Set(LINE_COLORS.map((c) => c.value)).size).toBe(10);
+  });
+
+  it('paper drawn onto a canvas is drawn with the colours it is given; with none, its own in the light theme', () => {
+    const rects: [string, number, number, number, number][] = [];
+    const ctx = { fillStyle: '', fillRect(x: number, y: number, w: number, h: number) { rects.push([this.fillStyle, x, y, w, h]); }, beginPath() {}, arc() {}, fill() {} };
+    const spec = paperOf({ paper: 'ruled', margin: 90 });
+    const part = { x: 50, y: 60, w: 200, h: 40 };
+    drawPaper(ctx as unknown as CanvasRenderingContext2D, spec, part, 1, paperLook(spec, 'dark'));
+    expect(rects).toEqual([['#141414', 0, 0, 200, 40], ['#353f4b', 0, 12, 200, 1], ['#353f4b', 0, 36, 200, 1], ['#653f3f', 40, 0, 1, 40]]);
+    rects.length = 0;
+    const cream = paperOf({ paper: 'ruled', margin: 90, color: '#fbf6e9', line: '#bcdcc0' });
+    drawPaper(ctx as unknown as CanvasRenderingContext2D, cream, part, 1);
+    expect(rects.map((r) => r[0])).toEqual(['#fbf6e9', '#bcdcc0', '#bcdcc0', PAPER_MARGIN]);
+    rects.length = 0;
+    drawPaper(ctx as unknown as CanvasRenderingContext2D, cream, part, 1, paperLook(cream, 'dark'));
+    expect(rects.map((r) => r[0])).toEqual(['#fbf6e9', '#bcdcc0', '#bcdcc0', PAPER_MARGIN]);
+    drawPaper(ctx as unknown as CanvasRenderingContext2D, paperOf({ paper: 'dotted', line: '#f0c2c2' }), { x: 0, y: 0, w: 60, h: 60 }, 1, paperLook({ line: '#f0c2c2' }, 'eink'));
+    expect(ctx.fillStyle).toBe('#f0c2c2');
+    expect(paperOf({ paper: 'ruled', color: '#FBF6E9', line: 'red' })).toMatchObject({ color: '#fbf6e9', line: null });
+  });
+});
+
 describe('the paper as a notebook\'s page setup says it', () => {
   it('a sheet is Letter upright unless it says A4, or on its side', () => {
     expect(sheetSize(undefined)).toEqual({ w: 612, h: 792 });
@@ -320,14 +410,14 @@ describe('the paper as a notebook\'s page setup says it', () => {
   });
 
   it('with nothing said it is the paper a new notebook has; what is said stands in for that', () => {
-    expect(paperOf({ paper: 'ruled' })).toEqual({ kind: 'ruled', w: 612, h: 792, rule: 24, margin: null, top: 72, run: false, at: 0 });
+    expect(paperOf({ paper: 'ruled' })).toEqual({ kind: 'ruled', w: 612, h: 792, rule: 24, margin: null, top: 72, run: false, at: 0, color: null, line: null });
     expect(paperOf({ paper: 'grid' })).toMatchObject({ kind: 'grid', rule: 20, margin: null });
     expect(paperOf({ paper: 'dotted' }).rule).toBe(20);
     for (const kind of ['blank', 'ruled', 'grid', 'dotted'] as const) {
       expect(paperLines(paperOf({ paper: kind }))).toEqual(paperLines(kind));
       expect(paperPaths(paperOf({ paper: kind }))).toEqual(paperPaths(kind));
     }
-    expect(paperOf({ paper: 'ruled', rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape' })).toEqual({ kind: 'ruled', w: 842, h: 595, rule: 30, margin: 90, top: 100, run: false, at: 0 });
+    expect(paperOf({ paper: 'ruled', rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape' })).toEqual({ kind: 'ruled', w: 842, h: 595, rule: 30, margin: 90, top: 100, run: false, at: 0, color: null, line: null });
     // a margin rule is a ruled sheet's alone
     expect(paperOf({ paper: 'grid', margin: 90 }).margin).toBeNull();
     expect(paperOf({ paper: 'dotted', margin: 90 }).margin).toBeNull();
@@ -460,6 +550,35 @@ describe('a written notebook in the lens', () => {
       expect(q('svg.paper .paper-dot') !== null).toBe(kind === 'dotted');
     }
     expect(q('svg.paper .paper-dot')).toBeNull();
+  });
+
+  it('a sheet, its ink\'s layer and each picture say when the paper is dark, by the paper and not by the theme alone', async () => {
+    await fs.setPageInk(ID, 1, [stroke(1)]);
+    await mount(NB, [1, 2], 'ruled');
+    const marks = () => [pageEl(1).dataset.inkDark, pageEl(2).dataset.inkDark, q<HTMLElement>('.pdf-ink')!.dataset.inkDark, q<HTMLElement>('img.page-ink')!.dataset.inkDark].map((v) => v ?? null);
+    const paper = () => [q('svg.paper .paper-sheet')!.getAttribute('fill'), q('svg.paper .paper-rule')!.getAttribute('stroke')];
+    const setup = (more: Record<string, unknown>) => act(async () => { useApp.setState((s) => ({ docs: { ...s.docs, [NB]: { ...s.docs[NB]!, written: { id: ID, paper: 'ruled', sheets: [1, 2], ...more } } } })); });
+    // a notebook's layer and pictures are known as paper's, so the theme's rule for a PDF's pages leaves them be
+    expect([q<HTMLElement>('.pdf-ink')!.dataset.paper, q<HTMLElement>('img.page-ink')!.dataset.paper]).toEqual(['ruled', 'ruled']);
+    expect([marks(), paper()]).toEqual([[null, null, null, null], ['#ffffff', '#c3cfdd']]);
+    try {
+      // paper that follows a dark theme is dark
+      await act(async () => { useApp.setState({ theme: 'dark' }); });
+      expect([marks(), paper()]).toEqual([['1', '1', '1', '1'], ['#141414', '#353f4b']]);
+      // a light paper chosen is light there too, its ink as written
+      await setup({ color: '#fbf6e9', line: '#bcdcc0' });
+      expect([marks(), paper()]).toEqual([[null, null, null, null], ['#fbf6e9', '#bcdcc0']]);
+      await act(async () => { useApp.setState({ theme: 'light' }); });
+      // a dark paper chosen is dark in the light theme
+      await setup({ color: '#1c1c1e' });
+      expect([marks(), paper()]).toEqual([['1', '1', '1', '1'], ['#1c1c1e', '#353f4b']]);
+      await act(async () => { useApp.setState({ theme: 'eink' }); });
+      expect(marks()).toEqual(['1', '1', '1', '1']);
+      await setup({});
+      expect([marks(), paper()]).toEqual([[null, null, null, null], ['#ffffff', '#8f8f8f']]);
+    } finally {
+      await act(async () => { useApp.setState({ theme: 'light' }); });
+    }
   });
 
   it('has none of what a PDF\'s text gives, and those keys do nothing', async () => {
@@ -789,9 +908,17 @@ describe('a written notebook in the lens', () => {
   });
 });
 
-describe('a written notebook under the Pencil', () => {
-  const lastHost = () => scenes.at(-1)!.hosts[0]!;
+/** The surface a notebook's pages are on an iPad (87): what it was last told, its name, and something said by it. */
+const spec = () => told.filter((t): t is SurfaceSpec => 'sheets' in t).at(-1)!;
+const sid = () => q<HTMLElement>('.pdf-view')!.dataset.surface!;
+const says = (what: string, more: Record<string, unknown> = {}) => pencil({ kind: 'surface', id: sid(), what, ...more });
+/** The sheets given their strokes, in the sheets' order; and what the surface was asked to do. */
+const fills = () => asks.filter((a) => a.cmd === 'ink_fill').map((a) => a.args).sort((a, b) => String(a.sheet).localeCompare(String(b.sheet)));
+const does = () => asks.filter((a) => a.cmd === 'ink_surface_do').map((a) => a.args.ask);
+const unmount = () => { act(() => root?.unmount()); root = null; host.remove(); };
+const forget = () => act(async () => { const { putPassage } = await import('../passages.js'); for (const b of await marksNow()) await putPassage(ID, b, null); });
 
+describe('a written notebook under the Pencil', () => {
   it('has the tools as the bar\'s second row and no words about an ipad; a phone has neither', async () => {
     await mount(NB, [1, 2, 3], 'ruled', true);
     expect(q('.pt-readonly')).toBeNull();
@@ -809,10 +936,11 @@ describe('a written notebook under the Pencil', () => {
     expect(q('.meta [data-tool="ink-tools"], .meta [data-tool="pages"]')).toBeNull();
   });
 
-  it('with the tools tucked away the bar is one row again, and the sheets are still the Pencil\'s', async () => {
-    // (sheets no other test here has: a scene said before is not said again)
+  it('with the tools tucked away the bar is one row again, and the pages are still the surface\'s', async () => {
     await mount(NB, [2, 3], 'ruled', true);
     await wait(20);
+    const was = sid();
+    expect(spec().id).toBe(was);
     await act(async () => { useInkTools.setState((t) => ({ kept: { ...t.kept, shown: false } })); });
     await wait(20);
     const meta = q<HTMLElement>('.meta.pdf-tools')!;
@@ -822,193 +950,302 @@ describe('a written notebook under the Pencil', () => {
     expect(Array.from(meta.children).map((c) => c.className)).toEqual(['pt-row']);
     expect(q('.meta [data-tool="ink-tools"]')).not.toBeNull();
     expect(q('.pt-readonly')).toBeNull();
-    expect(lastHost().sheets.map((s) => s.id)).toEqual([sheetId(2), sheetId(3)]);
+    // the same surface, holding the same sheets, and never told to go
+    expect(sid()).toBe(was);
+    expect(q('.reader-wrap')!.getAttribute('data-native')).toBe('1');
+    expect(q('.note-surface')).not.toBeNull();
+    expect([spec().id, spec().sheets]).toEqual([was, [2, 3]]);
+    expect(told.every((t) => 'sheets' in t)).toBe(true);
     // shown again, the row is back
     await act(async () => { useInkTools.setState((t) => ({ kept: { ...t.kept, shown: true } })); });
     expect(q<HTMLElement>('.meta > .inkbar')!.dataset.for).toBe(NB);
   });
 
-  it('its sheets are told to the canvases under their own numbers, and what is written at place 2 is sheet 3\'s', async () => {
+  it('its pages are one surface, told where it lies, its sheets under their own numbers and their paper; none of them is drawn here', async () => {
     await mount(NB, [1, 3], 'ruled', true);
     await wait(20);
-    expect(lastHost().id).toBe(`pages:${NB}`);
-    expect(lastHost().sheets.map((s) => s.id)).toEqual([sheetId(1), sheetId(3)]);
-    expect(lastHost().sheets[1]!.frame.y).toBe(H + GAP);
-    await pencil({ kind: 'begin', sheet: sheetId(3), host: `pages:${NB}`, x: 60, y: H + GAP + 100 });
-    await pencil({ kind: 'end', sheet: sheetId(3) });
-    drawn = [stroke(1), stroke(2)];
+    expect(q<HTMLElement>('.pdf-view')!.dataset.surface).toBe(spec().id);
+    expect(spec()).toMatchObject({ at: { x: 0, y: 60, w: 700, h: 840 }, key: ID, sheets: [1, 3], zoom: 1, marks: [], holes: [], add: true });
+    expect(spec().paper).toEqual(paperArgs(paperOf(written(), 0)));
+    expect(spec().paper).toEqual({ kind: 'ruled', w: W, h: H, rule: 24, margin: null, top: 72, run: false });
+    // the place it lies over, and nothing of the pages themselves: no column, no paper, no picture of the writing, no `add page`
+    expect(q('.doc-wrap > .note-surface')).not.toBeNull();
+    expect(q('.pdf-pages, svg.paper, img.page-ink, button.add-page, .pdf-page')).toBeNull();
+    // and no canvas is asked to lie over a page
+    expect(scenes.flatMap((s) => s.hosts)).toEqual([]);
+    // the bar is the lens's still
+    expect(q('.meta .pt-page')!.textContent).toBe('p. 1 / 2');
+    // a sheet added is told; what is told once is not told again
+    const n = told.length;
+    await act(async () => { useApp.setState((s) => ({ docs: { ...s.docs, [NB]: { ...s.docs[NB]!, written: { ...written(), sheets: [1, 3, 4] } } } })); });
+    await wait(20);
+    expect(spec().sheets).toEqual([1, 3, 4]);
+    expect(told.length).toBe(n + 1);
+    await act(async () => { useApp.setState({ notice: null }); });
+    await wait(20);
+    expect(told.length).toBe(n + 1);
+  });
+
+  it('a sheet the surface wants is given what the store holds, under its own number, and again when that changes; one it has not asked for is given nothing', async () => {
+    await fs.setPageInk(ID, 1, [stroke(1)]);
+    await mount(NB, [1, 3, 4], 'ruled', true);
+    await wait(20);
+    expect(fills()).toEqual([]);
+    await says('want', { sheets: [sheetId(1), sheetId(3)] });
+    await wait(40);
+    // shown as it is given; a sheet that holds nothing is told so
+    expect(fills()).toEqual([{ sheet: sheetId(1), drawing: b64(memDrawing([stroke(1)])), show: true }, { sheet: sheetId(3), drawing: null, show: true }]);
+    // what is written at place 2 is sheet 3's, and what the surface gave is not given back to it
+    asks.length = 0;
+    drawn = [stroke(2), stroke(3)];
     await pencil({ kind: 'quiet', sheet: sheetId(3) });
     await wait(60);
-    expect((await fs.pageInk(ID, 3)).map((s) => s.stroke)).toEqual(['s1', 's2']);
+    expect((await fs.pageInk(ID, 3)).map((s) => s.stroke)).toEqual(['s2', 's3']);
     expect(await fs.pageInk(ID, 2)).toEqual([]);
-    expect(await fs.inkedPages(ID)).toEqual([3]);
-    const img = q<HTMLImageElement>('img.page-ink[data-page="2"]')!;
-    expect(img.dataset.sheet).toBe('3');
-    expect([img.style.top, img.style.height]).toEqual([pageEl(2).style.top, pageEl(2).style.height]);
-    // begun high on the last page, nothing was added
+    expect(await fs.inkedPages(ID)).toEqual([1, 3]);
+    expect(fills()).toEqual([]);
+    // strokes that come from elsewhere (a merge): the sheet is given them
+    await fs.setPageInk(ID, 3, [stroke(2), stroke(3), stroke(4)]);
+    await wait(60);
+    expect(fills()).toEqual([{ sheet: sheetId(3), drawing: b64(memDrawing([stroke(2), stroke(3), stroke(4)])), show: true }]);
+    // a sheet far from the view, never asked for
+    asks.length = 0;
+    await fs.setPageInk(ID, 4, [stroke(5)]);
+    await wait(60);
+    expect(fills()).toEqual([]);
+    // wanted again (its picture was let go), it is given whatever was given before
+    await says('want', { sheets: [sheetId(1), sheetId(4), 'p.another.1'] });
+    await wait(40);
+    expect(fills().map((f) => f.sheet)).toEqual([sheetId(1), sheetId(4)]);
     expect(asked.addSheet).toBe(0);
   });
 
-  it('a pageless notebook\'s sheet is written on past its foot, so a stroke runs on over the next; its own is where the Pencil adds to it', async () => {
-    useApp.setState({ docs: docsWith([1, 2, 8]) });
+  it('a pageless notebook\'s surface is told its sheets run on as one, with no page to add', async () => {
     await mount(NB, [1, 2, 8], 'ruled', true);
     await wait(20);
-    expect(lastHost().sheets.map((s) => [s.frame.h, s.hit!.h])).toEqual([[H, H], [H, H], [H, H]]);
+    expect([spec().paper.run, spec().add]).toEqual([false, true]);
     await act(async () => { useApp.setState((s) => ({ docs: { ...s.docs, [NB]: { ...s.docs[NB]!, written: { ...written(), pageless: true } } } })); });
     await wait(40);
-    expect(lastHost().sheets.map((s) => s.id)).toEqual([sheetId(1), sheetId(2), sheetId(8)]);
-    expect(lastHost().sheets.map((s) => [s.frame.h, s.hit!.h])).toEqual([[H * 1.5, H], [H * 1.5, H], [H * 1.5, H]]);
+    expect(spec().sheets).toEqual([1, 2, 8]);
+    expect([spec().paper.run, spec().add]).toEqual([true, false]);
+    expect(spec().paper).toEqual(paperArgs(paperOf(written(), 0)));
+    expect(q<HTMLElement>('.pdf-view')!.dataset.layout).toBe('pageless');
+    expect(q('.meta .pt-page, .meta [data-tool="pages"]')).toBeNull();
   });
 
-  it('a stroke begun in the lower third of the last page adds the next, once for that page', async () => {
+  it('a stroke begun low on the last page adds the next, once for that page', async () => {
     await mount(NB, [1, 2], 'ruled', true);
     await wait(20);
-    const low = (place: number) => top(place) + H * 0.7;
     // low on a page that is not the last: nothing
-    await pencil({ kind: 'begin', sheet: sheetId(1), host: `pages:${NB}`, x: 60, y: low(1) });
-    // high on the last: nothing
-    await pencil({ kind: 'begin', sheet: sheetId(2), host: `pages:${NB}`, x: 60, y: top(2) + H * 0.5 });
+    await says('grow', { sheet: 1 });
     await wait(20);
     expect(asked.addSheet).toBe(0);
-    await pencil({ kind: 'begin', sheet: sheetId(2), host: `pages:${NB}`, x: 60, y: low(2) });
+    await says('grow', { sheet: 2 });
     await wait(30);
     expect(asked.addSheet).toBe(1);
-    expect(sheetsShown()).toEqual([1, 2, 3]);
+    expect(spec().sheets).toEqual([1, 2, 3]);
     // the same page again, no longer the last: nothing more
-    await pencil({ kind: 'begin', sheet: sheetId(2), host: `pages:${NB}`, x: 60, y: low(2) });
+    await says('grow', { sheet: 2 });
     await wait(30);
     expect(asked.addSheet).toBe(1);
     // the new last page, in its turn
-    await wait(20);
-    expect(lastHost().sheets.map((s) => s.id)).toEqual([sheetId(1), sheetId(2), sheetId(3)]);
-    await pencil({ kind: 'begin', sheet: sheetId(3), host: `pages:${NB}`, x: 60, y: low(3) });
+    await says('grow', { sheet: 3 });
     await wait(30);
     expect(asked.addSheet).toBe(2);
-    expect(sheetsShown()).toEqual([1, 2, 3, 4]);
+    expect(spec().sheets).toEqual([1, 2, 3, 4]);
+    expect(q('.meta .pt-page')!.textContent).toBe('p. 1 / 4');
   });
 });
 
-describe('two and three fingers on the pages', () => {
-  const HOST = `pages:${NB}`;
-  const pagesEl = () => q<HTMLElement>('.pdf-pages')!;
+describe('what an iPad\'s notebook hears of its surface', () => {
   const view = () => q<HTMLElement>('.pdf-view')!;
-  const pct = () => q('.meta [data-tool="zoom-fit"]')!.textContent;
+  const pct = () => q('.meta .pt-pct')!.textContent;
+  const page = () => q('.meta .pt-page')!.textContent;
   /** The book's zoom as it is kept: nothing kept is fit. */
   const zoomOf = () => useApp.getState().bookZooms[NB] ?? 1;
-  /** How the pages are stretched while the fingers are down: across, down, and by how much. */
-  const stretch = () => (pagesEl().style.transform.match(/-?[\d.]+/g) ?? []).map((v) => Math.round(Number(v) * 1000) / 1000);
-  /** What lies under a place on the screen, which jsdom cannot say: a page, unless a test says otherwise. */
-  let under: () => Element | null = () => pageEl(1);
-  beforeEach(() => { under = () => pageEl(1); document.elementFromPoint = () => under(); });
-  afterEach(() => { delete (document as { elementFromPoint?: unknown }).elementFromPoint; pane = 0; });
+  const down = (el: Element) => fire(el, new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+  const B = { page: 2, x: 0.1, y: 0.1, w: 0.5, h: 0.3 };
+  /** Where the surface says the last box lies, on the page. */
+  const AT = { x: 90, y: 200, w: 300, h: 180 };
 
-  it('two down and up at once take the last stroke back, three put it back; off the pages, or under something over them, nothing', async () => {
-    await mount(NB, [1, 2, 4], 'ruled', true);
+  it('`add page` pressed there adds one; a box a held finger drew waits under its bar, which the pages moving hides and a tap lets go of', async () => {
+    await mount(NB, [1, 3], 'ruled', true);
     await wait(20);
-    await pencil({ kind: 'fingers', n: 2, x: 300, y: 400 });
-    await pencil({ kind: 'fingers', n: 3, x: 300, y: 400 });
-    await pencil({ kind: 'fingers', n: 4, x: 300, y: 400 });
-    await wait(10);
-    expect(asks.map((a) => a.cmd)).toEqual(['ink_undo', 'ink_redo', 'ink_redo']);
-    asks.length = 0;
-    // off the scroller (it is 612 by 900 here)
-    await pencil({ kind: 'fingers', n: 2, x: 700, y: 400 });
-    await pencil({ kind: 'fingers', n: 2, x: 300, y: 950 });
-    // on the overview, on the lasso's menu, on something that is no part of the pages
-    for (const cls of ['page-grid', 'ink-menu']) {
-      const over = q('.book-pages')!.appendChild(document.createElement('div'));
-      over.className = cls;
-      under = () => over;
-      await pencil({ kind: 'fingers', n: 2, x: 300, y: 400 });
-      over.remove();
-    }
-    under = () => document.body;
-    await pencil({ kind: 'fingers', n: 2, x: 300, y: 400 });
-    under = () => null;
-    await pencil({ kind: 'fingers', n: 3, x: 300, y: 400 });
-    await wait(10);
-    expect(asks).toEqual([]);
+    await says('add');
+    await wait(20);
+    expect(asked.addSheet).toBe(1);
+    expect(spec().sheets).toEqual([1, 3, 4]);
+    // the box is the surface's to draw, as one not yet made into anything
+    await says('boxing');
+    await says('boxed', B);
+    expect(spec().marks).toEqual([{ key: 'pending:0', ...B, pending: true }]);
+    // its bar is drawn once the surface says where the box lies: passage and card, with no keys named
+    expect(q('.pend')).toBeNull();
+    await says('view', { page: 2, pages: 3, zoom: 1, top: 2, y: 0, pend: AT });
+    const bar = () => q<HTMLElement>('.note-surface > .pend');
+    expect(qa<HTMLElement>('.pend button').map((b) => [b.dataset.k, b.textContent])).toEqual([['e', 'passage'], ['m', 'card']]);
+    expect(q('.pend kbd, .pend .kbd')).toBeNull();
+    expect([bar()!.style.left, bar()!.style.top, bar()!.hasAttribute('data-ink-over')]).toEqual(['90px', '386px', true]);
+    // a box near the foot has it above
+    await says('view', { page: 2, pages: 3, zoom: 1, top: 2, y: 0, pend: { ...AT, y: 640 } });
+    expect(bar()!.style.top).toBe('588px');
+    // the pages move: gone until they rest
+    await says('view', { page: 2, pages: 3, zoom: 1, top: 2, y: 0.1, pend: AT, moving: true });
+    expect(bar()).toBeNull();
+    expect(q<HTMLElement>('.note-surface')!.dataset.moving).toBe('1');
+    await says('view', { page: 2, pages: 3, zoom: 1, top: 2, y: 0.1, pend: AT });
+    expect(bar()).not.toBeNull();
+    await says('moving');
+    expect(bar()).toBeNull();
+    await says('view', { page: 2, pages: 3, zoom: 1, top: 2, y: 0.1, pend: AT });
+    // a second box: each is numbered, and the bar says how many
+    await says('boxed', { ...B, y: 0.6, h: 0.2 });
+    expect(spec().marks).toEqual([{ key: 'pending:0', ...B, pending: true, no: 1 }, { key: 'pending:1', ...B, y: 0.6, h: 0.2, pending: true, no: 2 }]);
+    expect(q('.pend [data-k="e"]')!.textContent).toBe('passage · 2 boxes');
+    // a tap on the pages lets go of them
+    await says('tap');
+    expect(spec().marks).toEqual([]);
+    expect(bar()).toBeNull();
+    expect(await marksNow()).toEqual([]);
   });
 
-  it('a pinch stretches the pages and the canvases alike about the place between the fingers, and leaves the pages at that size', async () => {
-    pane = 700;
+  it('`passage` on the box\'s bar keeps a passage that names the sheet, not the place; `card` clips the sheet into the typed note', async () => {
+    await mount(NB, [1, 3], 'ruled', true);
+    await wait(20);
+    await says('boxed', B);
+    await says('view', { page: 2, pages: 2, zoom: 1, top: 2, y: 0, pend: AT });
+    await down(q('.pend [data-k="e"]')!);
+    await wait(60);
+    const kept = await marksNow();
+    expect(kept.map((b) => parseBoxes(b)!.map((x) => x.page))).toEqual([[3]]);
+    expect(parseBoxes(kept[0]!)![0]).toMatchObject({ page: 3, w: 0.5, h: 0.3 });
+    // the box is the passage's now, drawn where its sheet lies, and lit
+    expect(q('.pend')).toBeNull();
+    expect(spec().marks).toEqual([{ key: kept[0], ...B, tag: '§ p. 2', cur: true }]);
+    expect(useApp.getState().notice?.line).toContain('§ p. 2');
+    await forget();
+    await wait(30);
+    expect(spec().marks).toEqual([]);
+    // `card`
+    await says('boxed', B);
+    await says('view', { page: 2, pages: 2, zoom: 1, top: 2, y: 0, pend: AT });
+    await down(q('.pend [data-k="m"]')!);
+    await wait(300);
+    expect(await fs.readText(`${ROOT}/${TYPED}`)).toContain('<!-- box 3:0.100:0.100:0.500:0.300 -->');
+    expect(useApp.getState().notice?.line).toContain('clipped · p. 2');
+    expect(spec().marks).toEqual([]);
+    // the file itself was not touched for either
+    expect(await fs.readText(`${ROOT}/${NB}`)).toBe(nbText([1, 2, 3]));
+    await vault.update(TYPED, (d) => { d.blocks.splice(1); });
+  });
+
+  it('a passage kept is the surface\'s to draw, with its tag; the tag pressed there opens its menu here, and lights it', async () => {
+    await mount(NB, [1, 3], 'ruled', true);
+    await act(async () => { await keepPassage(NB, [{ page: 3, x: 0.2, y: 0.5, w: 0.3, h: 0.1 }]); await keepPassage(NB, [{ page: 2, x: 0.2, y: 0.2, w: 0.3, h: 0.1 }]); });
+    await wait(40);
+    // sheet 3's is drawn at place 2; the one on a sheet that is not there is not
+    expect(spec().marks.length).toBe(1);
+    const m = spec().marks[0]!;
+    expect(m).toMatchObject({ page: 2, x: 0.2, y: 0.5, w: 0.3, h: 0.1 });
+    expect(parseBoxes(m.key)![0]!.page).toBe(3);
+    expect(m.tag).toBe('§ p. 2');
+    expect([m.cur, m.pending, m.dis]).toEqual([undefined, undefined, undefined]);
+    // a tag that is no passage's: nothing
+    await says('tag', { key: 'pending:0', x: 400, y: 300, w: 60, h: 20 });
+    expect(menuRows()).toEqual([]);
+    await says('tag', { key: m.key, x: 400, y: 300, w: 60, h: 20 });
+    expect(menuRows().map((r) => r.dataset.act)).toEqual(['passage-when', 'passage-dismiss', 'passage-remove']);
+    expect(spec().marks[0]).toMatchObject({ key: m.key, cur: true });
+    // dismissed from there, it is drawn so
+    await click(menuRow('passage-dismiss')!);
+    await wait(60);
+    expect(spec().marks[0]).toMatchObject({ key: m.key, dis: true });
+    await forget();
+  });
+
+  it('the page in view, the zoom and the place are what the surface says; the bar\'s steps and `g` are asked of it', async () => {
     await mount(NB, [1, 2, 5], 'ruled', true);
     await wait(20);
-    const fitted = parseFloat(pageEl(1).style.width);
-    expect(fitted).toBeGreaterThan(0);
-    expect([pct(), zoomOf()]).toEqual(['100%', 1]);
-    await pencil({ kind: 'pinch', phase: 'begin', k: 1, x: 300, y: 400 });
-    expect(view().dataset.pinch).toBe('1');
-    expect(pagesEl().style.transform).toBe('');
-    await pencil({ kind: 'pinch', phase: 'change', k: 1.37, x: 300, y: 400 });
-    // only stretched while the fingers are down: nothing is laid out, the zoom is as it was, and the bar says what it would be
-    expect(stretch()).toEqual([-111, -148, 1.37]);
-    expect(pagesEl().style.transformOrigin).toBe('0 0');
-    expect([parseFloat(pageEl(1).style.width), zoomOf(), pct()]).toEqual([fitted, 1, '137%']);
-    expect(asks.at(-1)!.cmd).toBe('ink_pinch');
-    const told = asks.at(-1)!.args.pinch as { host: string; k: number; dx: number; dy: number };
-    expect([told.host, told.k]).toEqual([HOST, 1.37]);
-    expect(told.dx).toBeCloseTo(-111);
-    expect(told.dy).toBeCloseTo(-148);
-    // the fingers moved together: the place taken is under them still
-    await pencil({ kind: 'pinch', phase: 'change', k: 1.37, x: 320, y: 380 });
-    expect(stretch()).toEqual([-91, -168, 1.37]);
-    await pencil({ kind: 'pinch', phase: 'end', k: 1.37, x: 320, y: 380 });
-    await wait(30);
-    // let go anywhere between the least and the most: that is the zoom, and the pages are laid out at it
-    expect(view().dataset.pinch).toBeUndefined();
-    expect(zoomOf()).toBe(1.37);
-    expect(pct()).toBe('137%');
-    expect(view().dataset.zoom).toBe('1.37');
-    expect(parseFloat(pageEl(1).style.width)).toBeCloseTo(fitted * 1.37);
-    expect(pagesEl().style.transform).toBe('');
-    // a step from there is the next one past it
+    expect([page(), pct(), zoomOf()]).toEqual(['p. 1 / 3', '100%', 1]);
+    expect(q('.sheet-place')).toBeNull();
+    // the pages move under two fingers: the bar says the page and what the zoom would be, and nothing is kept or asked
+    await says('view', { page: 2, pages: 3, zoom: 1.37, top: 2, y: 0.25, x: 0.5, lay: [30, 18, 640, 828, 846] });
+    expect([page(), pct(), zoomOf()]).toEqual(['p. 2 / 3', '137%', 1]);
+    expect(view().dataset.page).toBe('2');
+    // where each sheet lies under the surface is marked here, for what asks where a page is: nothing is drawn in it
+    expect(qa<HTMLElement>('.note-surface > .pdf-page.sheet-place').map((p) => [p.dataset.page, p.dataset.sheet, p.style.left, p.style.top, p.style.width, p.style.height])).toEqual([
+      ['1', '1', '30px', '18px', '640px', '828px'], ['2', '2', '30px', '864px', '640px', '828px'], ['3', '5', '30px', '1710px', '640px', '828px'],
+    ]);
+    expect(qa<HTMLElement>('.sheet-place').map((p) => [p.getAttribute('aria-hidden'), p.dataset.paper, p.childElementCount])).toEqual([['true', 'ruled', 0], ['true', 'ruled', 0], ['true', 'ruled', 0]]);
+    await says('view', { page: 2, pages: 3, zoom: 1.37, top: 2, y: 0.5, x: 0.5, lay: [10, -400, 877, 1135, 1160] });
+    expect(qa<HTMLElement>('.sheet-place').map((p) => p.style.top)).toEqual(['-400px', '760px', '1920px']);
+    // let go: that is the zoom, kept, and the surface is not asked for what it said itself
+    await says('zoomed', { zoom: 1.37 });
+    await wait(20);
+    expect([zoomOf(), pct(), view().dataset.zoom, spec().zoom]).toEqual([1.37, '137%', '1.37', 1.37]);
+    expect(does()).toEqual([]);
+    // a step from there is the next one past it, and that the surface is asked for
     await click(q('.meta [data-tool="zoom-in"]')!);
+    await wait(20);
     expect(zoomOf()).toBe(1.5);
+    expect(does()).toEqual([{ id: sid(), op: 'zoom', zoom: 1.5, animated: true }]);
+    await says('zoomed', { zoom: 1.5 });
+    await click(q('.meta [data-tool="zoom-fit"]')!);
+    await wait(20);
+    expect(does().slice(1)).toEqual([{ id: sid(), op: 'zoom', zoom: 1, animated: true }]);
+    // `g` and a page: the surface goes to its top
+    asks.length = 0;
+    await key('g');
+    const field = q<HTMLInputElement>('.pdf-bar input[type="number"]')!;
+    expect([field.min, field.max]).toEqual(['1', '3']);
+    field.value = '3';
+    await fire(field, new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await wait(20);
+    expect(does()).toEqual([{ id: sid(), op: 'go', place: { page: 3, y: 0 }, animated: false }]);
+    // past the last page is the last
+    await click(q('.meta [data-tool="page"]')!);
+    const again = q<HTMLInputElement>('.pdf-bar input[type="number"]')!;
+    again.value = '9';
+    await fire(again, new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await wait(20);
+    expect(does().at(-1)).toEqual({ id: sid(), op: 'go', place: { page: 3, y: 0 }, animated: false });
   });
 
-  it('a pinch gives a little past either end and is held to it when let go; all but fit is fit; one broken off changes nothing', async () => {
-    pane = 700;
-    await mount(NB, [1, 2, 6], 'ruled', true);
+  it('closed, the surface is told to go by its name alone; opened again it is another, told to open where the pages were left', async () => {
+    await mount(NB, [1, 2, 5], 'ruled', true);
     await wait(20);
-    await pencil({ kind: 'pinch', phase: 'begin', k: 1, x: 300, y: 400 });
-    await pencil({ kind: 'pinch', phase: 'change', k: 10, x: 300, y: 400 });
-    expect(stretch()[2]).toBe(4.8);
-    expect(pct()).toBe('400%');
-    await pencil({ kind: 'pinch', phase: 'end', k: 10, x: 300, y: 400 });
-    await wait(30);
-    expect(zoomOf()).toBe(4);
-    // from four times, closed nearly all the way: the least
-    await pencil({ kind: 'pinch', phase: 'begin', k: 1, x: 300, y: 400 });
-    await pencil({ kind: 'pinch', phase: 'change', k: 0.01, x: 300, y: 400 });
-    expect(pct()).toBe('50%');
-    await pencil({ kind: 'pinch', phase: 'end', k: 0.01, x: 300, y: 400 });
-    await wait(30);
-    expect(zoomOf()).toBe(0.5);
-    // to within a hair of fit: fit
-    await pencil({ kind: 'pinch', phase: 'begin', k: 1, x: 300, y: 400 });
-    await pencil({ kind: 'pinch', phase: 'change', k: 2.04, x: 300, y: 400 });
-    await pencil({ kind: 'pinch', phase: 'end', k: 2.04, x: 300, y: 400 });
-    await wait(30);
-    expect(zoomOf()).toBe(1);
-    // broken off: the pages are as they were, and the canvases are told to lie as they lay
-    asks.length = 0;
-    await pencil({ kind: 'pinch', phase: 'begin', k: 1, x: 300, y: 400 });
-    await pencil({ kind: 'pinch', phase: 'change', k: 2, x: 300, y: 400 });
-    expect(stretch()[2]).toBe(2);
-    await pencil({ kind: 'pinch', phase: 'cancel', k: 2, x: 300, y: 400 });
+    const was = sid();
+    await says('view', { page: 2, pages: 3, zoom: 1, top: 2, y: 0.25, x: 0.5 });
+    await says('view', { page: 3, pages: 3, zoom: 1, top: 2, y: 0.75, x: 0.5 });
+    unmount();
+    expect(told.at(-1)).toEqual({ id: was });
+    // what it says once gone is heard by no one
+    await pencil({ kind: 'surface', id: was, what: 'add' });
+    expect(asked.addSheet).toBe(0);
+    told.length = 0;
+    await mount(NB, [1, 2, 5], 'ruled', true);
     await wait(20);
-    expect(pagesEl().style.transform).toBe('');
-    expect(view().dataset.pinch).toBeUndefined();
-    expect([zoomOf(), pct()]).toEqual([1, '100%']);
-    expect(asks.at(-1)).toEqual({ cmd: 'ink_pinch', args: { pinch: { host: HOST } } });
-    // one begun off the pages is not theirs
-    asks.length = 0;
-    await pencil({ kind: 'pinch', phase: 'begin', k: 1, x: 700, y: 400 });
-    await pencil({ kind: 'pinch', phase: 'change', k: 2, x: 700, y: 400 });
-    await pencil({ kind: 'pinch', phase: 'end', k: 2, x: 700, y: 400 });
-    expect(view().dataset.pinch).toBeUndefined();
-    expect([zoomOf(), asks]).toEqual([1, []]);
+    expect(sid()).not.toBe(was);
+    expect(spec().id).toBe(sid());
+    expect(spec().open).toEqual({ page: 2, y: 0.75, x: 0.5 });
+    expect(told.some((t) => t.id === was)).toBe(false);
+  });
+
+  it('on a Mac and on a phone there is no surface: the pages are this page\'s, as they were', async () => {
+    await mount(NB, [1, 2, 3]);
+    await wait(20);
+    const asBefore = () => [told.length, q('.note-surface'), view().dataset.surface, q('.reader-wrap')!.getAttribute('data-native'), places(), qa('.pdf-pages > .pdf-page > svg.paper').length];
+    expect(asBefore()).toEqual([0, null, undefined, null, [1, 2, 3], 3]);
+    expect(q('button.add-page')).not.toBeNull();
+    unmount();
+    await mount(NB, [1, 2, 3], 'ruled', true, true);
+    await wait(20);
+    expect(asBefore()).toEqual([0, null, undefined, null, [1, 2, 3], 3]);
+    expect(q('button.add-page')).not.toBeNull();
+    // an iPad's again (the window made wide): the surface is asked for, and the pages here go
+    await act(async () => { useApp.setState({ phone: false }); });
+    await wait(20);
+    expect([spec().sheets, view().dataset.surface, q('.pdf-pages')]).toEqual([[1, 2, 3], spec().id, null]);
   });
 });
 
@@ -1057,6 +1294,16 @@ describe('a PDF\'s pages', () => {
     expect(q<HTMLElement>('.meta > .inkbar')!.dataset.for).toBe(PDF);
     expect(q('.pt-readonly')).toBeNull();
   });
+
+  it('on an iPad are this page\'s still: no surface is asked for', async () => {
+    await mount(PDF, [1, 2, 3], 'ruled', true);
+    await wait(40);
+    expect(told).toEqual([]);
+    expect(q('.note-surface')).toBeNull();
+    expect([q<HTMLElement>('.pdf-view')!.dataset.surface, q('.reader-wrap')!.getAttribute('data-native')]).toEqual([undefined, null]);
+    expect(qa('.pdf-pages > .pdf-page').length).toBe(2);
+    expect(asks.filter((a) => a.cmd === 'ink_surface_do')).toEqual([]);
+  });
 });
 
 describe('a clip of a written page, in a note', () => {
@@ -1067,6 +1314,10 @@ describe('a clip of a written page, in a note', () => {
     fillRect(...a: number[]) { calls.push(['fillRect', this.fillStyle, ...a]); },
     drawImage(img: { said?: string }, ...a: number[]) { calls.push(['drawImage', img.said, ...a.map((n) => Math.round(n * 10) / 10)]); },
     beginPath() {}, arc() {}, fill() {},
+    // (a clip on dark paper reads its ink's pixels to turn them: black, white, and nothing)
+    globalCompositeOperation: 'source-over',
+    getImageData() { return { data: new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 0]) }; },
+    putImageData(img: { data: Uint8ClampedArray }) { calls.push(['putImageData', ...Array.from(img.data)]); },
   };
   let real: typeof import('../bookPdf.js');
   beforeAll(async () => {
@@ -1133,6 +1384,38 @@ describe('a clip of a written page, in a note', () => {
     expect(el.dataset.inked).toBe('1');
     expect(el.querySelector('canvas')).not.toBe(was);
     expect(calls.filter((c) => c[0] === 'drawImage').map((c) => c[1])).toEqual([new TextDecoder().decode(memPagePicture([stroke(6)], W, H))]);
+  });
+
+  it('is drawn in its paper\'s colours as the theme has them, its ink turned and lightening where the paper is dark; again when the theme changes', async () => {
+    await fs.setPageInk(ID, 3, [stroke(4)]);
+    const el = crop('3:0.100:0.100:0.500:0.300');
+    const box = parseBoxes('3:0.100:0.100:0.500:0.300')![0]!;
+    const picture = new TextDecoder().decode(memPagePicture([stroke(4)], W, H));
+    const drawn = () => calls.filter((c) => c[0] === 'drawImage').map((c) => c[1]);
+    try {
+      useApp.setState({ theme: 'dark' });
+      await real.drawCrop(el, NB, box, 400);
+      expect(el.dataset.inkDark).toBe('1');
+      expect([calls[0]!.slice(0, 2), calls.filter((c) => c[0] === 'fillRect' && c[1] === '#353f4b').length]).toEqual([['fillRect', '#141414'], 10]);
+      // the picture's part is drawn aside, turned (black comes out near white, white near black, nothing stays nothing), and laid on
+      expect(drawn()).toEqual([picture, undefined]);
+      expect(calls.find((c) => c[0] === 'putImageData')).toEqual(['putImageData', 235, 235, 235, 255, 20, 20, 20, 255, 0, 0, 0, 0]);
+      expect(ctx.globalCompositeOperation).toBe('source-over');
+      // the theme changed: drawn again, light, the ink as written
+      calls.length = 0;
+      const was = el.querySelector('canvas');
+      useApp.setState({ theme: 'light' });
+      for (let i = 0; i < 50 && el.dataset.inkDark !== '0'; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(el.querySelector('canvas')).not.toBe(was);
+      expect([calls[0]!.slice(0, 2), drawn(), calls.some((c) => c[0] === 'putImageData')]).toEqual([['fillRect', PAPER_WHITE], [picture], false]);
+      // a chosen paper is itself whatever the theme: a light one in the dark theme has its ink as written
+      useApp.setState({ docs: { ...useApp.getState().docs, [NB]: { ...useApp.getState().docs[NB]!, written: { ...useApp.getState().docs[NB]!.written!, color: '#fbf6e9', line: '#bcdcc0' } } }, theme: 'dark' });
+      calls.length = 0;
+      await real.drawCrop(el, NB, box, 400);
+      expect([el.dataset.inkDark, calls[0]!.slice(0, 2), calls.filter((c) => c[0] === 'fillRect' && c[1] === '#bcdcc0').length, drawn()]).toEqual(['0', ['fillRect', '#fbf6e9'], 10, [picture]]);
+    } finally {
+      useApp.setState({ theme: 'light' });
+    }
   });
 
   it('of a sheet that is gone says so', async () => {

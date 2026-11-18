@@ -420,6 +420,8 @@ dropped, with a diagnostic.
 | `paper-size`   | `a4`                        | Letter    | the size of a notebook's sheets                                    |
 | `paper-turn`   | `landscape`                 | upright   | a notebook's sheets lie on their side                              |
 | `pageless`     | `true`                      |           | a notebook's sheets run on as one, with nothing between them       |
+| `paper-color`  | `#rrggbb`                   | the theme's | the colour of a notebook's paper                                 |
+| `paper-line`   | `#rrggbb`                   | the theme's | the colour of a notebook's rules, grid lines and dots            |
 
 **Type.** A `note` is the person's own writing: editable, cards anywhere in
 it, no schedule unless asked. A `source` is what someone else wrote, read
@@ -539,7 +541,7 @@ or `sheets` that is not in its grammar is kept as a raw line with a
 diagnostic, and the default stands in. `paper` and `sheets` mean nothing
 without `written`.
 
-A notebook's page setup (milestone 85) is six more fields, each optional,
+A notebook's page setup (milestones 85, 87) is eight more fields, each optional,
 each meaning nothing without `written`, and a notebook with none of them is
 what it was before there were any: portrait Letter sheets, 612 by 792
 points, a rule every 24 points from 72 down on ruled paper, a grid or dots
@@ -556,6 +558,8 @@ paper-top: 56.69
 paper-size: a4
 paper-turn: landscape
 pageless: true
+paper-color: #fbf6e9
+paper-line: #c9cdd2
 ---
 ```
 
@@ -583,6 +587,29 @@ sheet's points, and may run past that sheet's foot onto the next: a reader
 draws a pageless sheet's strokes down to half a sheet below it. The long
 sheet grows by a sheet as it is written near its end. Taking `pageless`
 away, or putting it on a notebook already written in, moves no stroke.
+
+`paper-color` and `paper-line` are colours, each `#` and six hex digits
+(red, green, blue in sRGB), written in lowercase; a reader takes capitals
+too, and anything else is kept as a raw line with a diagnostic. Without
+`paper-color` the paper follows the reader's theme: white where the theme
+is light, dark where it is dark. With it the paper is that colour in every
+theme, as chosen. `paper-line` is the colour of the rules of ruled paper,
+the lines of a grid and the dots of dotted paper; without it they are a
+pale blue-grey on light paper and a dim one on dark, and on blank paper it
+means nothing. The margin rule keeps its own colour, a pale red, whatever
+`paper-line` says. A `paper-line` on paper that follows a dark theme is
+turned as that theme turns the paper, so it still shows; on paper whose
+colour is chosen it is drawn as chosen.
+
+Ink is drawn to be read on the paper it lies on. Paper is dark when its
+colour's relative luminance (WCAG's, of the sRGB colour) is under 0.4,
+whether the colour was chosen or is the theme's. On dark paper what is
+written is drawn the dark way: black ink shows white and white black, as
+PencilKit's dark appearance has them, and a highlighter lightens what is
+under it where on light paper it darkens it. On light paper ink is drawn
+as written, in any theme. The strokes kept are the same either way: only
+how they are shown changes, and a notebook's PDF is made the same way,
+with its paper's chosen colour (white where none is chosen).
 
 What is written is kept in a sheet's points from its top left (§1), so no
 field of the page setup moves it: another spacing or margin moves the

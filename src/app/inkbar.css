@@ -148,3 +148,8 @@
   width: max-content; min-width: 100%; max-width: calc((100cqw + 100%) / 2);
 }
 .reader:not(.pdf-view) > .inkbar .ib-grow { flex-basis: 0; }
+
+/* the row tucked away: the bar's button for it is the tool in use, a pen and a highlighter with their colour under them as on the row (87) */
+.ink-toggle { position: relative; }
+.ink-toggle:has(.ib-ink) .ic { transform: translateY(-2px); }
+.ink-toggle .ib-ink { position: absolute; left: 22%; right: 22%; bottom: 3px; height: 3px; border-radius: 2px; box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--fg) 18%, transparent); }

@@ -7,13 +7,15 @@
 // A note may be on a written notebook's sheets instead (milestone 82): there
 // is no file to load, and a crop of a sheet is its paper (`paper.ts`) with
 // what is written on that part of it, drawn again when the sheet's strokes
-// change.
+// change. It is drawn in its paper's own colours as the theme has them
+// (`paperLook`, milestone 87), its ink the dark way where the paper is dark,
+// and again when the theme changes.
 
 import { parseBox, type Box } from '../format/index.js';
 import { pageItems, uprightItems, type PageItem } from '../pdf/index.js';
 import type { StoreFs } from '../vault/index.js';
 import { loadPdf, loadPdfPieces, type PDFDocumentProxy } from './pdfjs.js';
-import { drawPaper, paperOf } from './paper.js';
+import { drawPaper, paperLook, paperOf } from './paper.js';
 import { useApp, type DocInfo } from './store.js';
 import { currentVault } from './vault.js';
 
@@ -112,6 +114,51 @@ const heard = new WeakSet<object>();
 /** Which drawing of a crop is the latest: one that finishes after a later one began is dropped. */
 const turn = new WeakMap<HTMLElement, number>();
 
+/** The theme is listened to: paper that follows it is drawn again when it changes. */
+let themed = false;
+function watchTheme(): void {
+  if (themed) return;
+  themed = true;
+  useApp.subscribe((s, was) => {
+    if (s.theme === was.theme) return;
+    for (const [el, c] of sheetCrops) {
+      if (!el.isConnected) { sheetCrops.delete(el); continue; }
+      void drawCrop(el, c.rel, c.box, c.width);
+    }
+  });
+}
+
+/**
+ * Ink as it is drawn on dark paper: `picture`'s part at `sx`, `sy`, `sw` by
+ * `sh`, `w` by `h` pixels, turned as `pdf.css` turns a page's ink there
+ * (`invert(0.92) hue-rotate(180deg)`: black comes out near white, white near
+ * black, a hue stays itself). Null where the web view will not give the
+ * pixels.
+ */
+function turnedInk(picture: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, w: number, h: number): HTMLCanvasElement | null {
+  try {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    if (!ctx || typeof ctx.getImageData !== 'function') return null;
+    ctx.drawImage(picture, sx, sy, sw, sh, 0, 0, w, h);
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      const r = 234.6 - 0.84 * d[i]!;
+      const g = 234.6 - 0.84 * d[i + 1]!;
+      const b = 234.6 - 0.84 * d[i + 2]!;
+      d[i] = -0.574 * r + 1.43 * g + 0.144 * b;
+      d[i + 1] = 0.426 * r + 0.43 * g + 0.144 * b;
+      d[i + 2] = 0.426 * r + 1.43 * g - 0.856 * b;
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  } catch { return null; }
+}
+
 function watchSheets(fs: StoreFs): void {
   if (heard.has(fs)) return;
   heard.add(fs);
@@ -153,14 +200,22 @@ async function drawSheetCrop(el: HTMLElement, rel: string, w: NonNullable<DocInf
     out.style.height = `${bh * k}px`;
     const ctx = out.getContext('2d');
     if (ctx) {
-      drawPaper(ctx, spec, part, k * dpr);
+      const look = paperLook(spec, useApp.getState().theme);
+      drawPaper(ctx, spec, part, k * dpr, look);
       // the picture is of the whole sheet, at whatever size it was made: the box's part of it
       if (picture) {
         const px = picture.width / PAPER_W;
         const py = picture.height / PAPER_H;
-        ctx.drawImage(picture, part.x * px, part.y * py, part.w * px, part.h * py, 0, 0, out.width, out.height);
+        // on dark paper the ink is turned and lightens it, as on the pages; on light paper it lies on it as written
+        const light = look.dark ? turnedInk(picture, part.x * px, part.y * py, part.w * px, part.h * py, out.width, out.height) : null;
+        if (light) {
+          ctx.globalCompositeOperation = 'screen';
+          ctx.drawImage(light, 0, 0);
+          ctx.globalCompositeOperation = 'source-over';
+        } else ctx.drawImage(picture, part.x * px, part.y * py, part.w * px, part.h * py, 0, 0, out.width, out.height);
       }
     }
+    el.dataset.inkDark = paperLook(spec, useApp.getState().theme).dark ? '1' : '0';
     el.replaceChildren(out);
     el.dataset.drawn = '1';
     el.dataset.sheet = String(box.page);
@@ -170,7 +225,9 @@ async function drawSheetCrop(el: HTMLElement, rel: string, w: NonNullable<DocInf
     el.title = `p. ${place}`;
     const cap = el.parentElement?.querySelector('.clip-cap');
     if (cap) cap.textContent = `p. ${place}`;
-    if (fs) { sheetCrops.set(el, { rel, id: w.id, box, width }); watchSheets(fs); }
+    sheetCrops.set(el, { rel, id: w.id, box, width });
+    watchTheme();
+    if (fs) watchSheets(fs);
   } catch (e) {
     console.error(rel, e);
     if (turn.get(el) === mine) el.dataset.drawn = 'gone';

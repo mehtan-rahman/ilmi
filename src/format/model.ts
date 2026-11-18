@@ -184,7 +184,11 @@ export type Field =
   /** Its sheets on their side. */
   | { key: 'paper-turn'; value: 'landscape' }
   /** Its sheets run on as one, with no gaps between them. */
-  | { key: 'pageless'; value: true };
+  | { key: 'pageless'; value: true }
+  /** The colour of its paper, `#rrggbb` in lowercase; without it the paper follows the theme (milestone 87). */
+  | { key: 'paper-color'; value: string }
+  /** The colour of its rules, its grid's lines and its dots, `#rrggbb` in lowercase. */
+  | { key: 'paper-line'; value: string };
 
 /** What a written notebook's pages are ruled with. */
 export type PaperKind = 'blank' | 'ruled' | 'grid' | 'dotted';
@@ -237,7 +241,7 @@ export interface Diagnostic {
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
   'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam', 'finish',
-  'written', 'paper', 'sheets', 'paper-rule', 'paper-margin', 'paper-top', 'paper-size', 'paper-turn', 'pageless',
+  'written', 'paper', 'sheets', 'paper-rule', 'paper-margin', 'paper-top', 'paper-size', 'paper-turn', 'pageless', 'paper-color', 'paper-line',
 ];
 
 export function isField(e: FmEntry): e is Field {

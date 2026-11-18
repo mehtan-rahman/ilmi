@@ -25,7 +25,8 @@ for l in open(scan):
     g = p[3]
     b = p[4]
     w, h = map(int, p[5])
-    rows.append((t, lamp, red, orange, g, b, w, h))
+    under = list(map(int, p[6])) if len(p) > 6 else [0, -1, -1, -1, -1, 0]  # n x0 y0 x1 y1 dark
+    rows.append((t, lamp, red, orange, g, b, w, h, under))
 
 
 def phase_of(lamp):
@@ -37,7 +38,7 @@ def phase_of(lamp):
 
 
 def geom(r):
-    t, lamp, red, orange, g, b, w, h = r
+    t, lamp, red, orange, g, b, w, h = r[:8]
     ymin = int(0.146 * h)
     if red[4] == 0 or g[0] == '-' or b[0] == '-':
         return None
@@ -87,6 +88,57 @@ for k in sorted(names):
             d = max(abs(x['dx'] - r0['dx']), abs(x['dy'] - r0['dy']))
             if d > 1.01 or s > 2.02:
                 print(f"    t {x['t']:.3f}: middle {x['dx'] - r0['dx']:+.2f}, {x['dy'] - r0['dy']:+.2f}; size {x['iw'] - kx * x['sx']:+.2f}, {x['ih'] - ky * x['sy']:+.2f}; zoom {x['sx'] / r0['sx']:.3f}")
+# a stroke written and the pages moved before the writing had paused (`lift`): from the frame the pages first move,
+# does the stroke (orange, over the cross) keep to the page? Its place among the squares is read against where it
+# lies at rest afterwards (the part that follows). And is it ever gone, or laid on twice (twice multiplied, orange
+# reads as red there)?
+for k in sorted(names):
+    if not names[k][1].startswith('lifted'):
+        continue
+
+    def where(r):
+        t, lamp, red, _, g, b, w, h, orange = r
+        if g[0] == '-' or b[0] == '-':
+            return None
+        gx, gy, bx, by = float(g[0]), float(g[1]), float(b[0]), float(b[1])
+        sx, sy = bx - gx, by - gy
+        if sx < 50 or sy < 50:
+            return None
+        twice = orange[5] > 150
+        if orange[0] < 120:
+            return dict(t=t, sx=sx, sy=sy, gy=gy, n=orange[0], twice=twice, u=None)
+        if orange[1] <= 2 or orange[3] >= w - 3 or orange[4] >= h - 3:
+            return dict(t=t, sx=sx, sy=sy, gy=gy, n=orange[0], twice=twice, u=None, cut=True)
+        return dict(t=t, sx=sx, sy=sy, gy=gy, n=orange[0], twice=twice, u=((orange[1] + orange[3] + 1) / 2 - gx) / sx, v=((orange[2] + orange[4] + 1) / 2 - gy) / sy, wd=(orange[3] - orange[1] + 1) / sx)
+
+    fr = [x for x in (where(r) for r in rows if phase_of(r[1]) == k) if x]
+    rest = [x for x in (where(r) for r in rows if phase_of(r[1]) == k + 1) if x and x['u'] is not None]
+    if not fr or not rest:
+        print(f"{names[k][1]}: {len(fr)} frames, {len(rest)} at rest after: not measured")
+        continue
+    ref = sorted(rest, key=lambda x: x['u'])[len(rest) // 2]
+    refv = sorted(rest, key=lambda x: x['v'])[len(rest) // 2]['v']
+    # the frame the pages first move: the squares further apart, or higher up the screen
+    moved = next((i for i, x in enumerate(fr) if abs(x['sx'] - fr[0]['sx']) > 1.5 or abs(x['gy'] - fr[0]['gy']) > 2.5), None)
+    if moved is None:
+        print(f"{names[k][1]}: the pages never moved in {len(fr)} frames")
+        continue
+    # the stroke was whole on the glass before that: its last frame at rest
+    full = max((x['n'] for x in fr[:moved]), default=0)
+    mv = fr[moved:]
+    seen = [x for x in mv if x['u'] is not None]
+    gone = [x for x in mv if x['u'] is None and not x.get('cut')]
+    twice = [x for x in fr if x['twice']]
+    worst = max((max(abs(x['u'] - ref['u']) * x['sx'], abs(x['v'] - refv) * x['sy']) for x in seen), default=0)
+    wide = max((abs(x['wd'] - ref['wd']) * x['sx'] for x in seen), default=0)
+    off = [x for x in seen if max(abs(x['u'] - ref['u']) * x['sx'], abs(x['v'] - refv) * x['sy']) > 2.0]
+    print(f"{names[k][1]}: the pages move from t {mv[0]['t']:.3f} ({full} px of the stroke on the glass by then); {len(mv)} frames after, the stroke read in {len(seen)}: "
+          f"worst {worst:.2f} px from its place on the page, {wide:.2f} px in length, {len(off)} frames more than 2 px off; gone in {len(gone)}" + (f" (first at t {gone[0]['t']:.3f})" if gone else '')
+          + f"; laid on twice in {len(twice)} of the part's {len(fr)} frames" + (f" (t {twice[0]['t']:.3f} to {twice[-1]['t']:.3f})" if twice else ''))
+    if '-v' in sys.argv:
+        for x in off:
+            print(f"    t {x['t']:.3f}: {(x['u'] - ref['u']) * x['sx']:+.2f}, {(x['v'] - refv) * x['sy']:+.2f} px; zoom {x['sx'] / fr[0]['sx']:.3f}")
+
 # the stroke a finger wrote: is it ever gone, or laid on twice (twice multiplied, orange reads as red)?
 wk = [k for k in names if names[k][1].startswith('written')]
 if wk:

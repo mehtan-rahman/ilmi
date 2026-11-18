@@ -217,6 +217,8 @@ final class Leaf: UIView {
   var quiet: DispatchWorkItem?
   /// Moves with every change to what it shows.
   var ver = 0
+  /// How far down its lowest stroke reaches, in its points: past its own foot on a pageless notebook's.
+  var low: CGFloat = 0
   let rest = CALayer()
   let fine = CALayer()
   let hair = CALayer()
@@ -338,6 +340,11 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private var taken = 0
   private var swept: DispatchWorkItem?
   private var picked: (leaf: Leaf, at: [Int])?
+  /// What the lasso's hold moved from sheet to sheet of a pageless notebook, so that what it holds is kept on one:
+  /// each sheet as it was and as it is. Nothing a person did or sees, so no step of its own to undo: it is part of
+  /// whatever is done next with what is held (one step with it), and is put back as it was when the lasso lets go
+  /// with nothing done. Until then it is not the store's either (`taken`).
+  private var regroup: [(leaf: Leaf, before: [PKStroke], after: [PKStroke])] = []
   private let held = CALayer()
   private var heldRegion = CGRect.zero
   private var snap: (leaf: Leaf, until: TimeInterval)?
@@ -553,6 +560,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       // as long as what is written on it and a little more; never shorter while it is open
       let want = paper.runLength(foot: max(runFoot, inkFoot()))
       if want > runLen { runLen = want; relay = true }
+      // (what is written runs past the sheets there are, a stroke taller than a sheet: the next is asked for now, not
+      // at the next stroke)
+      if runLen > Double(order.count) * paper.h { askMore() }
     }
     let moved = view.frame != frame
     if moved {
@@ -592,7 +602,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   }
 
   private func retire(_ l: Leaf) {
-    if picked?.leaf === l { unpick() }
+    if picked?.leaf === l || regroup.contains(where: { $0.leaf === l }) { unpick() }
     if l.stepped { plugin.forget() }
     l.quiet?.cancel()
     l.removeFromSuperview()
@@ -701,8 +711,14 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       // (while a pinch stretches the sheets they are left as they are: laid out when it ends)
       if abs(scroll.zoomScale - 1) < 0.0005, !rebasing { resize() }
     }
+    askMore()
+  }
+
+  /// The long sheet's next sheet is asked for before its foot comes to the end of the last there is: once for each
+  /// count of sheets, so a stroke that runs on over several is given them one after another as each arrives.
+  private func askMore() {
     let n = order.count
-    if runLen + PaperArgs.allow > Double(n) * paper.h, grown != n, let last = order.last {
+    if paper.run, runLen + PaperArgs.allow > Double(n) * paper.h, grown != n, let last = order.last {
       grown = n
       plugin.emit(["kind": "surface", "id": id, "what": "grow", "sheet": last])
     }
@@ -1049,9 +1065,18 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private func job(_ l: Leaf, region: CGRect, pw: Int, ph: Int) -> PaintJob {
     var strokes = l.geoms
     if !l.lifted.isEmpty { strokes = strokes.enumerated().filter { !l.lifted.contains($0.offset) }.map { $0.element } }
-    var above: [Geom] = []
-    if paper.run, l.index > 0, let before = leaves[order[l.index - 1]] {
-      above = before.geoms.enumerated().filter { $0.element.box.maxY > CGFloat(paper.h) && !before.lifted.contains($0.offset) }.map { $0.element }
+    // what was written on the sheets before and runs on over this one: a stroke is kept on the sheet its top lies
+    // on, however far down it goes
+    var above: [(g: Geom, up: CGFloat)] = []
+    if paper.run {
+      var d = min(l.index, NoteSurface.runsOver)
+      while d >= 1 {
+        if let before = leaves[order[l.index - d]] {
+          let up = CGFloat(d) * CGFloat(paper.h)
+          for (i, g) in before.geoms.enumerated() where g.box.maxY > up && !before.lifted.contains(i) { above.append((g, up)) }
+        }
+        d -= 1
+      }
     }
     return PaintJob(paper: paper, look: look, index: l.index, strokes: strokes, above: above, region: region, pw: pw, ph: ph)
   }
@@ -1107,6 +1132,23 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       CATransaction.commit()
       self.settle(l)
     }
+  }
+
+  /// How many sheets past its own a pageless notebook's stroke is looked for: drawn, rubbed out and picked up there.
+  static let runsOver = 8
+
+  /// The sheets after `l` its strokes run on over (a pageless notebook's), nearest first: those `low` reaches, in
+  /// the sheet's points, and always the next.
+  private func under(_ l: Leaf, low: CGFloat) -> [(leaf: Leaf, up: CGFloat)] {
+    guard paper.run else { return [] }
+    let h = CGFloat(paper.h)
+    var out: [(Leaf, CGFloat)] = []
+    var d = 1
+    while d <= NoteSurface.runsOver, l.index + d < order.count, d == 1 || low > CGFloat(d) * h {
+      if let next = leaves[order[l.index + d]] { out.append((next, CGFloat(d) * h)) }
+      d += 1
+    }
+    return out
   }
 
   /// A picture made off the main thread, and handed back on it.
@@ -1185,13 +1227,17 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     regeom(l)
     l.ver += 1
     if let d = dirty { patch(l, d) }
-    // (a pageless sheet's strokes run on over the next)
-    if paper.run, l.index + 1 < order.count, let next = leaves[order[l.index + 1]] {
-      next.ver += 1
-      if let d = dirty, d.maxY > CGFloat(paper.h) { patch(next, d.offsetBy(dx: 0, dy: -CGFloat(paper.h))) }
+    // (a pageless sheet's strokes run on over the next, and a tall one over those after: as far as they reach now,
+    // or reached before this)
+    let low = l.geoms.map({ $0.box.maxY }).max()
+    let reached = max(low ?? 0, l.low, dirty?.maxY ?? 0)
+    l.low = low ?? 0
+    for n in under(l, low: reached) {
+      n.leaf.ver += 1
+      if let d = dirty, d.maxY > n.up { patch(n.leaf, d.offsetBy(dx: 0, dy: -n.up)) }
     }
     // (and the long sheet is a little longer than what is written on it)
-    if paper.run, let low = l.geoms.map({ $0.box.maxY }).max() { reach(Double(l.index) * paper.h + Double(low)) }
+    if paper.run, let low = low { reach(Double(l.index) * paper.h + Double(low)) }
     tend()
     if told {
       let now = l.model.map { StrokeMark($0) }
@@ -1225,6 +1271,20 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   /// A step of what was done on a sheet: undone, it holds `before` again.
   private func step(_ l: Leaf, from before: [PKStroke], to after: [PKStroke]) {
+    // (what the lasso's hold moved between sheets is undone with this, under it: registered in one turn, one step)
+    if !regroup.isEmpty {
+      let moved = regroup
+      regroup = []
+      for g in moved {
+        register(g.leaf, from: g.before, to: g.after)
+        g.leaf.dirty = g.leaf.model.map { StrokeMark($0) } != g.leaf.given
+        changed(g.leaf)
+      }
+    }
+    register(l, from: before, to: after)
+  }
+
+  private func register(_ l: Leaf, from before: [PKStroke], to after: [PKStroke]) {
     l.stepped = true
     plugin.history.registerUndo(withTarget: self) { [weak l] me in
       guard let l = l, me.leaves[l.sheet] === l else { return }
@@ -1239,8 +1299,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   /// hold, `moved` those of it just written, dropped or put down: when the top of what they cover has left the
   /// sheet they go, together, to the sheet it lies on (in that sheet's points), in the same step to undo. Says the
   /// sheet they are on and which of its strokes they are.
+  /// `quiet`: nothing to undo and nothing to keep (the lasso's hold, `regroup`).
   @discardableResult
-  private func commit(_ l: Leaf, from before: [PKStroke], to after: [PKStroke], moved: [Int], dirty: CGRect?) -> (leaf: Leaf, at: [Int]) {
+  private func commit(_ l: Leaf, from before: [PKStroke], to after: [PKStroke], moved: [Int], dirty: CGRect?, quiet: Bool = false) -> (leaf: Leaf, at: [Int]) {
     let h = CGFloat(paper.h)
     if paper.run, h > 0, !moved.isEmpty, let b = box(of: moved.filter { $0 < after.count }.map { after[$0] }) {
       // (the long sheet reaches under them first: the sheet they go to is there to take them)
@@ -1253,15 +1314,17 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
         let gone = moved.filter { $0 < after.count }.map { i -> PKStroke in var m = after[i]; m.transform = m.transform.concatenating(CGAffineTransform(translationX: 0, y: dy)); return m }
         let stay = after.enumerated().filter { !going.contains($0.offset) }.map { $0.element }
         let was = dest.model
-        put(l, stay, dirty: dirty)
-        put(dest, was + gone, dirty: dirty?.offsetBy(dx: 0, dy: dy))
-        step(l, from: before, to: l.model)
-        step(dest, from: was, to: dest.model)
+        put(l, stay, dirty: dirty, told: !quiet)
+        put(dest, was + gone, dirty: dirty?.offsetBy(dx: 0, dy: dy), told: !quiet)
+        if !quiet {
+          step(l, from: before, to: l.model)
+          step(dest, from: was, to: dest.model)
+        }
         return (dest, Array(was.count..<dest.model.count))
       }
     }
-    put(l, after, dirty: dirty)
-    step(l, from: before, to: l.model)
+    put(l, after, dirty: dirty, told: !quiet)
+    if !quiet { step(l, from: before, to: l.model) }
     return (l, moved)
   }
 
@@ -1271,6 +1334,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   /// What the store holds of a sheet. False when it is being written on, or holds what was not yet kept.
   func fill(_ l: Leaf, _ d: PKDrawing) -> Bool {
+    // (the store's word on a sheet the lasso's hold had rearranged: the hold goes, and the sheets are as they were)
+    if regroup.contains(where: { $0.leaf === l }) { unpick() }
     if l.dirty || (down && active === l) { return false }
     let marks = d.strokes.map { StrokeMark($0) }
     l.loaded = true
@@ -1285,12 +1350,15 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   func taken(_ l: Leaf) -> (Int, String?) {
     var data: String?
+    // (what the lasso's hold moved between sheets is not kept until something is done with it: kept on one sheet
+    // and not the other, a stroke would be in the store twice or not at all)
+    let model = regroup.first(where: { $0.leaf === l })?.before ?? l.model
     if l.dirty && !(down && active === l) {
       l.dirty = false
-      l.given = l.model.map { StrokeMark($0) }
-      data = PKDrawing(strokes: l.model).dataRepresentation().base64EncodedString()
+      l.given = model.map { StrokeMark($0) }
+      data = PKDrawing(strokes: model).dataRepresentation().base64EncodedString()
     }
-    return (l.model.count, data)
+    return (model.count, data)
   }
 
   func dirtyLeaves() -> [Leaf] { leaves.values.filter { $0.dirty && !(down && active === $0) } }
@@ -1636,10 +1704,16 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   private func erase(_ l: Leaf, from a: CGPoint, to b: CGPoint) {
     rub(l, from: a, to: b)
-    // what was written on the sheet before and runs on over this one (a pageless notebook's) is under the eraser too
-    if paper.run, l.index > 0, let above = leaves[order[l.index - 1]], above.loaded {
-      let h = CGFloat(paper.h)
-      rub(above, from: CGPoint(x: a.x, y: a.y + h), to: CGPoint(x: b.x, y: b.y + h))
+    // what was written on the sheets before and runs on over this one (a pageless notebook's) is under the eraser too
+    if paper.run {
+      var d = 1
+      while d <= NoteSurface.runsOver, l.index - d >= 0 {
+        if let above = leaves[order[l.index - d]], above.loaded, above.low > CGFloat(d) * CGFloat(paper.h) - 1 {
+          let up = CGFloat(d) * CGFloat(paper.h)
+          rub(above, from: CGPoint(x: a.x, y: a.y + up), to: CGPoint(x: b.x, y: b.y + up))
+        }
+        d += 1
+      }
     }
   }
 
@@ -1709,26 +1783,31 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       // the one its top lies on, so it is moved, coloured and cut as one thing
       let h = CGFloat(paper.h)
       var others: [(leaf: Leaf, at: [Int], dy: CGFloat)] = []
-      for d in [-1, 1] {
+      // (the sheets before, as far up as a stroke of theirs runs on to here, and the one after)
+      for d in (1...NoteSurface.runsOver).map({ -$0 }) + [1] {
         let i = l.index + d
         guard i >= 0, i < order.count, let n = leaves[order[i]], n.loaded, !n.isHidden else { continue }
+        if d < -1, n.low <= CGFloat(-d) * h - 1 { continue }
         let got = held(n, CGFloat(d) * h)
         if !got.isEmpty { others.append((n, got, CGFloat(d) * h)) }
       }
       if !others.isEmpty {
-        // (each moved into the loop's sheet's points first; `commit` then takes them where their top lies)
+        // (each moved into the loop's sheet's points first; `commit` then takes them where their top lies.
+        // Nothing of it is a step to undo or a thing to keep by itself: `regroup`)
+        let near = (max(0, l.index - NoteSurface.runsOver)...min(order.count - 1, l.index + 1)).compactMap { leaves[order[$0]] }
+        let were = near.map { ($0, $0.model) }
         let before = l.model
         var after = before
         for o in others {
           let mine = Set(o.at)
           let was = o.leaf.model
           for i in o.at { var m = was[i]; m.transform = m.transform.concatenating(CGAffineTransform(translationX: 0, y: o.dy)); after.append(m) }
-          put(o.leaf, was.enumerated().filter { !mine.contains($0.offset) }.map { $0.element }, dirty: nil)
-          step(o.leaf, from: was, to: o.leaf.model)
+          put(o.leaf, was.enumerated().filter { !mine.contains($0.offset) }.map { $0.element }, dirty: nil, told: false)
         }
-        let got = commit(l, from: before, to: after, moved: at + Array(before.count..<after.count), dirty: nil)
+        let got = commit(l, from: before, to: after, moved: at + Array(before.count..<after.count), dirty: nil, quiet: true)
         on = got.leaf
         at = got.at
+        regroup = were.filter { $0.0.model.map { StrokeMark($0) } != $0.1.map { StrokeMark($0) } }.map { ($0.0, $0.1, $0.0.model) }
       }
     }
     if at.isEmpty { return }
@@ -1760,6 +1839,12 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   }
 
   func unpick() {
+    if !regroup.isEmpty {
+      // nothing was done with what the lasso held: each sheet holds what it held before the hold
+      let moved = regroup
+      regroup = []
+      for g in moved { put(g.leaf, g.before, dirty: nil, told: false) }
+    }
     if picked == nil { return }
     picked = nil
     hide(outline)
@@ -1803,9 +1888,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private func repaint(_ l: Leaf, _ d: CGRect) {
     l.ver += 1
     patch(l, d)
-    if paper.run, l.index + 1 < order.count, let next = leaves[order[l.index + 1]] {
-      next.ver += 1
-      if d.maxY > CGFloat(paper.h) { patch(next, d.offsetBy(dx: 0, dy: -CGFloat(paper.h))) }
+    for n in under(l, low: d.maxY) {
+      n.leaf.ver += 1
+      if d.maxY > n.up { patch(n.leaf, d.offsetBy(dx: 0, dy: -n.up)) }
     }
   }
 

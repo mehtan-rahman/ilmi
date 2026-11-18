@@ -132,8 +132,10 @@ struct PaintJob {
   /// Which sheet of the notebook it is, from 0: where a pageless notebook's ruling has got to.
   var index: Int
   var strokes: [Geom]
-  /// The strokes of the sheet before, which may run past its foot onto this one (a pageless notebook's).
-  var above: [Geom]
+  /// The strokes of the sheets before that run past their own foot onto this one (a pageless notebook's), each
+  /// with how far up its sheet's top lies from this one's, in points: one sheet's height for the sheet before, two
+  /// for the one before that (a stroke may be taller than a sheet).
+  var above: [(g: Geom, up: CGFloat)]
   /// The part of the sheet, in its points, and the pixels it is drawn with.
   var region: CGRect
   var pw: Int
@@ -246,12 +248,11 @@ enum Paint {
       c.setBlendMode(j.look.dark ? .screen : .multiply)
       c.beginTransparencyLayer(auxiliaryInfo: nil)
     }
-    let part = j.region.offsetBy(dx: 0, dy: CGFloat(j.paper.h))
     for pass in 0..<2 {
-      if !j.above.isEmpty {
+      for a in j.above where a.g.marker == (pass == 0) && a.g.box.intersects(j.region.offsetBy(dx: 0, dy: a.up)) {
         c.saveGState()
-        c.translateBy(x: 0, y: -CGFloat(j.paper.h))
-        for g in j.above where g.marker == (pass == 0) && g.box.intersects(part) { g.draw(c) }
+        c.translateBy(x: 0, y: -a.up)
+        a.g.draw(c)
         c.restoreGState()
       }
       for g in j.strokes where g.marker == (pass == 0) && g.box.intersects(j.region) { g.draw(c) }

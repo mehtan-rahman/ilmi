@@ -32,6 +32,7 @@ mod native {
         pub fn ilmi_ink_page(recs: *const u8, len: usize, w: f64, h: f64, scale: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_bounds(data: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_shapes(recs: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
+        pub fn ilmi_ink_names_twice(out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_sample(lines: u32, per: u32, seed: u32, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_pdf(spec: *const u8, len: usize, src: *const u8, src_len: usize, out_path: *const u8, out_len: usize) -> i32;
         pub fn ilmi_pdf_info(path: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
@@ -354,10 +355,10 @@ impl<R: Runtime> Ink<R> {
         self.call("haptic", serde_json::json!({ "kind": kind })).await
     }
     /// A dev run's: a finger stands in for the Pencil.
-    pub async fn pen(&self, on: bool) -> Result<(), String> {
+    pub async fn pen(&self, on: bool, once: bool, keep: Option<bool>) -> Result<(), String> {
         #[derive(Serialize)]
-        struct Pen { on: bool }
-        self.call::<_, serde_json::Value>("pen", Pen { on }).await.map(|_| ())
+        struct Pen { on: bool, once: bool, keep: Option<bool> }
+        self.call::<_, serde_json::Value>("pen", Pen { on, once, keep }).await.map(|_| ())
     }
     /// A dev run's: the canvases laid as they were before milestone 86, to measure against.
     pub async fn plain(&self, on: bool) -> Result<(), String> {
@@ -491,6 +492,24 @@ mod tests {
         let keys = |s: &[Stroke]| s.iter().map(|x| (x.key.clone(), x.at)).collect::<Vec<_>>();
         assert_eq!(keys(&first), keys(&second));
         assert_eq!(keys(&first), keys(&third));
+    }
+
+    #[test]
+    fn a_stroke_in_hand_has_the_name_its_bytes_give() {
+        // a stroke is named the moment it is written, before it has ever been bytes, and again by the store from
+        // the drawing's bytes: one name. (PencilKit writes the even line as a pen: named by its ink as it was in
+        // hand, an even line had two names, and the page drew it under one the store never kept)
+        // SAFETY: as in `split`
+        let json = native::call(|out, len| unsafe { native::ilmi_ink_names_twice(out, len) }).unwrap();
+        let said: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        let list = said.as_array().unwrap();
+        assert!(list.len() >= 3);
+        let mut names = std::collections::HashSet::new();
+        for s in list {
+            assert_eq!(s["live"], s["kept"], "{}", s["ink"]);
+            names.insert(s["live"].as_str().unwrap().to_string());
+        }
+        assert_eq!(names.len(), list.len(), "every stroke has a name of its own");
     }
 
     #[test]

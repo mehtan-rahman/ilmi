@@ -730,11 +730,11 @@ async fn app_haptic(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, ki
 
 /// A dev run's: a finger stands in for the Pencil, which no simulator has.
 #[tauri::command]
-async fn dev_ink_pen(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, on: bool) -> Result<(), String> {
+async fn dev_ink_pen(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, on: bool, once: Option<bool>, keep: Option<bool>) -> Result<(), String> {
     if !cfg!(debug_assertions) {
         return Err("a dev run's".to_string());
     }
-    ink.pen(on).await
+    ink.pen(on, once.unwrap_or(false), keep).await
 }
 
 /// A dev run's: a sheet's canvas emptied as an eraser would.

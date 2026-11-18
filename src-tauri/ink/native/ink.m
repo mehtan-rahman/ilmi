@@ -89,7 +89,14 @@ static NSString *nameOf(PKStroke *s) {
     uint32_t seed = s.randomSeed;
     CC_SHA256_Update(&c, &seed, sizeof seed);
   }
-  const char *ink = s.ink.inkType.UTF8String;
+  // (PencilKit writes the even line into a drawing's bytes as a pen: a stroke read back says `pen` where the one
+  // in hand said `monoline`. The name is the one the bytes give, whichever of the two it is asked of: a stroke
+  // just written has the name the store will keep it under)
+  NSString *type = s.ink.inkType;
+  if (@available(macOS 14.0, iOS 17.0, *)) {
+    if ([type isEqualToString:PKInkTypeMonoline]) type = PKInkTypePen;
+  }
+  const char *ink = type.UTF8String;
   if (ink) CC_SHA256_Update(&c, ink, (CC_LONG)strlen(ink));
   CGAffineTransform t = s.transform;
   float m[6] = {t.a, t.b, t.c, t.d, t.tx, t.ty};
@@ -479,6 +486,42 @@ int ilmi_ink_shapes(const uint8_t *recs, size_t len, uint8_t **out, size_t *out_
       NSMutableArray *all = [NSMutableArray array];
       for (PKStroke *s in d.strokes) [all addObject:described(s)];
       NSData *json = [NSJSONSerialization dataWithJSONObject:all options:0 error:nil];
+      if (!json) return 2;
+      return give(json, out, out_len);
+    }
+    return 1;
+  }
+}
+
+/// For the tests: a stroke of each ink this PencilKit has, named in hand and named again once it has been bytes
+/// (`{"ink": …, "live": …, "kept": …}` each, as a JSON list). The two are one name.
+int ilmi_ink_names_twice(uint8_t **out, size_t *out_len) {
+  @autoreleasepool {
+    named();
+    if (INK_AVAILABLE) {
+      NSMutableArray<PKInkType> *types = [@[PKInkTypePen, PKInkTypeMarker, PKInkTypePencil] mutableCopy];
+      if (@available(macOS 14.0, iOS 17.0, *)) [types addObjectsFromArray:@[PKInkTypeMonoline, PKInkTypeFountainPen]];
+      NSMutableArray<PKStroke *> *all = [NSMutableArray array];
+      NSDate *t0 = [NSDate dateWithTimeIntervalSince1970:1794000000.123];
+      for (NSUInteger k = 0; k < types.count; k++) {
+        NSMutableArray<PKStrokePoint *> *pts = [NSMutableArray array];
+        for (int i = 0; i < 14; i++) {
+          [pts addObject:[[PKStrokePoint alloc] initWithLocation:CGPointMake(40.37 + i * 7.31, 60.2 + k * 31.7 + (i % 3) * 2.13) timeOffset:i * 0.0083 size:CGSizeMake(3.1 + (i % 4) * 0.37, 3.1) opacity:1 force:0.3 + (i % 5) * 0.11 azimuth:0.8 altitude:1.0]];
+        }
+        PKStrokePath *path = [[PKStrokePath alloc] initWithControlPoints:pts creationDate:[t0 dateByAddingTimeInterval:k * 0.731]];
+#if TARGET_OS_OSX
+        PKInk *ink = [[PKInk alloc] initWithInkType:types[k] color:NSColor.blackColor];
+#else
+        PKInk *ink = [[PKInk alloc] initWithInkType:types[k] color:UIColor.blackColor];
+#endif
+        [all addObject:[[PKStroke alloc] initWithInk:ink strokePath:path transform:CGAffineTransformIdentity mask:nil]];
+      }
+      PKDrawing *live = [[PKDrawing alloc] initWithStrokes:all];
+      PKDrawing *kept = [[PKDrawing alloc] initWithData:[live dataRepresentation] error:nil];
+      if (!kept || kept.strokes.count != all.count) return 2;
+      NSMutableArray *said = [NSMutableArray array];
+      for (NSUInteger k = 0; k < all.count; k++) [said addObject:@{@"ink": types[k], @"live": nameOf(live.strokes[k]), @"kept": nameOf(kept.strokes[k])}];
+      NSData *json = [NSJSONSerialization dataWithJSONObject:said options:0 error:nil];
       if (!json) return 2;
       return give(json, out, out_len);
     }

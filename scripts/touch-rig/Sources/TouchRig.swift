@@ -19,6 +19,9 @@ import ObjectiveC
 //   · taps n x y (n fingers down at once round x y and up again: two are undo, three redo; `fingers` below)
 //   · rest x1 y1 x2 y2 … seconds (as `loop`, but quicker along the way and resting `seconds` on the last point
 //     before lifting: a stroke held still at its end)
+//   · wpinch x1 y1 x2 y2 gap ax ay bx by ax2 ay2 bx2 by2 secs (one finger from 1 to 2 in 0.3 s and lifted; `gap`
+//     seconds after it lifts two fingers down at a and b, moved to a2 and b2 in `secs`, and lifted: all one record,
+//     so the pinch follows the stroke sooner than a second ask could be read)
 final class TouchRig: XCTestCase {
   /// One finger down at the first point, through the rest, and up: XCUITest's own pointer path, which its
   /// public calls build two points at a time. The classes are the runner's (`runner-methods.txt` lists what
@@ -184,6 +187,22 @@ final class TouchRig: XCTestCase {
           }
           if let last = pts.last { pts.append((last.0, last.1 + secs)) }
           if !fingers([pts]) { print("rig: no rest in this Xcode: \(ask)") }
+        case "wpinch" where n.count >= 14:
+          let f = app.frame
+          let at = { (i: Int) in CGPoint(x: f.minX + n[i] * f.width, y: f.minY + n[i + 1] * f.height) }
+          let gap = max(0.02, n[4]), secs = max(0.05, n[13])
+          // the stroke: down, ten steps over 0.3 s, up 0.05 s after the last (`fingers` lifts a path then)
+          var pen: [(CGPoint, Double)] = [(at(0), 0)]
+          for i in 1...10 { let t = Double(i) / 10; pen.append((CGPoint(x: at(0).x + (at(2).x - at(0).x) * t, y: at(0).y + (at(2).y - at(0).y) * t), 0.06 + t * 0.3)) }
+          let t0 = 0.36 + 0.05 + gap
+          let steps = max(6, min(120, Int(secs * 60)))
+          let way = { (from: CGPoint, to: CGPoint) -> [(CGPoint, Double)] in
+            var out: [(CGPoint, Double)] = [(from, t0)]
+            for i in 1...steps { let t = Double(i) / Double(steps); out.append((CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t), t0 + 0.05 + t * secs)) }
+            out.append((to, t0 + 0.05 + secs + 0.2))
+            return out
+          }
+          if !fingers([pen, way(at(5), at(9)), way(at(7), at(11))]) { print("rig: no wpinch in this Xcode: \(ask)") }
         case "turn": XCUIDevice.shared.orientation = parts.last == "landscape" ? .landscapeLeft : .portrait
         default: print("rig: not understood: \(ask)")
         }

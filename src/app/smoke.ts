@@ -12159,7 +12159,7 @@ const INK_NOTE = 'courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md';
 
 /** How the canvases stand (`dev_ink_state`). */
 interface InkState {
-  sheets: { id: string; strokes: number; shown: boolean; dirty: boolean; at: { x: number; y: number; w: number; h: number }; pixels?: number; blend?: string | null; device?: { x: number; y: number; w: number; h: number }; stretch?: number; drawn?: number[]; /** (89) the page draws what the sheet holds; then how many strokes PencilKit's canvas still shows, the last telling and the last the page said it drew. */ vector?: boolean; live?: number; said?: number; seen?: number }[];
+  sheets: { id: string; strokes: number; shown: boolean; dirty: boolean; at: { x: number; y: number; w: number; h: number }; pixels?: number; blend?: string | null; device?: { x: number; y: number; w: number; h: number }; stretch?: number; drawn?: number[]; /** (89) the page draws what the sheet holds; then how many strokes PencilKit's canvas still shows, the last telling and the last the page said it drew. */ vector?: boolean; live?: number; said?: number; seen?: number; /** The last time the pages began to move with strokes still on PencilKit's canvas: ms after the lift, and ms until the canvas was empty and away. */ hurriedAfter?: number; hurriedFor?: number; /** What happened to what was last written, each with its ms from the lift. */ trace?: string[] }[];
   hosts: { id: string; follows: boolean; offset: number; port: { x: number; y: number; w: number; h: number }; zoomer?: boolean; phase?: string | null }[];
   /** PencilKit's picker, gone since 82: always false. */
   tools: boolean;
@@ -16394,9 +16394,10 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
     const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
-    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs') {
+    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall') {
       if (part === 'more') await writtenMore(log, vault.root);
       else if (part === 'tabs') await writtenTabs(log);
+      else if (part === 'tall') await writtenTall(log);
       else await writtenLong(log, part);
       await ink.settled();
       finished = true;
@@ -16694,6 +16695,7 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
 
     // ── what 88 added: two margins, and a pageless notebook that is one sheet ──
     await writtenLong(log, '');
+    await writtenTall(log);
 
     // ── a notebook's children as tabs beside its pages ──
     await writtenTabs(log);
@@ -17769,6 +17771,21 @@ async function writtenLong(log: (s: string) => void, part: string): Promise<void
     await poll(async () => (await state()).tool?.kind === 'select', 'the lasso', 8000);
     ask('loop', ...at(406, H - 30), ...at(480, H - 30), ...at(480, H + 28), ...at(406, H + 28), ...at(406, H - 30));
     await poll(async () => (await state()).selected === 2 && (await on(1)) === a1 + 4 && (await on(2)) === a2, 'a loop round both holds both, kept together on the sheet their top lies on', 30000);
+    // the hold is nothing done: let go, each stroke is on the sheet it was on, and undo takes back the last thing
+    // written, not a step that shows nothing
+    await sleep(900);
+    must((await keptAll()) === made && (await fs.pageInk(ID, w().sheets[0]!)).length === a1 + 3, 'held and nothing done with it: the store holds each stroke on the sheet it was on');
+    tools.setTool('pen');
+    await poll(async () => (await state()).selected === 0 && (await on(1)) === a1 + 3 && (await on(2)) === a2 + 1, 'let go with nothing done: each on its own sheet again', 8000);
+    await undoNow();
+    await poll(async () => (await on(1)) === a1 + 2 && (await on(2)) === a2 + 1, 'undo after it takes back the stroke written last: the hold left no step of its own', 8000);
+    await tools.redo();
+    await poll(async () => (await on(1)) === a1 + 3 && (await on(2)) === a2 + 1, 'redo: back', 8000);
+    await poll(async () => (await keptAll()) === made, 'kept', 20000);
+    tools.setTool('select');
+    await poll(async () => (await state()).tool?.kind === 'select', 'the lasso again', 8000);
+    ask('loop', ...at(406, H - 30), ...at(480, H - 30), ...at(480, H + 28), ...at(406, H + 28), ...at(406, H - 30));
+    await poll(async () => (await state()).selected === 2 && (await on(1)) === a1 + 4 && (await on(2)) === a2, 'the loop again holds both', 30000);
     const held = await poll(async () => (await state()).held, 'held', 5000);
     await shot('long-lasso-across');
     // carried down past the meeting: on the second sheet now, still held
@@ -17776,10 +17793,15 @@ async function writtenLong(log: (s: string) => void, part: string): Promise<void
     const down = (60 / H) * r.height;
     ask('drag', fx(held.x + held.w / 2), fy(held.y + held.h / 2), fx(held.x + held.w / 2), fy(held.y + held.h / 2 + down), 0.6);
     await poll(async () => (await state()).selected === 2 && (await on(1)) === a1 + 2 && (await on(2)) === a2 + 2, 'carried down past it, the two are kept on the second sheet, and still held', 30000);
+    await poll(async () => (await fs.pageInk(ID, w().sheets[0]!)).length === a1 + 2 && (await fs.pageInk(ID, w().sheets[1]!)).length === a2 + 2, 'kept there', 20000);
     await undoNow();
-    await poll(async () => (await on(1)) === a1 + 4 && (await on(2)) === a2, 'undo: where they were', 8000);
+    await poll(async () => (await on(1)) === a1 + 3 && (await on(2)) === a2 + 1, 'undo, once: where they were before the lasso took them, each on its own sheet', 8000);
+    await tools.redo();
+    await poll(async () => (await on(1)) === a1 + 2 && (await on(2)) === a2 + 2, 'redo, once: carried down again', 8000);
+    await undoNow();
+    await poll(async () => (await on(1)) === a1 + 3 && (await on(2)) === a2 + 1, 'and back', 8000);
     tools.setTool('pen');
-    await poll(async () => (await keptAll()) === made, 'all of it kept', 20000);
+    await poll(async () => (await keptAll()) === made && (await fs.pageInk(ID, w().sheets[0]!)).length === a1 + 3, 'all of it kept, each stroke once', 20000);
   }
   await pen(false);
   useApp.getState().setTheme('dark');
@@ -17848,6 +17870,124 @@ async function writtenLong(log: (s: string) => void, part: string): Promise<void
   ask('turn portrait');
   await poll(() => shape() === 'portrait', 'upright again', 20000);
   await sleep(1500);
+  await ink.settled();
+}
+
+/**
+ * A stroke taller than a sheet on a pageless notebook (a part of
+ * `ILMI_SMOKE=written` on an iPad; alone with `"part": "tall"`): begun on
+ * the first sheet and run down past the second onto the third, it is kept
+ * on the first (where its top lies) and drawn whole; the eraser put down on
+ * the third sheet takes it; opened again it is whole. A `tall:` line says
+ * where it lies in the capture that follows, in the screen's pixels.
+ */
+async function writtenTall(log: (s: string) => void): Promise<void> {
+  type StoreFs = import('../vault/index.js').StoreFs;
+  const q = <T extends Element>(sel: string, at: ParentNode = document) => at.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, at: ParentNode = document) => Array.from(at.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
+  const fx = (x: number) => x / window.innerWidth;
+  const fy = (y: number) => y / window.innerHeight;
+  const { createWritten, setSetup } = await import('./written.js');
+  const { paperOf } = await import('./paper.js');
+  const { setBookZoom } = await import('./vault.js');
+  const tools = await import('./inkTools.js');
+  const ink = await import('./ink.js');
+  const fs = currentVault()!.fs as StoreFs;
+  const state = () => invoke<InkState>('dev_ink_state');
+  const docsNow = () => useApp.getState().docs;
+  const NAME = 'tall stroke';
+  const NB = `fleeting/${NAME}.md`;
+  const bookOf = (p: string) => qa<HTMLElement>('.book').find((b) => b.dataset.path === p) ?? null;
+  const shape = () => (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
+  if (shape() !== 'portrait') { log('do: turn portrait'); await poll(() => shape() === 'portrait', 'upright for a tall stroke', 25000); await sleep(1500); }
+  useApp.getState().setTheme('light');
+  await invoke('dev_ink_pen', { on: false });
+  tools.setTool('pen');
+  tools.setSize('pen', 2);
+  tools.setRecent('pen', '#ff0000');
+  await createWritten('fleeting', NAME);
+  const ID = await poll(() => docsNow()[NB]?.written?.id, 'a notebook is made, for a stroke taller than a sheet', 10000);
+  await setSetup(NB, { pageless: true });
+  openNode(NB);
+  const open = async (what: string) => {
+    openNode(NB);
+    const x = await poll(() => { const k = bookOf(NB); return k && k.getClientRects().length && q(PAPER, k) ? k : null; }, what, 15000);
+    await sleep(600);
+    return x;
+  };
+  let b = await open('it opens, pageless');
+  must(surfaceIn(b) !== null, 'its pages are a surface');
+  const f = async () => (await surfaceNow(b))!;
+  const w = () => docsNow()[NB]!.written!;
+  const H = paperOf(w(), 0).h;
+  const W = paperOf(w(), 0).w;
+  const sid = (n: number) => `p.${ID}.${n}`;
+  const on = async (n: number) => (await state()).sheets.find((x) => x.id === sid(n))?.strokes ?? 0;
+  await poll(async () => { const s = await state(); return s.tool?.kind === 'pen' && s.sheets.some((x) => x.id === sid(w().sheets[0]!)) ? s : null; }, 'the canvases hold the pen and the first sheet', 15000);
+  // small enough that three sheets' worth of the stroke is on the screen at once
+  const wide = (await f()).sheets[0]!.device.w;
+  setBookZoom(NB, 0.5);
+  await poll(async () => { const s = await f(); return Math.abs(s.zoom - 0.5) < 0.01 && s.phase === 'rest' && s.sheets[0]!.device.w < wide * 0.6; }, 'at half size', 10000);
+  const X = 300, Y0 = 0.75 * H, Y1 = 2.3 * H;
+  const first = w().sheets[0]!;
+  await invoke('dev_ink_stroke', { sheet: sid(first), points: Array.from({ length: 60 }, (_, i) => [X + (i % 2) * 0.5, Y0 + ((Y1 - Y0) * i) / 59]), rest: false });
+  await poll(async () => (await on(first)) === 1, 'a stroke from three quarters down the first sheet to a third down the third: one stroke, on the first', 10000);
+  await poll(async () => (await fs.pageInk(ID, first)).length === 1, 'kept on the first sheet', 20000);
+  await poll(() => w().sheets.length >= 3, 'the long sheet has the sheets the stroke runs over', 15000);
+  await poll(async () => { const s = await f(); return s.length !== null && s.length >= Y1 + 100 && s.shown >= 3 ? s : null; }, 'and is drawn as far as the stroke reaches and a little more', 15000);
+  const tall = async (name: string) => {
+    await bringPage(b, 1, 0, 0.7);
+    await surfaceSettled(b);
+    const s = await f();
+    const d = s.sheets[0]!.device;
+    const k = d.w / W;
+    log(`tall: ${JSON.stringify({ shot: name, x: d.x + X * k, y0: d.y + Y0 * k, y1: d.y + Y1 * k, seams: [d.y + H * k, d.y + 2 * H * k], view: [s.device.x, s.device.y, s.device.w, s.device.h] })}`);
+    must(d.y + Y1 * k < s.device.y + s.device.h - 8 && d.y + Y0 * k > s.device.y + 8, 'the whole stroke is on the screen');
+    await shot(name);
+  };
+  await tall('tall-written');
+  // the eraser put down on the third sheet, across it: the stroke is the first sheet's, and goes
+  {
+    const s = await f();
+    const d = s.sheets[0]!.device;
+    const dpr = window.devicePixelRatio || 1;
+    const k = d.w / W;
+    const P = (x: number, y: number): [number, number] => [fx((d.x + x * k) / dpr), fy((d.y + y * k) / dpr)];
+    await invoke('dev_ink_pen', { on: true });
+    tools.setEraser('stroke');
+    tools.setTool('eraser');
+    await poll(async () => (await state()).tool?.kind === 'eraser', 'the eraser', 8000);
+    ask('drag', ...P(X - 60, 2.2 * H), ...P(X + 60, 2.2 * H), 0.05);
+    await poll(async () => (await on(first)) === 0, 'the eraser on the third sheet takes the stroke kept on the first', 30000);
+    for (let i = 0; i < 80 && (await state()).down; i++) await sleep(100);
+    await sleep(250);
+    await tools.undo();
+    await poll(async () => (await on(first)) === 1, 'undo: back', 8000);
+    tools.setTool('pen');
+    await invoke('dev_ink_pen', { on: false });
+    await poll(async () => (await fs.pageInk(ID, first)).length === 1, 'kept', 20000);
+  }
+  // another document and back: whole again from what the store holds
+  openNode('fleeting/idea-for-honors-thesis.md');
+  await poll(() => !bookOf(NB)?.getClientRects().length, 'another document', 10000);
+  await sleep(600);
+  b = await open('the notebook, opened again');
+  await poll(async () => { const s = await f(); return s && s.length !== null && s.length >= Y1 + 100 && s.shown >= 3 && Math.abs(s.zoom - 0.5) < 0.01 && s.sheets[0]!.device.w < wide * 0.6 ? s : null; }, 'opened again: as long as the stroke reaches, at the zoom it was left at', 15000);
+  await tall('tall-opened-again');
+  setBookZoom(NB, 1);
+  await sleep(800);
   await ink.settled();
 }
 
@@ -19422,8 +19562,15 @@ export async function smokeSharp(path: string | null): Promise<void> {
 // for the Pencil) a stroke written and the pages pinched at once, then more
 // written one after another. Last (`tools`) the eraser, undo and redo, the
 // lasso carrying a stroke, a shape and the pen's pressure, each looked for
-// in the page's own paths. `"part"` runs some alone (`slow`, `quick`, `tap`,
-// `scroll`, `write`, `most` (a capture at 400%), `tools`, by commas).
+// in the page's own paths. `lift` writes a stroke and moves the pages before
+// the writing has paused (one record of the rig's: a stroke, then two fingers
+// or one a tenth of a second after it lifts): the stroke is the page's at
+// once (`hurried:`), and the recording says it kept to the page. `look` is
+// the same stroke captured under the finger, lifted and still PencilKit's,
+// and as the page draws it (`look:` says where; `scripts/ink-look.py`
+// compares the captures). `"part"` runs some alone (`slow`, `quick`, `tap`,
+// `scroll`, `write`, `lift`, `look`, `most` (a capture at 400%), `tools`, by
+// commas).
 // ─────────────────────────────────────────────────────────────────────────
 export async function smokePdfInk(path: string | null): Promise<void> {
   let last = { at: Date.now(), what: 'start' };
@@ -19508,7 +19655,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
     lamp.style.cssText = 'position:fixed;left:40px;bottom:40px;width:28px;height:28px;z-index:99999;pointer-events:none;background:rgb(255,255,255)';
     document.body.append(lamp);
     let phases = 0;
-    const phase = (name: string) => { phases += 1; const v = 250 - phases * 12; lamp.style.background = `rgb(${v},${v},${v})`; log(`phase: ${phases} ${v} ${name}`); };
+    const phase = (name: string) => { phases += 1; const v = 250 - phases * 9; lamp.style.background = `rgb(${v},${v},${v})`; log(`phase: ${phases} ${v} ${name}`); };
     const there = async () => (await state()).sheets.find((x) => x.id === sheet) ?? null;
     await poll(there, `p. ${PAGEINK_PAGE} can be written on`, 20000);
     const write = async (on: string, pts: [number, number][]) => { await invoke('dev_ink_stroke', { sheet: on, points: pts, rest: false }); };
@@ -19661,6 +19808,110 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       watching = false;
       await invoke('dev_ink_pen', { on: false });
     }
+    if (want('lift')) {
+      // the Pencil lifted and, before the quarter of a second the writing is given to pause, the pages moved: the
+      // stroke is the page's at once, and goes with the page. (A finger for the Pencil for that one stroke only:
+      // the fingers that follow in the same record are fingers.)
+      tools.setRecent('pen', '#ff8040');
+      const run = async (what: string, verb: 'wpinch' | 'scroll', gap: number, secs: number, row: number) => {
+        setBookZoom(PAGEINK_BOOK, 1);
+        await sleep(1500);
+        await toPage();
+        await poll(async () => { const c = await there(); return c && !c.dirty && c.live === 0 && !c.shown; }, `${what}: nothing on PencilKit's canvas`, 25000);
+        await invoke('dev_ink_pen', { on: true, once: true });
+        await sleep(400);
+        const r = page();
+        const at = (x: number, y: number): [number, number] => [fx(r.left + (x / W) * r.width), fy(r.top + (y / H) * r.height)];
+        const before = (await there())?.strokes ?? 0;
+        const top0 = sc.scrollTop;
+        const [cx, cy] = centre();
+        phase(`lifted, ${what}`);
+        if (verb === 'wpinch') ask('wpinch', ...at(120, 118 + row * 19), ...at(330, 118 + row * 19), gap, fx(cx - 80), fy(cy), fx(cx + 80), fy(cy), fx(cx - 128), fy(cy), fx(cx + 128), fy(cy), secs);
+        else {
+          // (the scroller moved by the page the moment the stroke is the sheet's: a finger's drag in the same record
+          // as the stroke did not scroll the pages under this rig)
+          ask('drag', ...at(120, 118 + row * 19), ...at(330, 118 + row * 19), 0.02);
+          for (let i = 0; i < 3000 && ((await there())?.strokes ?? 0) === before; i++) await sleep(5);
+          sc.scrollTop += 160;
+        }
+        if (verb === 'wpinch') await poll(() => { const v = zoomNow(); return v > 1.2 && !view.dataset.pinch ? v : 0; }, `${what}: larger`, 60000);
+        else await poll(() => sc.scrollTop > top0 + 60, `${what}: scrolled`, 20000);
+        await rested(what);
+        const c = (await there())!;
+        log(`hurried: ${what}: the pages moved ${c.hurriedAfter?.toFixed(0)} ms after the lift; PencilKit's canvas was empty and away ${c.hurriedFor?.toFixed(0)} ms after that; ${before} strokes before, ${c.strokes} now`);
+        must(c.strokes === before + 1, `${what}: the stroke is the sheet's`);
+        must(c.hurriedAfter !== undefined && c.hurriedAfter < 300, `${what}: the pages began to move within 0.3 s of the lift`);
+        log(`trace: ${what}: ${(c.trace ?? []).join('; ')}`);
+        must(!c.shown && c.live === 0, `${what}: PencilKit's canvas is off the glass`);
+        must(qa(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb).length === before + 1, `${what}: the page draws it`);
+        phase(`rest after ${what}`);
+        await sleep(1200);
+        await invoke('dev_ink_pen', { on: false });
+        await poll(async () => { const k = await there(); return k && !k.dirty; }, `${what}: kept`, 25000);
+      };
+      await run('pinched a tenth of a second on', 'wpinch', 0.1, 0.5, 0);
+      await run('pinched quickly at once', 'wpinch', 0.05, 0.2, 1);
+      await run('scrolled at once', 'scroll', 0, 0, 2);
+    }
+    if (want('look')) {
+      // the same stroke three ways, a capture each: under the finger (PencilKit's, being written), lifted and still
+      // PencilKit's (the hand-over held back), and the page's own. Across the page's print and across the cross.
+      setBookZoom(PAGEINK_BOOK, 1);
+      await sleep(1500);
+      await toPage();
+      const r = page();
+      const P2 = (x: number, y: number): [number, number] => [fx(r.left + (x / W) * r.width), fy(r.top + (y / H) * r.height)];
+      const box = (x0: number, y0: number, x1: number, y1: number) => [(r.left + (x0 / W) * r.width) * dpr, (r.top + (y0 / H) * r.height) * dpr, (r.left + (x1 / W) * r.width) * dpr, (r.top + (y1 / H) * r.height) * dpr].map((v) => Math.round(v));
+      const three = async (name: string, y: number) => {
+        const before = (await there())?.strokes ?? 0;
+        log(`look: ${JSON.stringify({ name, box: box(90, y - 26, 520, y + 46) })}`);
+        await shot(`look-${name}-bare`, 1200);
+        await invoke('dev_ink_pen', { on: true, keep: true });
+        await sleep(400);
+        ask('rest', ...P2(100, y), ...P2(200, y + 5), ...P2(300, y + 10), ...P2(400, y + 15), ...P2(500, y + 20), 6);
+        await sleep(2400);
+        log(`shot: look-${name}-live`);
+        await poll(async () => ((await there())?.strokes ?? 0) === before + 1 && !(await state()).down, `${name}: written, the finger up`, 30000);
+        const c = (await there())!;
+        must(c.shown && c.live === 1, `${name}: lifted, and still on PencilKit's canvas (the hand-over held back)`);
+        log(`look: ${name}: lifted: ${(c.trace ?? []).join('; ')}; ${qa(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb).filter((x) => x.getAttribute('visibility') === 'hidden').length} paths unseen; blend ${c.blend}`.replace('look:', 'looked:'));
+        // (the capture is taken before the writing has been quiet long enough to be kept, 2.5 s: kept, the page draws what the store holds)
+        log(`shot: look-${name}-canvas`);
+        await sleep(1900);
+        must((await there())?.live === 1, `${name}: and was while the capture was taken`);
+        await invoke('dev_ink_pen', { on: false, keep: false });
+        await poll(async () => { const k = await there(); return k && k.live === 0 && !k.shown; }, `${name}: handed over, the page draws it`, 15000);
+        await shot(`look-${name}-page`, 1200);
+        await poll(async () => { const k = await there(); return k && !k.dirty; }, `${name}: kept`, 25000);
+      };
+      phase('the same stroke three ways');
+      tools.setTool('pen');
+      tools.setSize('pen', 2);
+      tools.setRecent('pen', '#ff8040');
+      await sleep(400);
+      await three('pen', 250);
+      tools.setTool('highlighter');
+      tools.setSize('highlighter', 1);
+      tools.setRecent('highlighter', '#ffe000');
+      await poll(async () => (await state()).tool?.kind === 'highlighter', 'the highlighter', 8000);
+      await three('highlighter', 330);
+      {
+        // a highlighter's stroke is the page's as soon as PencilKit hands it over, not at the pause
+        const before = (await there())?.strokes ?? 0;
+        await invoke('dev_ink_pen', { on: true });
+        await sleep(300);
+        ask('drag', ...P2(100, 372), ...P2(300, 372), 0.02);
+        await poll(async () => { const k = await there(); return k && k.strokes === before + 1 && k.live === 0 && !k.shown ? k : null; }, 'a highlighter\'s stroke more: the page draws it', 30000);
+        const tr = (await there())?.trace ?? [];
+        log(`highlighter: ${tr.join('; ')}`);
+        const emptied = Number(tr.find((x) => /emptied/.test(x))?.split(' ')[0] ?? NaN);
+        must(emptied < 250, `handed to the page ${emptied} ms after the lift: sooner than the pause a pen's stroke waits`);
+        await invoke('dev_ink_pen', { on: false });
+        await poll(async () => { const k = await there(); return k && !k.dirty; }, 'kept', 25000);
+      }
+      tools.setTool('pen');
+      await poll(async () => (await state()).tool?.kind === 'pen', 'the pen again', 8000);
+    }
     if (want('most')) {
       // at the most the pages zoom to, where a page is drawn with fewer pixels than the screen has: the writing is paths still
       setBookZoom(PAGEINK_BOOK, 4);
@@ -19699,8 +19950,13 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       await write(sheet, line([120, 445], [300, 445]));
       await write(sheet, line([340, 420], [380, 445]));
       await poll(() => paths().length === n0 + 3, 'three strokes written: three paths more in the page, before anything is kept', 4000);
+      const told0 = names();
       await atRest('written');
       const kept0 = names();
+      // (the pen is the even line, which PencilKit writes into a drawing's bytes as a pen: named by its ink as it
+      // was in hand, a stroke was drawn under one name before it was kept and another after)
+      log(`names: told ${told0}; kept ${kept0}; the pen's ink ${tools.useInkTools.getState().kept.ink}`);
+      must(told0 === kept0, 'each is drawn under one name, before it is kept and after: the name the store keeps it under');
       await invoke('dev_ink_pen', { on: true });
       // the eraser across the first: its path goes at once, and comes back with undo
       tools.setEraser('stroke');

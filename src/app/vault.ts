@@ -1036,6 +1036,8 @@ export function openInitialVault(): Promise<void> {
     if (import.meta.env.DEV) {
       const path = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' });
       const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
+      // a smoke reads the page the moment it changes: nothing is in motion under one (`motion.css`)
+      if (mode) document.documentElement.dataset.still = '1';
       // the second window (`ILMI_VAULT2`, the sync smoke's other device): its own vault, or the smoke's steps
       if (getCurrentWindow().label === 'second') {
         const path2 = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT2' });

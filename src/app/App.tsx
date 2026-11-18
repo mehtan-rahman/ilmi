@@ -25,6 +25,7 @@ import { watchInk, watchLayout } from './ink.js';
 import './app.css';
 import './chrome.css';
 import './phone.css';
+import './motion.css';
 import { Glyph } from './icons.js';
 
 /** Narrower than this and a drag on the handle hides the sidebar. */

@@ -772,6 +772,17 @@ class InkPlugin: Plugin, PenEars {
 
   override func load(webview: WKWebView) {
     web = webview
+    // the page fills the window: it is given its size when it is made, and a window that settles a little
+    // larger after that left a band of nothing along the foot
+    let fill = { [weak webview] in
+      guard let w = webview, let over = w.superview else { return }
+      if let window = over.window, over === window.rootViewController?.view, over.frame != window.bounds { over.frame = window.bounds }
+      if w.frame != over.bounds { w.frame = over.bounds }
+      w.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    }
+    DispatchQueue.main.async(execute: fill)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: fill)
+    NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in fill() }
     NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in self?.wentAway() }
     history.levelsOfUndo = 200
     for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange, .NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidOpenUndoGroup] {

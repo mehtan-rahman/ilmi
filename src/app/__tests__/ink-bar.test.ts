@@ -109,7 +109,7 @@ describe('what is chosen', () => {
   });
 
   it('the size in use can be made thinner or thicker, between what the tool can be, to a tenth of a point', () => {
-    expect(WIDTHS).toEqual({ pen: [0.5, 8], highlighter: [6, 40], eraser: [4, 48] });
+    expect(WIDTHS).toEqual({ pen: [0.2, 8], highlighter: [6, 40], eraser: [4, 48] });
     let k = withWidth(DEFAULTS, 'pen', 5.04);
     expect(k.widths.pen).toEqual([1.2, 5, 3.6]);
     expect(toolOf(k).width).toBe(5);
@@ -117,9 +117,9 @@ describe('what is chosen', () => {
     expect(k.widths.highlighter).toBe(SIZES.highlighter);
     expect(SIZES.pen).toEqual([1.2, 2.2, 3.6]);
     k = withWidth(withSize(k, 'pen', 0), 'pen', 0.1);
-    expect(k.widths.pen).toEqual([0.5, 5, 3.6]);
+    expect(k.widths.pen).toEqual([0.2, 5, 3.6]);
     k = withWidth(withSize(k, 'pen', 2), 'pen', 99);
-    expect(k.widths.pen).toEqual([0.5, 5, 8]);
+    expect(k.widths.pen).toEqual([0.2, 5, 8]);
     expect(withWidth(DEFAULTS, 'highlighter', 2).widths.highlighter).toEqual([10, 6, 24]);
     expect(withWidth(DEFAULTS, 'eraser', 33.33).widths.eraser).toEqual([8, 33.3, 28]);
     // the same again, and what is no number: nothing
@@ -131,24 +131,25 @@ describe('what is chosen', () => {
 
   it('a width is held to what the ink takes on this device, where that is known; what is kept is not changed by it', () => {
     const caps = { pen: [0.88, 25.66], monoline: [0.5, 2.85], pencil: [2.4, 16], marker: [9.64, 60] } as const;
-    expect(rangeOf(DEFAULTS, 'pen')).toEqual([0.5, 8]);
-    expect(rangeOf(DEFAULTS, 'pen', null)).toEqual([0.5, 8]);
+    expect(rangeOf(DEFAULTS, 'pen')).toEqual([0.2, 8]);
+    expect(rangeOf(DEFAULTS, 'pen', null)).toEqual([0.2, 8]);
     // inside both, in tenths
-    expect(rangeOf(withInk(DEFAULTS, 'pen'), 'pen', caps)).toEqual([0.9, 8]);
-    expect(rangeOf(DEFAULTS, 'pen', caps)).toEqual([0.5, 2.8]);
-    expect(rangeOf(withInk(DEFAULTS, 'pencil'), 'pen', caps)).toEqual([2.4, 8]);
+    // (a pen may be thinner than the ink's thinnest: its strokes are thinned when handed over)
+    expect(rangeOf(withInk(DEFAULTS, 'pen'), 'pen', caps)).toEqual([0.2, 8]);
+    expect(rangeOf(DEFAULTS, 'pen', caps)).toEqual([0.2, 2.8]);
+    expect(rangeOf(withInk(DEFAULTS, 'pencil'), 'pen', caps)).toEqual([0.2, 8]);
     // an ink the device said nothing of, and the eraser, which is ours: as wide as the tool can be
-    expect(rangeOf(withInk(DEFAULTS, 'fountain'), 'pen', caps)).toEqual([0.5, 8]);
+    expect(rangeOf(withInk(DEFAULTS, 'fountain'), 'pen', caps)).toEqual([0.2, 8]);
     expect(rangeOf(DEFAULTS, 'eraser', caps)).toEqual([4, 48]);
     // the highlighter's is the marker's
     expect(rangeOf(DEFAULTS, 'highlighter', caps)).toEqual([9.7, 40]);
     // a range that leaves nothing is not believed
-    expect(rangeOf(withInk(DEFAULTS, 'pen'), 'pen', { pen: [9, 12] })).toEqual([0.5, 8]);
+    expect(rangeOf(withInk(DEFAULTS, 'pen'), 'pen', { pen: [9, 12] })).toEqual([0.2, 8]);
     const k = withInk(withSize(DEFAULTS, 'pen', 2), 'monoline');
     expect(widthOf(k, 'pen')).toBe(3.6);
     expect(widthOf(k, 'pen', caps)).toBe(2.8);
     expect(toolOf(k, caps)).toEqual({ kind: 'pen', color: '#1c1c1e', width: 2.8, ink: 'monoline', snap: true });
-    expect(toolOf(withInk(DEFAULTS, 'pencil'), caps).width).toBe(2.4);
+    expect(toolOf(withInk(DEFAULTS, 'pencil'), caps).width).toBe(2.2);
     expect(widthOf(withSize(DEFAULTS, 'highlighter', 0), 'highlighter', caps)).toBe(10);
     expect(widthOf(withWidth(DEFAULTS, 'highlighter', 6), 'highlighter', caps)).toBe(9.7);
     expect(k.widths.pen).toEqual([1.2, 2.2, 3.6]);
@@ -355,7 +356,7 @@ describe('what is chosen', () => {
       opacity: 0.01, eraser: 'part', snap: false, shown: false,
     }));
     expect([k.tool, k.last]).toEqual(['eraser', 'select']);
-    expect(k.widths).toEqual({ pen: [0.5, 2.3, 8], highlighter: [6, 16, 40], eraser: [8, 16, 28] });
+    expect(k.widths).toEqual({ pen: [0.2, 2.3, 8], highlighter: [6, 16, 40], eraser: [8, 16, 28] });
     expect(k.colors.pen).toEqual(['#abcdef', '#1d4fb8', '#c5281c', '#010203']);
     expect(k.colors.highlighter).toEqual(['#111111', '#86e08a', '#ff8fc0', '#7cc4ff']);
     expect(k.recent.pen).toEqual(['#aaaaaa', '#bbbbbb']);
@@ -611,7 +612,7 @@ describe('what the canvases are told', () => {
     b.tools.setSize('pen', 2);
     b.tools.setTool('highlighter');
     b.tools.setWidth('highlighter', 6);
-    expect(said('ink_tool').map((t) => { const tool = t.tool as { ink?: string; width: number }; return [tool.ink, tool.width]; })).toEqual([['pencil', 8], ['pencil', 2.4], ['monoline', 1.2], ['monoline', 2.8], [undefined, 16], [undefined, 9.7]]);
+    expect(said('ink_tool').map((t) => { const tool = t.tool as { ink?: string; width: number }; return [tool.ink, tool.width]; })).toEqual([['pencil', 8], ['pencil', 1.2], ['monoline', 1.2], ['monoline', 2.8], [undefined, 16], [undefined, 9.7]]);
     // not asked again, by a later scene or anything else
     await b.scene();
     b.tools.canvasesReady();
@@ -1254,7 +1255,7 @@ describe('the row of tools', () => {
     expect(said('ink_tool')).toEqual([{ tool: { ...PEN, ink: 'fountain' } }]);
     // the size: between what a pen can be, at the width of the size in use
     const range = () => inPop<HTMLInputElement>('[data-ink-range="width"]')[0]!;
-    expect([range().min, range().max, range().step, range().value, range().getAttribute('aria-label')]).toEqual(['0.5', '8', '0.1', '2.2', 'size']);
+    expect([range().min, range().max, range().step, range().value, range().getAttribute('aria-label')]).toEqual(['0.2', '8', '0.1', '2.2', 'size']);
     expect(inPop('[data-ink-preview]')[0]!.dataset).toMatchObject({ inkPreview: 'pen', width: '2.2' });
     expect(inPop('.ip-v')[0]!.textContent).toBe('2.2');
     calls.length = 0;
@@ -1299,9 +1300,9 @@ describe('the row of tools', () => {
     await press('[aria-label="pen"]');
     expect(inPop('[data-ink-ink]').map((b) => b.dataset.inkInk)).toEqual(['pen', 'pencil']);
     const range = () => inPop<HTMLInputElement>('[data-ink-range="width"]')[0]!;
-    expect([range().min, range().max, range().value]).toEqual(['0.9', '8', '2.2']);
+    expect([range().min, range().max, range().value]).toEqual(['0.2', '8', '2.2']);
     await pressPop('[data-ink-ink="pencil"]');
-    expect([range().min, range().max, range().value]).toEqual(['2.4', '8', '2.4']);
+    expect([range().min, range().max, range().value]).toEqual(['0.2', '8', '2.2']);
     await press('[aria-label="highlighter"]');
     await press('[aria-label="highlighter"]');
     expect([range().min, range().max, range().value]).toEqual(['9.7', '30', '16']);

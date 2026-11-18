@@ -54,7 +54,7 @@ export const SIZES: Record<Sized, Three> = {
 export const SIZE_NAMES = ['thin', 'medium', 'thick'] as const;
 /** How thin and how thick each can be made. */
 export const WIDTHS: Record<Sized, readonly [number, number]> = {
-  pen: [0.5, 8],
+  pen: [0.2, 8],
   highlighter: [6, 40],
   eraser: [4, 48],
 };
@@ -244,7 +244,8 @@ export function rangeOf(k: Kept, tool: Sized, ranges?: Ranges | null): readonly 
   const [lo, hi] = WIDTHS[tool];
   const own = tool === 'pen' ? ranges?.[k.ink] : tool === 'highlighter' ? ranges?.marker : undefined;
   if (!own) return [lo, hi];
-  const a = Math.ceil(Math.max(lo, own[0]) * 10) / 10;
+  // (a pen may be thinner than PencilKit's thinnest: its strokes are thinned as they are handed over)
+  const a = tool === 'pen' ? lo : Math.ceil(Math.max(lo, own[0]) * 10) / 10;
   const b = Math.floor(Math.min(hi, own[1]) * 10) / 10;
   return a < b ? [a, b] : [lo, hi];
 }

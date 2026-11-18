@@ -1570,21 +1570,39 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     }
   }
 
-  /// A stroke as the pen's `pressure` has it: each point's size moved toward the stroke's mean (less than 1) or away from it (more).
+  /// A stroke as the pen's `pressure` and its thinness have it. Pressure: each point's width follows the hand's force
+  /// against the stroke's mean (and what the ink varies by itself is kept, less or more), none of it at 0; thinness:
+  /// a pen set thinner than PencilKit's thinnest is thinned by what is missing.
   private func sensed(_ k: PKStroke) -> PKStroke {
-    guard plugin.tool.kind == "pen", let f = plugin.tool.sense, abs(f - 1) > 0.01 else { return k }
-    var follows = k.ink.inkType == .pen
-    if #available(iOS 17.0, *), k.ink.inkType == .fountainPen { follows = true }
+    guard plugin.tool.kind == "pen" else { return k }
+    let type = k.ink.inkType
+    var fountain = false, even = false
+    if #available(iOS 17.0, *) { fountain = type == .fountainPen; even = type == .monoline }
+    let follows = type == .pen || fountain
+    let q = plugin.thin
     let points = Array(k.path)
-    guard follows, points.count > 1 else { return k }
+    guard follows || q < 0.999, points.count > 1 else { return k }
+    let g = CGFloat(min(max(plugin.tool.sense ?? 1, 0), 2))
     let n = CGFloat(points.count)
-    let mw = points.reduce(0) { $0 + $1.size.width } / n
+    // a round nib's width is twice the point's size less four (`stroke.m`): the line is changed by its width, not its size
+    let round = type == .pen || even
+    let wide: (PKStrokePoint) -> CGFloat = { round ? max(0.05, 2 * $0.size.width - 4) : $0.size.width }
+    let mw = points.reduce(0) { $0 + wide($1) } / n
     let mh = points.reduce(0) { $0 + $1.size.height } / n
-    let g = CGFloat(min(max(f, 0), 2))
-    let made = points.map { p -> PKStrokePoint in
-      let w = max(mw * 0.35, mw + (p.size.width - mw) * g)
-      let h = max(mh * 0.35, mh + (p.size.height - mh) * g)
-      return PKStrokePoint(location: p.location, timeOffset: p.timeOffset, size: CGSize(width: w, height: h), opacity: p.opacity, force: p.force, azimuth: p.azimuth, altitude: p.altitude)
+    let mf = points.reduce(0) { $0 + $1.force } / n
+    let made = points.enumerated().map { (i, p) -> PKStrokePoint in
+      var w = wide(p), h = p.size.height
+      if follows {
+        // (the force evened over its neighbours: no lump where one reading jumps)
+        let a = points[max(i - 1, 0)].force, b = points[min(i + 1, points.count - 1)].force
+        let r = mf > 0.001 ? (a + 2 * p.force + b) / 4 / mf : 1
+        let by = min(max(1 + g * 0.85 * (r - 1), 0.3), 2.4)
+        w = max(mw * 0.2, (mw + (w - mw) * g) * by)
+        if !round { h = max(mh * 0.2, (mh + (h - mh) * g) * by) }
+      }
+      w *= q
+      if !round { h *= q }
+      return PKStrokePoint(location: p.location, timeOffset: p.timeOffset, size: CGSize(width: round ? (w + 4) / 2 : w, height: h), opacity: p.opacity, force: p.force, azimuth: p.azimuth, altitude: p.altitude)
     }
     return PKStroke(ink: k.ink, path: PKStrokePath(controlPoints: made, creationDate: k.path.creationDate), transform: k.transform, mask: k.mask)
   }

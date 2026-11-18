@@ -711,6 +711,8 @@ class InkPlugin: Plugin, PenEars {
   private var toolSeq = 0
   private(set) var tool = ToolSpec(kind: "pen", color: "#000000", width: 2.2)
   private(set) var ink = PKInkingTool(.pen, color: .black, width: 2.2)
+  /// How much thinner than PencilKit wrote it a pen's stroke is to be (1: as written).
+  private(set) var thin: CGFloat = 1
   var ours: Bool { tool.kind == "eraser" || tool.kind == "select" }
   /// Every canvas's undo manager.
   let history = UndoManager()
@@ -2074,6 +2076,8 @@ class InkPlugin: Plugin, PenEars {
         var c = colour(t.color) ?? .black
         if let a = t.opacity, a < 1 { c = c.withAlphaComponent(CGFloat(min(max(a, 0.05), 1))) }
         made = PKInkingTool(type, color: c, width: min(max(CGFloat(t.width), range.lowerBound), range.upperBound))
+        // thinner than PencilKit's thinnest: written at its thinnest, and thinned by this much when it is handed over
+        self.thin = t.kind == "pen" && CGFloat(t.width) < range.lowerBound ? max(0.1, CGFloat(t.width) / range.lowerBound) : 1
       case "eraser", "select":
         break
       default:

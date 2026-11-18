@@ -4,9 +4,17 @@
 // controller (`src/app/sync.ts`) writes it and commits. The rules:
 //
 // - A schedule line changed on both sides takes the later instant: `last`
-//   on an `sr` line (then `due`), `due` on a `read`/`write` field and a
-//   section's `read` line. One review touches one line, so reviews of
-//   different cards in one file never meet.
+//   on an `sr` line (then `due`, then `seen`: a card learnt and not yet
+//   tested), `due` on a `read`/`write` field and a section's `read` line.
+//   One review touches one line, so reviews of different cards in one file
+//   never meet; two lines of one card (its two directions, two blanks of a
+//   cloze), each written on one side, are both kept; a line one side took
+//   away and the other changed stays; and a card given its id on each side
+//   (its first line, written on both before they met) keeps one of them,
+//   the same on every device.
+// - A block reworded on one side, with only its schedule lines changed on
+//   the other (a card graded or learnt there), takes the words of the one
+//   and the lines of both.
 // - Prose changed on both sides in one block keeps both versions, one
 //   block after the other, and says where (the file and the heading above);
 //   never conflict markers in the file.
@@ -165,7 +173,8 @@ const instant = (v: string | null): string | null => (v === null ? null : v.leng
  * `due` (a pass or a postpone moves it), ours on a tie or when neither says.
  */
 export function later(ours: string, theirs: string): 'ours' | 'theirs' {
-  for (const name of ['last', 'due']) {
+  // a review, then a due, then a card learnt and not yet tested (`seen`): a line that has a review is later than one that has none
+  for (const name of ['last', 'due', 'seen']) {
     const a = instant(attr(ours, name));
     const b = instant(attr(theirs, name));
     if (a !== null && b !== null && a !== b) return a > b ? 'ours' : 'theirs';
@@ -175,43 +184,86 @@ export function later(ours: string, theirs: string): 'ours' | 'theirs' {
   return 'ours';
 }
 
-/**
- * A conflict's two sides, block by block when they have the same number
- * of blocks: a block one side left as the base takes the other side's; a
- * block changed on both takes, line by line, the later of two schedule
- * lines of one kind (the same line counts, every differing line such a
- * pair). Null when any block differs in anything else: a real conflict.
- */
-function byBlocks(base: string[][] | null, ours: string[][], theirs: string[][]): string[][] | null {
-  if (ours.length !== theirs.length) return null;
-  const b3 = base && base.length === ours.length ? base : null;
-  const out: string[][] = [];
-  for (let b = 0; b < ours.length; b++) {
-    const o = ours[b]!;
-    const t = theirs[b]!;
-    if (b3) {
-      const k = key(b3[b]!);
-      if (key(o) === k) { out.push(t); continue; }
-      if (key(t) === k) { out.push(o); continue; }
-    }
-    const lines = bySchedule(o, t);
-    if (!lines) return null;
-    out.push(lines);
+/** A schedule line in a document's body: a card's `sr` line or a section's `read` line (a field's line is the front matter's). */
+const bodyKind = (line: string): string | null => { const k = scheduleKind(line); return k === 'read' || k === 'write' ? null : k; };
+
+/** What a block says: its lines that are not schedule lines, a card's id aside. Two blocks that say the same differ only in what a review, a pass, or a first schedule line writes. */
+const prose = (block: string[]): string => block.filter((l) => bodyKind(l) === null).map((l) => bare(l)[0]).join('\n');
+
+/** A block as its lines that are not schedule lines, each with the schedule lines under it by kind (`null`: those before any). */
+type Under = { line: string | null; sched: Map<string, string> }[];
+
+function under(block: string[]): Under {
+  const out: Under = [];
+  for (const line of block) {
+    const k = bodyKind(line);
+    if (k === null) { out.push({ line, sched: new Map() }); continue; }
+    if (!out.length) out.push({ line: null, sched: new Map() });
+    out[out.length - 1]!.sched.set(k, line);
   }
   return out;
 }
 
-/** Two versions of one block that differ only in schedule lines of one kind, pair by pair: the later of each; else null. */
-function bySchedule(o: string[], t: string[]): string[] | null {
-  if (o.length !== t.length) return null;
+const ID_TAIL = /[ \t]+\^([A-Za-z0-9_-]+)[ \t]*$/;
+/** A line without the block id at its end, and that id. */
+const bare = (line: string | null): [string | null, string | null] => { const m = line === null ? null : ID_TAIL.exec(line); return m ? [line!.slice(0, m.index), m[1]!] : [line, null]; };
+
+/** The latest review among schedule lines, as a sortable string; none, the empty one. */
+const lastOf = (sched: Map<string, string>): string => [...sched.values()].map((l) => instant(attr(l, 'last')) ?? '').sort().pop() ?? '';
+
+/** Where a schedule line of a kind goes under its card: the bare line, the reverse's, the groups' in order. */
+const place = (kind: string): number => (kind === 'sr' || kind === 'section' ? 0 : kind === 'sr r' ? 1 : 2 + (Number(kind.slice(4)) || 0));
+
+/**
+ * Two versions of one block that differ only in their schedule lines, and
+ * in an id given to a card on either side (its first schedule line, written
+ * on each device before they met): merged line by line. Under each line
+ * that is not a schedule line, the schedule lines of each kind: one side's
+ * when the other left it as the base had it (written, changed or taken
+ * away); of two that changed it the later (`later`); a line one side took
+ * away and the other changed stays, changed. An id on one side only is
+ * kept; of two, the one on the side with the later review there (the
+ * smaller of the two when neither has one), so each device keeps the same.
+ * Null when anything else differs: a real conflict.
+ */
+function bySchedule(b: string[] | null, o: string[], t: string[]): string[] | null {
+  const [uo, ut] = [under(o), under(t)];
+  if (uo.length !== ut.length) return null;
+  const ub0 = b ? under(b) : null;
+  // the base stands for what both had only when each of its lines is what one side still has (a card's id aside)
+  const ub = ub0 && ub0.length === uo.length && ub0.every((g, i) => bare(g.line)[0] === bare(uo[i]!.line)[0] || bare(g.line)[0] === bare(ut[i]!.line)[0]) ? ub0 : null;
   const lines: string[] = [];
-  for (let i = 0; i < o.length; i++) {
-    const a = o[i]!;
-    const c = t[i]!;
-    if (a === c) { lines.push(a); continue; }
-    const ka = scheduleKind(a);
-    if (ka === null || ka !== scheduleKind(c)) return null;
-    lines.push(later(a, c) === 'ours' ? a : c);
+  for (let i = 0; i < uo.length; i++) {
+    const [go, gt] = [uo[i]!, ut[i]!];
+    let line = go.line;
+    if (go.line !== gt.line) {
+      const [[so, io], [st, it]] = [bare(go.line), bare(gt.line)];
+      const [sb, ib] = ub ? bare(ub[i]!.line) : [undefined, null];
+      // what the line says: the same on both, or one side's rewording of what the other left as it was
+      const text = so === st ? so : so === sb ? st : st === sb ? so : undefined;
+      if (text === undefined || text === null) return null;
+      // its id: the base's when it had one (not one side's to change); else the one given on either side, of two the
+      // one on the side with the later review there, the smaller when neither has one
+      let id: string | null;
+      if (ib !== null) { if ((io !== null && io !== ib) || (it !== null && it !== ib)) return null; id = ib; }
+      else if (io === null || it === null || io === it) id = io ?? it;
+      else { const [lo, lt] = [lastOf(go.sched), lastOf(gt.sched)]; id = lo !== lt ? (lo > lt ? io : it) : io < it ? io : it; }
+      const whole = (x: string | null, xs: string | null, xi: string | null) => xs === text && xi === id ? x : null;
+      line = whole(go.line, so, io) ?? whole(gt.line, st, it) ?? (id === null ? text : `${text} ^${id}`);
+    }
+    if (line !== null) lines.push(line);
+    const kinds = [...new Set([...go.sched.keys(), ...gt.sched.keys()])].sort((x, y) => place(x) - place(y));
+    for (const k of kinds) {
+      const [vo, vt] = [go.sched.get(k), gt.sched.get(k)];
+      const vb = ub ? ub[i]!.sched.get(k) : undefined;
+      let keep: string | undefined;
+      if (vo === vt) keep = vo;
+      else if (ub && vo === vb) keep = vt;
+      else if (ub && vt === vb) keep = vo;
+      else if (vo !== undefined && vt !== undefined) keep = later(vo, vt) === 'ours' ? vo : vt;
+      else keep = vo ?? vt;
+      if (keep !== undefined) lines.push(keep);
+    }
   }
   return lines;
 }
@@ -261,16 +313,50 @@ export function mergeMarkdown(path: string, base: string | null, ours: string, t
     const t = h.theirs.map((k) => byKey.get(k)!);
     if (same(h.ours, h.base) || same(h.ours, h.theirs)) { t.forEach(push); continue; }
     if (same(h.theirs, h.base)) { o.forEach(push); continue; }
-    const sched = byBlocks(h.base.map((k) => byKey.get(k) ?? k.split('\n')), o, t);
-    if (sched) { sched.forEach(push); continue; }
-    // front-matter on both sides: line by line, a schedule line's later version, anything else the pulled side's
-    if (o.length === 1 && t.length === 1 && o[0]![0] === '---' && t[0]![0] === '---' && lines.length === 0) {
-      push(mergeFrontMatter(h.base.length === 1 ? h.base[0]!.split('\n') : [], o[0]!, t[0]!));
-      continue;
+    // both changed these blocks. They are held against each other again by what they say (`prose`: a block without
+    // its schedule lines and a card's id), so a block that says the same on both sides is merged by its schedule
+    // lines wherever it falls among blocks one side added, took away or reworded
+    const b = h.base.map((k) => byKey.get(k) ?? k.split('\n'));
+    const top = lines.length === 0;
+    const front = (x: string[][]): boolean => top && x[0]?.[0] === '---';
+    const said = (x: string[][]): string[] => x.map((blk, i) => (i === 0 && front(x) ? '---' : prose(blk)));
+    let [bi, oi, ti] = [0, 0, 0];
+    // with nothing of the base here (histories that never met, blocks both made): what the two say alike stands in for it
+    const none = b.length === 0;
+    for (const g of diff3(none ? common(said(o), said(t)) : said(b), said(o), said(t))) {
+      if ('stable' in g) {
+        const [bb, ob, tb] = [none ? null : b[bi++]!, o[oi++]!, t[ti++]!];
+        if ((bb && key(ob) === key(bb)) || key(ob) === key(tb)) { push(tb); continue; }
+        if (bb && key(tb) === key(bb)) { push(ob); continue; }
+        // front-matter on both sides: line by line, a schedule line's later version, anything else the pulled side's
+        if (g.stable === '---') { push(mergeFrontMatter(bb ?? [], ob, tb)); continue; }
+        const merged = bySchedule(bb, ob, tb);
+        if (merged) { push(merged); continue; }
+        kept.push({ path, heading: headingAbove(lines, lines.length, path) });
+        push(closed(ob));
+        push(tb);
+        continue;
+      }
+      const [gb, go, gt] = [none ? [] : b.slice(bi, bi + g.base.length), o.slice(oi, oi + g.ours.length), t.slice(ti, ti + g.theirs.length)];
+      bi += g.base.length; oi += g.ours.length; ti += g.theirs.length;
+      const [kb, ko2, kt2] = [gb.map(key), go.map(key), gt.map(key)];
+      if (same(ko2, kb) || same(ko2, kt2)) { gt.forEach(push); continue; }
+      if (same(kt2, kb)) { go.forEach(push); continue; }
+      // a block only one side has (added there, or taken away here with nothing put in its place) is that side's to say
+      if (!gb.length && !gt.length) { go.forEach(push); continue; }
+      if (!gb.length && !go.length) { gt.forEach(push); continue; }
+      // front-matter one side made and the other changed, or both made
+      if (go.length === 1 && gt.length === 1 && front(go) && front(gt) && lines.length === 0) { push(mergeFrontMatter(gb.length === 1 ? gb[0]! : [], go[0]!, gt[0]!)); continue; }
+      // block for block, one side rewording what the other only wrote a schedule line under (a card graded or learnt
+      // here, reworded there): the words of the one, the lines of both
+      if (gb.length === go.length && gb.length === gt.length) {
+        const each = gb.map((bb, i) => bySchedule(bb, go[i]!, gt[i]!));
+        if (each.every((x) => x !== null)) { each.forEach((x) => push(x!)); continue; }
+      }
+      kept.push({ path, heading: headingAbove(lines, lines.length, path) });
+      go.forEach((blk, i) => push(i === go.length - 1 ? closed(blk) : blk));
+      gt.forEach(push);
     }
-    kept.push({ path, heading: headingAbove(lines, lines.length, path) });
-    o.forEach((b, i) => push(i === o.length - 1 ? closed(b) : b));
-    t.forEach(push);
   }
   let text = lines.join('\n');
   if (!text.endsWith('\n')) text += '\n';

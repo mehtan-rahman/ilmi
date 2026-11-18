@@ -33,6 +33,7 @@ import { nodeFs } from '../../vault/node-fs.js';
 import { rising, type InkStroke } from '../../vault/store.js';
 import { bothChanged, engine, frontLines, type Engine, type EngineOptions } from '../engine.js';
 import { clock, msOf } from '../clock.js';
+import { cardId } from '../../schedule/queue.js';
 import { folderStorage, memStorage, type MemStorage, type Storage } from '../storage.js';
 
 const SAMPLE = fileURLToPath(new URL('../../../samples/double-major', import.meta.url));
@@ -1870,4 +1871,78 @@ describe('copies making random edits and syncing in random orders', () => {
       }
     }, 120_000);
   }
+});
+
+// What the queue-and-session model found (`src/app/__tests__/queue-session.model.test.ts`, 2026-11-18): a card's
+// first schedule line written on two copies before they met.
+describe('a card learnt (`seen`) and a card given its id on two copies', () => {
+  const DECK = 'deck.md';
+  /** Two copies of one deck of new cards with no id. */
+  async function two(): Promise<{ a: Copy; b: Copy; storage: MemStorage }> {
+    const storage = memStorage();
+    const a = await copy('a');
+    await a.fs.mkdir(ROOT);
+    await a.write(DECK, '---\ntype: deck\n---\n\nq :: a\n\nw :: v\n');
+    await a.eng.connect(storage);
+    await a.eng.sync(storage);
+    const b = await copy('b');
+    await b.fs.mkdir(ROOT);
+    await b.eng.connect(storage);
+    await b.eng.sync(storage);
+    return { a, b, storage };
+  }
+  const first = (doc: Doc): Card => doc.blocks.find((x): x is Card => x.kind === 'card')!;
+  /** The card's first line as the app writes it: its id (`cardId`), then the line. */
+  const write = (c: Copy, sched: (at: string) => NonNullable<Card['sched']>) => c.change(DECK, (doc) => { const card = first(doc); card.id ??= cardId(DECK, doc, card); card.sched = sched(iso(c.at.ms)); });
+
+  it('learnt on one: the other holds the line, the card still new', async () => {
+    const { a, b, storage } = await two();
+    a.at.ms += 60_000;
+    await write(a, (at) => ({ seen: at }));
+    await settle(storage, [a, b]);
+    const t = await b.read(DECK);
+    expect(t).toBe(await a.read(DECK));
+    expect(t).toMatch(new RegExp(`^q :: a \\^c[a-z0-9]{6}\\n<!-- sr seen=${iso(T0 + 60_000)} -->$`, 'm'));
+  }, 60_000);
+
+  it('graded on one, then learnt on the other, which had not heard: the grade stands, whichever syncs first', async () => {
+    for (const lead of ['a', 'b'] as const) {
+      const { a, b, storage } = await two();
+      a.at.ms += 60_000;
+      await write(a, (at) => ({ state: 'learning', reps: 1, last: at, due: iso(a.at.ms + 600_000), grade: 3 }));
+      b.at.ms += 3_600_000;
+      await write(b, (at) => ({ seen: at }));
+      await settle(storage, lead === 'a' ? [a, b] : [b, a]);
+      const t = await a.read(DECK);
+      expect(await b.read(DECK)).toBe(t);
+      // one id, written once, and under it the review
+      expect(t).toMatch(new RegExp(`^q :: a \\^c[a-z0-9]{6}\\n<!-- sr [^\\n]*last=${iso(T0 + 60_000)} g=3 -->$`, 'm'));
+      expect(t).not.toContain('seen=');
+    }
+  }, 60_000);
+
+  it('learnt on both: one card, one id, learnt', async () => {
+    const { a, b, storage } = await two();
+    a.at.ms += 60_000;
+    await write(a, (at) => ({ seen: at }));
+    b.at.ms += 120_000;
+    await write(b, (at) => ({ seen: at }));
+    await settle(storage, [a, b]);
+    const t = await a.read(DECK);
+    expect(await b.read(DECK)).toBe(t);
+    expect(t).toMatch(/^q :: a \^c[a-z0-9]{6}\n<!-- sr seen=\S+ -->$/m);
+    expect(parse(t).doc.blocks.filter((x) => x.kind === 'card')).toHaveLength(2);
+  }, 60_000);
+
+  it('graded on both: the later review, under the one id', async () => {
+    const { a, b, storage } = await two();
+    a.at.ms += 60_000;
+    await write(a, (at) => ({ state: 'learning', reps: 1, last: at, due: iso(a.at.ms + 60_000), grade: 1 }));
+    b.at.ms += 120_000;
+    await write(b, (at) => ({ state: 'review', reps: 1, last: at, due: '2026-11-13', ivl: 8, grade: 4 }));
+    await settle(storage, [b, a]);
+    const t = await a.read(DECK);
+    expect(await b.read(DECK)).toBe(t);
+    expect(t).toMatch(new RegExp(`^q :: a \\^c[a-z0-9]{6}\\n<!-- sr [^\\n]*last=${iso(T0 + 120_000)} g=4 -->$`, 'm'));
+  }, 60_000);
 });

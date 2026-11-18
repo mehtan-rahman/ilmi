@@ -15,7 +15,8 @@
 //   a register, the later write by the clock (`clock.ts`).
 // - A schedule: a register too, but the later review instant wins (53's
 //   rule): its stamp leads with the schedule's `last`, or with the time it
-//   was written when it has none, then the clock.
+//   was written when it has none, then the clock. A card learnt and not
+//   yet tested (`seen`, no `last`) is stamped below every review.
 // - The review log: a set that only grows.
 // - A row deleted on one device and changed on another keeps the change:
 //   a delete names the changes it had seen, and only those.
@@ -109,6 +110,7 @@
 // the storage is a header line and then one such line a write.
 
 import { parse, serialize } from '../format/index.js';
+import { cardId } from '../schedule/queue.js';
 import { compose, type StateRow } from '../vault/lift.js';
 import { BOOK_PAGE, hiddenId, isBookPage, isInk, lineRow, newId, type InkStroke, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
 import { marksDiff, marksHashOf, marksMap, marksMerged, marksPath, marksText } from '../vault/marks.js';
@@ -301,10 +303,14 @@ function schedStamp(attrs: string | null, c: string, had?: string): string {
   let at = msOf(c);
   if (attrs !== null) {
     try {
-      const last = (JSON.parse(attrs) as { last?: unknown }).last;
-      if (typeof last === 'string') {
-        const t = Date.parse(last.length === 10 ? `${last}T00:00:00Z` : last);
+      const a = JSON.parse(attrs) as { last?: unknown; seen?: unknown };
+      if (typeof a.last === 'string') {
+        const t = Date.parse(a.last.length === 10 ? `${a.last}T00:00:00Z` : a.last);
         if (Number.isFinite(t)) at = t;
+      } else if (typeof a.seen === 'string') {
+        // a card learnt and not yet tested (`seen`, no review): any review of it is the later, whenever it was given,
+        // so a grade on one device is not lost to a `got it` on another that had not heard of it
+        at = 0;
       }
     } catch { /* attributes that do not read are stamped by when they were written */ }
   }
@@ -335,8 +341,6 @@ export function bothChanged(base: string, ours: string, theirs: string): (string
   }
   return out;
 }
-
-const CARD_ID = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 /** The row's registers, by their key under it (`n`, `m|title`, `s|card|…`). */
 type RowRegs = Map<string, Reg>;
@@ -829,21 +833,34 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
   const mint = async (rel: string): Promise<void> => {
     const abs = door.abs(rel);
     const { doc } = parse(await fs.readText(abs));
-    const used = new Set<string>();
-    for (const b of doc.blocks) if ((b.kind === 'card' || b.kind === 'paragraph') && b.id) used.add(b.id);
     let made = false;
     for (const b of doc.blocks) {
       if (b.kind !== 'card' || b.id || !(b.sched || b.reverse || b.blanks)) continue;
-      let id = '';
-      do {
-        id = 'c';
-        for (let i = 0; i < 6; i++) id += CARD_ID[Math.floor(Math.random() * CARD_ID.length)];
-      } while (used.has(id));
-      used.add(id);
-      b.id = id;
+      b.id = cardId(rel, doc, b);
       made = true;
     }
     if (made) await fs.writeText(abs, serialize(doc));
+  };
+
+  /**
+   * A card two devices each gave its id before they met: the same id (it
+   * is made from the card, `cardId`), written into the text twice, once by
+   * each, so the card's text ends with a second copy of it. The copy is
+   * taken out, as a change of this device's; each device that finds it
+   * takes out the same one. What each wrote under that id is one register.
+   */
+  const heal = async (rel: string): Promise<void> => {
+    if (!rel.endsWith('.md')) return;
+    const abs = door.abs(rel);
+    if (!(await fs.stat(abs))) return;
+    const { doc } = parse(await fs.readText(abs));
+    let healed = false;
+    for (const b of doc.blocks) {
+      if (b.kind !== 'card' || b.id === undefined) continue;
+      const tail = ` ^${b.id}`;
+      while (b.text.endsWith(tail)) { b.text = b.text.slice(0, -tail.length); healed = true; }
+    }
+    if (healed) await fs.writeText(abs, serialize(doc));
   };
 
   const start = async (coll: string, joined: boolean): Promise<void> => {
@@ -1755,6 +1772,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
         if (formatOf(raw).collection !== collection) throw new Error('this storage holds another collection');
         const out = { kept: [] as Kept[], changed: new Set<string>() };
         const { merged, took } = await pull(storage, out);
+        for (const rel of out.changed) await heal(rel);
         const wrote = await push(storage);
         const snapped = await snapshotIfDue(storage);
         const dropped = await tidy(storage);

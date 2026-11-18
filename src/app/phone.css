@@ -152,20 +152,34 @@ html[data-shape="phone"] .grades button:hover { background: transparent; color: 
 html[data-shape="phone"] .grades button:active { background: var(--line-2); }
 html[data-shape="phone"] .grades button kbd { display: none; }
 html[data-shape="phone"] .grades button .gap { font-size: var(--t-sm); margin-top: 5px; color: var(--fg-3); }
-/* the grades under the thumb as four keys of their own, not cells of a strip, in the app's own hand: paper,
-   a hairline, the app's square corner; what tells them apart is a rule along the top in the grade's colour,
-   and the word. A press darkens the key; nothing moves. The reveal is one key as wide as the four. */
+/* the grades under the thumb as one row in the app's own hand: paper, a hairline round the whole, the app's
+   square corner, and between one grade and the next a short faint line, not a wall. What tells them apart is
+   a rule along the top in the grade's colour, and the word. A press darkens the grade; nothing moves. The
+   reveal is the same row with one word in it. */
 html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn),
-html[data-shape="phone"] .reveal-all { margin: 12px 0 0; padding: 0 0 calc(10px + var(--safe-b)); gap: 6px; }
+html[data-shape="phone"] .reveal-all { margin: 12px 0 0; padding: 0 0 calc(10px + var(--safe-b)); gap: 0; }
 html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button {
   --g: var(--fg-3);
+  position: relative;
   min-height: 64px;
   padding: 11px 0 9px;
-  border: 1px solid var(--line-1);
+  border: solid var(--line-1);
+  border-width: 0 0 1px;
   border-top: 2px solid var(--g);
-  border-radius: var(--radius);
+  border-radius: 0;
   background: var(--paper);
   font-size: 16px;
+}
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button:first-child { border-left-width: 1px; border-bottom-left-radius: var(--radius); }
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button:last-child { border-right-width: 1px; border-bottom-right-radius: var(--radius); }
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button + button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 26%;
+  bottom: 26%;
+  width: 1px;
+  background: var(--line-1);
 }
 html[data-shape="phone"] .grades button[data-grade="1"] { --g: oklch(0.56 0.13 30); }
 html[data-shape="phone"] .grades button[data-grade="2"] { --g: oklch(0.66 0.11 75); }
@@ -180,7 +194,7 @@ html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button .label 
 html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button .gap { color: var(--fg-3); margin-top: 4px; }
 html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button:hover { background: var(--paper); }
 html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button:active { background: var(--line-2); }
-html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button[data-given="1"] { background: color-mix(in oklab, var(--fg) 6%, var(--paper)); border-color: var(--fg-2); border-top-color: var(--g); }
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button[data-given="1"] { background: color-mix(in oklab, var(--fg) 7%, var(--paper)); }
 html[data-shape="phone"] .reveal-all {
   align-self: stretch;
   width: 100%;

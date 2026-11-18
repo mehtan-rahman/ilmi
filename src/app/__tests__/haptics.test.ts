@@ -46,19 +46,19 @@ afterAll(() => setHapticSender(null));
 
 describe('which tap', () => {
   it('a grade is felt by which it was: again differs in kind, hard is firmer than good, easy the gentlest', () => {
-    expect(GRADE_HAPTIC).toEqual({ 1: 'warning', 2: 'medium', 3: 'light', 4: 'soft' });
+    expect(GRADE_HAPTIC).toEqual({ 1: 'error', 2: 'heavy', 3: 'rigid', 4: 'light' });
     for (const g of [1, 2, 3, 4] as const) hapticGrade(g);
-    expect(sent).toEqual(['warning', 'medium', 'light', 'soft']);
+    expect(sent).toEqual(['error', 'heavy', 'rigid', 'light']);
   });
 
-  it('the answer shown is a light tap, the queue\'s end the success, the small things a tick', () => {
+  it('the answer shown is a firm tap, the queue\'s end the success, the small things a tick', () => {
     hapticReveal();
     hapticFinished();
     hapticTick();
-    expect([REVEAL_HAPTIC, FINISHED_HAPTIC]).toEqual(['light', 'success']);
-    expect(sent).toEqual(['light', 'success', 'tick']);
+    expect([REVEAL_HAPTIC, FINISHED_HAPTIC]).toEqual(['medium', 'success']);
+    expect(sent).toEqual(['medium', 'success', 'tick']);
     // a dev build keeps what was asked, for a smoke on a simulator
-    expect(hapticsAsked()).toEqual(['light', 'success', 'tick']);
+    expect(hapticsAsked()).toEqual(['medium', 'success', 'tick']);
   });
 });
 
@@ -143,13 +143,13 @@ describe('in the app', () => {
       const before = sent.length;
       // a phone's one button, under the thumb
       await act(async () => { host.querySelector<HTMLElement>('.reveal-all')!.click(); });
-      expect(sent.slice(before)).toEqual(['light']);
+      expect(sent.slice(before)).toEqual(['medium']);
       await act(async () => { host.querySelectorAll<HTMLElement>('.grades button')[g - 1]!.click(); });
       expect(sent[before + 1]).toBe(GRADE_HAPTIC[g]);
       await settle();
     }
     expect(host.querySelector('.session-end')).not.toBeNull();
-    expect(sent).toEqual(['light', 'warning', 'light', 'medium', 'light', 'light', 'light', 'soft', 'success']);
+    expect(sent).toEqual(['medium', 'error', 'medium', 'heavy', 'medium', 'rigid', 'medium', 'light', 'success']);
     // drawn again at its end (its tab come back to): the end is not felt twice
     act(() => root.unmount());
     host.remove();

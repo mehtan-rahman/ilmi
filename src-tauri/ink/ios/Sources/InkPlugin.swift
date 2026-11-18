@@ -862,6 +862,8 @@ class InkPlugin: Plugin, PenEars {
     "light": UIImpactFeedbackGenerator(style: .light),
     "medium": UIImpactFeedbackGenerator(style: .medium),
     "soft": UIImpactFeedbackGenerator(style: .soft),
+    "heavy": UIImpactFeedbackGenerator(style: .heavy),
+    "rigid": UIImpactFeedbackGenerator(style: .rigid),
   ]
   private lazy var notes = UINotificationFeedbackGenerator()
   private lazy var ticks = UISelectionFeedbackGenerator()
@@ -871,14 +873,17 @@ class InkPlugin: Plugin, PenEars {
     DispatchQueue.main.async {
       if self.canHaptic {
         if let impact = self.impacts[args.kind] {
-          impact.impactOccurred()
+          impact.impactOccurred(intensity: 1)
           impact.prepare()
-        } else if args.kind == "warning" || args.kind == "success" {
-          self.notes.notificationOccurred(args.kind == "warning" ? .warning : .success)
+        } else if args.kind == "warning" || args.kind == "success" || args.kind == "error" {
+          self.notes.notificationOccurred(args.kind == "warning" ? .warning : args.kind == "error" ? .error : .success)
           self.notes.prepare()
         } else if args.kind == "tick" {
-          self.ticks.selectionChanged()
-          self.ticks.prepare()
+          // the selection's own tick is hardly felt through a case: a light impact, in full, is
+          if let tap = self.impacts["light"] {
+            tap.impactOccurred(intensity: 1)
+            tap.prepare()
+          }
         }
       }
       invoke.resolve(Haptics(can: self.canHaptic))

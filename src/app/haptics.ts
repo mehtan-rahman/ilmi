@@ -17,11 +17,11 @@ import type { Grade } from '../schedule/index.js';
 import { useApp } from './store.js';
 
 /** What the native side can be asked for: three impacts, two notifications, the selection's tick. */
-export type Haptic = 'light' | 'medium' | 'soft' | 'warning' | 'success' | 'tick';
+export type Haptic = 'light' | 'medium' | 'heavy' | 'rigid' | 'soft' | 'warning' | 'error' | 'success' | 'tick';
 
 /** A grade's: again is the one that differs in kind, hard is firmer than good, easy is the gentlest. */
-export const GRADE_HAPTIC: Record<Grade, Haptic> = { 1: 'warning', 2: 'medium', 3: 'light', 4: 'soft' };
-export const REVEAL_HAPTIC: Haptic = 'light';
+export const GRADE_HAPTIC: Record<Grade, Haptic> = { 1: 'error', 2: 'heavy', 3: 'rigid', 4: 'light' };
+export const REVEAL_HAPTIC: Haptic = 'medium';
 export const FINISHED_HAPTIC: Haptic = 'success';
 
 type Send = (kind: Haptic | 'probe') => Promise<{ can?: boolean } | null>;

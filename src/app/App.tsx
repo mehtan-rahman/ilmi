@@ -16,7 +16,7 @@ import { Tweaks } from './Tweaks.js';
 import { Welcome } from './Welcome.js';
 import { activeTab, closeTab, cycleTab, splitPane } from './panes.js';
 import { SESSION } from './names.js';
-import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } from './store.js';
+import { ACCENTS, accentOf, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } from './store.js';
 import { closeTabs, openInitialVault, openNode, rememberTab, reopenClosed, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
 import { bookShown, inspectorShown, sidebarShown } from './layout.js';
 import { shapeOf } from './platform.js';
@@ -64,6 +64,7 @@ function dragHandle(onMove: (x: number) => void): (e: React.MouseEvent) => void 
 export function App() {
   const theme = useApp((s) => s.theme);
   const accent = useApp((s) => s.accent);
+  const accentHex = useApp((s) => s.accentHex);
   const rho = useApp((s) => s.density);
   const zoom = useApp((s) => s.zoom);
   const vault = useApp((s) => s.vault);
@@ -175,12 +176,12 @@ export function App() {
     root.setAttribute('data-theme', theme);
     root.style.setProperty('--rho', String(rho));
     root.style.setProperty('--zoom', String(zoom));
-    const a = ACCENTS[accent];
+    const a = accentHex ? accentOf(accentHex) : ACCENTS[accent];
     root.style.setProperty('--accent-h', String(a.h));
     root.style.setProperty('--accent-c', String(a.c));
     root.style.setProperty('--accent-l-light', String(a.light));
     root.style.setProperty('--accent-l-dark', String(a.dark));
-  }, [theme, accent, rho, zoom]);
+  }, [theme, accent, accentHex, rho, zoom]);
 
   useEffect(() => {
     openInitialVault().catch((e: unknown) => console.error(e));

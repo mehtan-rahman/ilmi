@@ -233,12 +233,12 @@ describe("the iPad's shell", () => {
     const toggle = q<HTMLElement>('.top .side-toggle');
     expect(toggle).not.toBeNull();
     expect(toggle!.dataset.on).toBe('0');
-    expect(qa('.top .insp-toggle')).toHaveLength(2);
+    expect(qa('.top .insp-toggle:not(.set-toggle)')).toHaveLength(2);
     await act(async () => { root.unmount(); });
     useApp.setState({ mobile: false });
     await draw(createElement(TopStrip));
     expect(q('.top .side-toggle')).not.toBeNull();
-    expect(qa('.top .insp-toggle')).toHaveLength(2);
+    expect(qa('.top .insp-toggle:not(.set-toggle)')).toHaveLength(2);
   });
 
   it('is one pane: no split in the tab bar, and a split asked for folds back', async () => {

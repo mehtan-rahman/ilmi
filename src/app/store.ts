@@ -25,6 +25,28 @@ export const THEMES: readonly Theme[] = ['light', 'dark', 'eink'];
 /** The accent presets from the prototype: one hue, one chroma; gold sets its own lightness. */
 export type Accent = 'gold' | 'ink' | 'blue' | 'red' | 'sage' | 'graphite';
 export interface AccentPreset { label: string; h: number; c: number; light: number; dark: number }
+
+/**
+ * An accent of one's own as the presets are given: the hue and chroma of
+ * `#rrggbb` in OKLCH, and a lightness for each theme near the colour's own
+ * but held where the accent stays readable (on paper, and on the dark).
+ */
+export function accentOf(hex: string): { h: number; c: number; light: number; dark: number } {
+  const n = parseInt(hex.slice(1), 16);
+  const lin = (v: number) => { const x = v / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+  const r = lin((n >> 16) & 255), g = lin((n >> 8) & 255), b = lin(n & 255);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const L = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  const c = Math.hypot(A, B);
+  const h = c < 1e-4 ? 0 : ((Math.atan2(B, A) * 180) / Math.PI + 360) % 360;
+  const hold = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  const round = (v: number, p: number) => Math.round(v * p) / p;
+  return { h: round(h, 10), c: round(Math.min(c, 0.2), 1000), light: round(hold(L, 0.42, 0.66), 100), dark: round(hold(L + 0.12, 0.7, 0.84), 100) };
+}
 export const ACCENTS: Record<Accent, AccentPreset> = {
   gold: { label: 'gold', h: 86, c: 0.135, light: 0.62, dark: 0.8 },
   ink: { label: 'ink', h: 256, c: 0.085, light: 0.52, dark: 0.74 },
@@ -57,6 +79,8 @@ export interface Tweaks {
   learnNew: boolean;
   /** A tap under the finger for a session's reveal, grades and the like (`haptics.ts`). On by default; shown only where the device can. */
   haptics: boolean;
+  /** An accent of one's own (`#rrggbb`), over the presets; null, and the preset in `accent` is used. */
+  accentHex: string | null;
 }
 export const DENSITY_MIN = 0.6;
 export const DENSITY_MAX = 1.6;
@@ -64,7 +88,7 @@ export const ZOOM_MIN = 0.7;
 export const ZOOM_MAX = 1.8;
 export const ZOOM_STEP = 0.1;
 const TWEAKS_KEY = 'ilmi.tweaks';
-const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, zoom: 1, reopen: true, clipImages: true, remoteImages: true, queueTitles: false, backlog: false, focusBudget: false, learnNew: true, haptics: true };
+const DEFAULT_TWEAKS: Tweaks = { accentHex: null, theme: 'light', accent: 'gold', density: 1, zoom: 1, reopen: true, clipImages: true, remoteImages: true, queueTitles: false, backlog: false, focusBudget: false, learnNew: true, haptics: true };
 
 function loadTweaks(): Tweaks {
   try {
@@ -84,6 +108,7 @@ function loadTweaks(): Tweaks {
       focusBudget: typeof t.focusBudget === 'boolean' ? t.focusBudget : DEFAULT_TWEAKS.focusBudget,
       learnNew: typeof t.learnNew === 'boolean' ? t.learnNew : DEFAULT_TWEAKS.learnNew,
       haptics: typeof t.haptics === 'boolean' ? t.haptics : DEFAULT_TWEAKS.haptics,
+      accentHex: typeof t.accentHex === 'string' && /^#[0-9a-f]{6}$/i.test(t.accentHex) ? t.accentHex.toLowerCase() : null,
     };
   } catch {
     return DEFAULT_TWEAKS;
@@ -274,6 +299,8 @@ export interface AppState {
   learnNew: boolean;
   /** A tap under the finger for what a session does (`haptics.ts`). A tweak, kept with the others, on by default. */
   haptics: boolean;
+  /** An accent of one's own (`#rrggbb`), over the presets; null, and the preset is used. A tweak, kept with the others. */
+  accentHex: string | null;
   /** Whether this device can make one (an iPhone): asked of the native side once at launch. */
   canHaptics: boolean;
   /** The collections there are, the last opened first (the welcome's rows, Open Recent); in the webview's storage. */
@@ -399,6 +426,8 @@ export interface AppState {
   setTheme(theme: Theme): void;
   cycleTheme(): void;
   setAccent(accent: Accent): void;
+  /** An accent of one's own, over the presets; a preset chosen afterwards puts it away. */
+  setAccentHex(hex: string): void;
   setDensity(rho: number): void;
   setZoom(zoom: number): void;
   setReopen(on: boolean): void;
@@ -438,6 +467,7 @@ export const useApp = create<AppState>((set, get) => ({
   focusBudget: tweaks.focusBudget,
   learnNew: tweaks.learnNew,
   haptics: tweaks.haptics,
+  accentHex: tweaks.accentHex,
   canHaptics: false,
   recents: loadRecents(),
   gone: [],
@@ -510,7 +540,8 @@ export const useApp = create<AppState>((set, get) => ({
     showTheme(theme);
     persist(get());
   },
-  setAccent: (accent) => { set({ accent }); persist(get()); },
+  setAccent: (accent) => { set({ accent, accentHex: null }); persist(get()); },
+  setAccentHex: (accentHex) => { set({ accentHex }); persist(get()); },
   setDensity: (density) => { set({ density: Math.min(DENSITY_MAX, Math.max(DENSITY_MIN, density)) }); persist(get()); },
   setZoom: (zoom) => { set({ zoom: Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)) * 100) / 100 }); persist(get()); },
   setReopen: (reopen) => { set({ reopen }); persist(get()); },
@@ -531,7 +562,7 @@ useApp.subscribe((s) => {
   if (s.mobile && s.panes.panes.length > 1 && (s.phone || !notesPair(s.panes, s.docs, s.sessionEl?.item.path))) useApp.setState({ panes: onePane(s.panes) });
 });
 
-const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog, focusBudget: s.focusBudget, learnNew: s.learnNew, haptics: s.haptics });
+const persist = (s: AppState) => saveTweaks({ accentHex: s.accentHex, theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog, focusBudget: s.focusBudget, learnNew: s.learnNew, haptics: s.haptics });
 
 declare global {
   interface Window {

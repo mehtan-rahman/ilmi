@@ -506,6 +506,11 @@ html[data-mobile="1"] .top .right button.sync { padding: 12px 6px; margin: -12px
 .tw-rows .tw-seg.wrap button:nth-child(n + 4) { border-top: 1px solid var(--line-2); }
 .tw-rows .tw-seg button[data-active="1"] { color: var(--fg-1); background: var(--line-3); }
 .tw-rows .tw-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+/* an accent of one's own: a segment like the presets', the system's picker laid over it unseen */
+.tw-rows .tw-seg .tw-own { position: relative; flex: 1 1 100%; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 8px; font-size: 12px; color: var(--fg-3); border-top: 1px solid var(--line-2); cursor: pointer; }
+.tw-rows .tw-seg .tw-own[data-active="1"] { color: var(--fg-1); background: var(--line-3); }
+.tw-rows .tw-seg .tw-own input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+html[data-mobile="1"] .tw-rows .tw-seg .tw-own { padding: 11px 8px; }
 .tw-rows .tw-slider { width: 100%; accent-color: var(--accent); margin: 2px 0; }
 .tw-rows .tw-num {
   width: 72px;

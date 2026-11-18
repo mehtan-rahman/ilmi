@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
 export type IconName =
   | 'folder' | 'note' | 'book' | 'extract' | 'deck' | 'draft' | 'add' | 'query' | 'card' | 'search'
   | 'chevron' | 'split' | 'panel' | 'panel-left' | 'close' | 'more' | 'vault' | 'arrow' | 'back'
-  | 'tabs' | 'tree' | 'fold' | 'unfold' | 'menu' | 'trash' | 'copy' | 'download' | 'pages' | 'sort' | 'caret' | 'pause' | 'written';
+  | 'tabs' | 'tree' | 'fold' | 'unfold' | 'menu' | 'settings' | 'trash' | 'copy' | 'download' | 'pages' | 'sort' | 'caret' | 'pause' | 'written';
 
 /** The writing tools' icons (`InkBar.tsx`, milestone 82). */
 export type InkIconName = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'undo' | 'redo' | 'finger' | 'tuck' | 'grid' | 'share' | 'shapes';
@@ -43,6 +43,7 @@ const P: Record<IconName | InkIconName, ReactNode> = {
   fold: <path d="M8 4L4 8l4 4M12.5 4l-4 4 4 4" />,
   unfold: <path d="M8 4l4 4-4 4M3.5 4l4 4-4 4" />,
   menu: <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" />,
+  settings: <><path d="M2.5 4.5h4.2M9.7 4.5h3.8M2.5 11.5h6.2M11.7 11.5h1.8" /><circle cx="8.2" cy="4.5" r="1.5" /><circle cx="10.2" cy="11.5" r="1.5" /></>,
   trash: <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.3 4.5l.6 8.5h6.2l.6-8.5M6.8 7v3.8M9.2 7v3.8" />,
   copy: <><rect x="5.5" y="5.5" width="8" height="8" rx="1" /><path d="M10.5 5.5V3.5c0-.6-.4-1-1-1h-6c-.6 0-1 .4-1 1v6c0 .6.4 1 1 1h2" /></>,
   download: <path d="M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13.5h10" />,

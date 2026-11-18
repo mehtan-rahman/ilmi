@@ -152,7 +152,9 @@ describe('the strips', () => {
     await draw(createElement('div', null, createElement(TopStrip), createElement(Canvas)));
     expect(q('.top .ws')).not.toBeNull();
     expect(q('.top .palette')).toBeNull();
-    expect(q('.top .insp-toggle')).toBeNull();
+    expect(q('.top .insp-toggle:not(.set-toggle)')).toBeNull();
+    // the settings are a press away on a phone too
+    expect(q('.top .set-toggle')).not.toBeNull();
     expect(q('.tabbar')).toBeNull();
   });
 

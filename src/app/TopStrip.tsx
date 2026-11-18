@@ -53,6 +53,7 @@ export function TopStrip() {
   const mobile = useApp((s) => s.mobile);
   // a phone's strip names the collection and where sync stands; what the rest does is at its foot (`PhoneBar.tsx`)
   const phone = useApp((s) => s.phone);
+  const tweaksOpen = useApp((s) => s.tweaksOpen);
   // lit while the sidebar is drawn: the column, or in portrait the sheet (App draws this strip again on a turn)
   const sideOn = useApp((s) => (shapeOf(s.mobile, window.innerWidth, window.innerHeight) === 'portrait' ? s.sideSheet : sidebarShown(s)));
   return (
@@ -78,6 +79,10 @@ export function TopStrip() {
           : <button type="button" className="sync" data-sync={sync.busy ?? (sync.offline ? 'offline' : sync.toPush ? 'pending' : 'synced')} title="sync now" onClick={syncAsked}>{word}</button>)}
         {age !== null && <span className="ago">{age}</span>}
       </div>
+      {/* the settings, a press away on every device: a phone and an iPad have no ⌘, */}
+      <button type="button" className="insp-toggle set-toggle" data-on={tweaksOpen ? '1' : '0'} aria-pressed={tweaksOpen} aria-label="settings" title={mobile ? undefined : 'settings ⌘,'} onClick={() => useApp.setState((s) => ({ tweaksOpen: !s.tweaksOpen }))}>
+        <Icon name="settings" />
+      </button>
       {!phone && (
         <button type="button" className="insp-toggle" data-on={shown ? '1' : '0'} aria-pressed={shown} title="inspector ⌘⇧I" onClick={toggleInspector}>
           <Icon name="panel" />

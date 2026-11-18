@@ -267,6 +267,7 @@ function MirrorRow() {
 export function Tweaks() {
   const theme = useApp((s) => s.theme);
   const accent = useApp((s) => s.accent);
+  const accentHex = useApp((s) => s.accentHex);
   const density = useApp((s) => s.density);
   const zoom = useApp((s) => s.zoom);
   const reopen = useApp((s) => s.reopen);
@@ -310,11 +311,17 @@ export function Tweaks() {
         <span className="tw-lbl">accent</span>
         <div className="tw-seg wrap">
           {(Object.keys(ACCENTS) as Accent[]).map((a) => (
-            <button key={a} type="button" data-active={accent === a ? '1' : '0'} onClick={() => useApp.getState().setAccent(a)}>
+            <button key={a} type="button" data-active={accent === a && !accentHex ? '1' : '0'} onClick={() => useApp.getState().setAccent(a)}>
               <i className="tw-dot" style={{ background: `oklch(${ACCENTS[a].light} ${ACCENTS[a].c} ${ACCENTS[a].h})` }} />
               {ACCENTS[a].label}
             </button>
           ))}
+          {/* any colour: the system's own picker; a preset pressed afterwards puts it away */}
+          <label className="tw-own" data-active={accentHex ? '1' : '0'}>
+            <i className="tw-dot" style={{ background: accentHex ?? 'conic-gradient(#e5484d, #f5d90a, #46a758, #0090ff, #8e4ec6, #e5484d)' }} />
+            your own
+            <input type="color" aria-label="your own accent" value={accentHex ?? '#b8860b'} onChange={(e) => useApp.getState().setAccentHex(e.target.value.toLowerCase())} />
+          </label>
         </div>
       </div>
       <div className="tw-row">

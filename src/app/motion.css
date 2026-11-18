@@ -9,27 +9,30 @@
 @keyframes m-fade { from { opacity: 0; } }
 @keyframes m-pop { from { opacity: 0; transform: translateY(-4px) scale(0.985); } }
 @keyframes m-rise { from { opacity: 0; transform: translateY(8px); } }
-@keyframes m-row { from { opacity: 0; transform: translateY(-3px); } }
+/* a row unfolds: the rows under it are moved down with it, not all at once */
+@keyframes m-row { from { max-height: 0; min-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; overflow: hidden; } 60% { opacity: 1; } 99% { overflow: hidden; } to { max-height: 52px; } }
 @keyframes m-from-left { from { transform: translateX(-100%); } }
 @keyframes m-from-right { from { opacity: 0; transform: translateX(10px); } }
 @keyframes m-from-foot { from { opacity: 0; transform: translateY(16px); } }
 
 /* the sidebar over the page (an iPad upright, a phone): from the left edge, its scrim with it */
-.side[data-sheet="1"] { animation: m-from-left 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-.side-scrim { animation: m-fade 220ms ease-out; }
+.side[data-sheet="1"] { animation: m-from-left 340ms cubic-bezier(0.32, 0.72, 0, 1); will-change: transform; }
+.side-scrim { animation: m-fade 300ms ease-out; }
+/* what has only just been drawn (the sheet sliding in, the tree at the open, a collection changed) is not also unfolding row by row */
+[data-fresh] .trow, [data-fresh] .rail-row, [data-fresh] .tab { animation: none !important; }
 
 /* menus, the palette, the settings, a notice */
 .ctx-menu { animation: m-pop 120ms ease-out; transform-origin: top left; }
 .palette-overlay { animation: m-fade 120ms ease-out; }
 .palette-panel { animation: m-pop 150ms ease-out; transform-origin: top center; }
 .tweaks { animation: m-rise 170ms ease-out; }
-html[data-shape="phone"] .tweaks { animation: m-from-foot 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+html[data-shape="phone"] .tweaks { animation: m-from-foot 320ms cubic-bezier(0.32, 0.72, 0, 1); }
 .notice { animation: m-rise 180ms ease-out; }
 .insp { animation: m-from-right 170ms ease-out; }
 
 /* a folder opened: its rows settle in under it (a row that was there does not move) */
-.tree .trow { animation: m-row 140ms ease-out; }
-.tab-rail .rail-row { animation: m-row 140ms ease-out; }
+.tree .trow { animation: m-row 200ms cubic-bezier(0.32, 0.72, 0, 1); }
+.tab-rail .rail-row { animation: m-row 200ms cubic-bezier(0.32, 0.72, 0, 1); }
 
 /* what is pressed or pointed at answers in step, not at once */
 .tree .row, .tab-rail .rail-row, .palette-row, .ctx-menu .ctx-item, .tab, .insp-toggle, .pt-btn, .frozen-tag {
@@ -55,11 +58,11 @@ html[data-mobile="1"] .tree .row:active .chev { transform: scale(0.85); }
 .palette-overlay.m-out { animation: m-out-fade 110ms ease-in forwards; }
 .palette-overlay.m-out .palette-panel { animation: none; }
 .tweaks.m-out, .notice.m-out { animation: m-out-sink 140ms ease-in forwards; }
-html[data-shape="phone"] .tweaks.m-out { animation: m-out-foot 180ms ease-in forwards; }
-.side[data-sheet="1"].m-out { animation: m-out-left 200ms cubic-bezier(0.4, 0, 0.8, 0.4) forwards; }
-.side-scrim.m-out { animation: m-out-fade 200ms ease-in forwards; }
+html[data-shape="phone"] .tweaks.m-out { animation: m-out-foot 240ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+.side[data-sheet="1"].m-out { animation: m-out-left 260ms cubic-bezier(0.32, 0.72, 0, 1) forwards; will-change: transform; }
+.side-scrim.m-out { animation: m-out-fade 240ms ease-out forwards; }
 .m-out .trow, .m-out .rail-row, .m-out .tab { animation: none; }
-.tree .trow.m-row-out, .tab-rail .rail-row.m-row-out { box-sizing: border-box; min-height: 0; overflow: hidden; animation: m-out-row 150ms ease-in forwards; }
+.tree .trow.m-row-out, .tab-rail .rail-row.m-row-out { box-sizing: border-box; min-height: 0; overflow: hidden; animation: m-out-row 200ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
 
 html[data-still] *, html[data-still] *::before, html[data-still] *::after,
 [data-theme="eink"] *, [data-theme="eink"] *::before, [data-theme="eink"] *::after { animation-duration: 0.001s !important; animation-delay: 0s !important; }

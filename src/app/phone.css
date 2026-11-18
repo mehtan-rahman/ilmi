@@ -152,6 +152,51 @@ html[data-shape="phone"] .grades button:hover { background: transparent; color: 
 html[data-shape="phone"] .grades button:active { background: var(--line-2); }
 html[data-shape="phone"] .grades button kbd { display: none; }
 html[data-shape="phone"] .grades button .gap { font-size: var(--t-sm); margin-top: 5px; color: var(--fg-3); }
+/* the grades under the thumb as four keys of their own, not cells of a strip: each in its grade's colour, held
+   pale so the card stays the page's subject, the grade's word in the colour at full; pressed, a key sinks. The
+   reveal is one key as wide as the four. E-ink keeps to ink. */
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn),
+html[data-shape="phone"] .reveal-all { margin: 12px 0 0; padding: 0 0 calc(10px + var(--safe-b)); gap: 8px; }
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button {
+  --g: var(--fg-2);
+  min-height: 68px;
+  padding: 12px 0 10px;
+  border: 1px solid color-mix(in oklab, var(--g) 26%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--g) 11%, var(--paper));
+  font-size: 16px;
+  transition: transform 80ms ease-out, background 80ms ease-out;
+}
+html[data-shape="phone"] .grades button[data-grade="1"] { --g: oklch(0.58 0.15 27); }
+html[data-shape="phone"] .grades button[data-grade="2"] { --g: oklch(0.64 0.13 70); }
+html[data-shape="phone"] .grades button[data-grade="3"] { --g: oklch(0.58 0.12 150); }
+html[data-shape="phone"] .grades button[data-grade="4"] { --g: oklch(0.58 0.12 245); }
+html[data-theme="dark"][data-shape="phone"] .grades button[data-grade="1"] { --g: oklch(0.74 0.13 27); }
+html[data-theme="dark"][data-shape="phone"] .grades button[data-grade="2"] { --g: oklch(0.8 0.11 75); }
+html[data-theme="dark"][data-shape="phone"] .grades button[data-grade="3"] { --g: oklch(0.76 0.11 150); }
+html[data-theme="dark"][data-shape="phone"] .grades button[data-grade="4"] { --g: oklch(0.76 0.1 245); }
+html[data-theme="eink"][data-shape="phone"] .grades button[data-grade] { --g: var(--fg-1); background: var(--paper); border-color: var(--fg-2); }
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button .label { color: color-mix(in oklab, var(--g) 78%, var(--fg-1)); font-weight: 600; }
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button .gap { color: var(--fg-2); margin-top: 4px; }
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button:hover { background: color-mix(in oklab, var(--g) 11%, var(--paper)); }
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button:active { transform: scale(0.96); background: color-mix(in oklab, var(--g) 24%, var(--paper)); }
+html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button[data-given="1"] { border-color: var(--g); background: color-mix(in oklab, var(--g) 22%, var(--paper)); }
+html[data-shape="phone"] .reveal-all {
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 0;
+  height: 68px;
+  margin-bottom: calc(10px + var(--safe-b));
+  padding: 0;
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  border-radius: 14px;
+  background: var(--accent-soft);
+  font-weight: 600;
+  transition: transform 80ms ease-out;
+}
+html[data-shape="phone"] .reveal-all:active { transform: scale(0.98); background: color-mix(in oklab, var(--accent) 30%, transparent); }
+
 .reveal-all {
   appearance: none;
   flex-shrink: 0;

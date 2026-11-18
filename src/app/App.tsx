@@ -26,6 +26,7 @@ import './app.css';
 import './chrome.css';
 import './phone.css';
 import './motion.css';
+import { startMotion } from './motion.js';
 import { Glyph } from './icons.js';
 
 /** Narrower than this and a drag on the handle hides the sidebar. */
@@ -183,6 +184,10 @@ export function App() {
     root.style.setProperty('--accent-l-light', String(a.light));
     root.style.setProperty('--accent-l-dark', String(a.dark));
   }, [theme, accent, accentHex, rho, zoom]);
+
+  // what closes leaves (`motion.ts`)
+  // (not under the unit tests, which read the page the moment it changes, as a smoke does)
+  useEffect(() => (import.meta.env.MODE === 'test' ? undefined : startMotion()), []);
 
   useEffect(() => {
     openInitialVault().catch((e: unknown) => console.error(e));

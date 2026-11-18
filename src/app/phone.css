@@ -29,6 +29,17 @@ html[data-shape="phone"][data-keyboard] .phone-bar { display: none; }
 html[data-shape="phone"] .top { border-bottom: 0; justify-content: space-between; gap: 12px; }
 html[data-shape="phone"] .top .right > :not(.sync):not(.ago) { display: none; }
 html[data-shape="phone"] .pane-body { -webkit-overflow-scrolling: touch; }
+/* the strip is thin, its buttons a finger's size all the same: each takes presses from a finger's height about it */
+html[data-shape="phone"] .top :is(button) { position: relative; }
+html[data-shape="phone"] .top :is(button)::after { content: ""; position: absolute; left: -6px; right: -6px; top: 50%; height: var(--finger); transform: translateY(-50%); }
+/* the day is always there; what is opened lies over it (`Canvas.tsx`), a hairline down its left side as it moves */
+html[data-shape="phone"] .canvas { position: relative; }
+html[data-shape="phone"] .pane + .pane { border-left: 0; }
+html[data-shape="phone"] .pane-top { position: absolute; inset: 0; z-index: 1; background: var(--bg); box-shadow: -1px 0 0 var(--line-1); }
+html[data-shape="phone"] .pane-day[data-covered="1"] { visibility: hidden; }
+/* a session is the whole screen, over the strip and the bar: they are under it as it comes in and as it is pulled
+   away, and gone once it has settled (`App.tsx`) */
+html[data-shape="phone"] .pane-top[data-full="1"] { position: fixed; inset: 0 0 auto 0; height: var(--shell-h, 100dvh); z-index: 54; padding-top: var(--safe-t); box-sizing: border-box; }
 
 /* the bar: the one button, the day, a new card */
 .phone-bar {
@@ -78,7 +89,7 @@ html[data-shape="phone"] .queue .focus-row { gap: 0 var(--s-5); margin-top: 2px;
 html[data-shape="phone"] .queue .focus-row button { min-height: var(--finger); padding: 0; border-bottom: 0; display: inline-flex; align-items: center; }
 html[data-shape="phone"] .queue .focus-row button[data-on="1"] { background: linear-gradient(var(--accent), var(--accent)) left calc(50% + 12px) / 100% 1.5px no-repeat; }
 [data-theme="eink"][data-shape="phone"] .queue .focus-row button[data-on="1"] { background-image: linear-gradient(var(--fg), var(--fg)); }
-html[data-shape="phone"] .queue .exam-filter button { min-height: 32px; font-size: var(--t-sm); }
+html[data-shape="phone"] .queue .exam-filter button { min-height: var(--finger); font-size: var(--t-sm); }
 html[data-shape="phone"] .queue .qlog-line { font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html[data-shape="phone"] .qlist { margin-top: 12px; }
 html[data-shape="phone"] .qlist li:not(.fold) {
@@ -100,6 +111,30 @@ html[data-shape="phone"] .qlist .body .kindtag { font-size: var(--t-xs); }
 html[data-shape="phone"] .qlist .body .ref-line { font-size: var(--t-xs); }
 html[data-shape="phone"] .qlist li.fold { padding: 12px 0; font-size: var(--t-sm); min-height: var(--finger); align-items: center; }
 html[data-shape="phone"] .qlist li.fold .fold-what { display: none; }
+
+/* a topic's row swiped left (`rowSwipe.ts`): `dismiss` and `later` past its right end, come into view with it. The
+   outer one runs on to the edge of the glass, so a row pulled all the way across is `later` */
+html[data-shape="phone"] .queue { overflow-x: clip; }
+.swipe-acts { position: absolute; left: 100%; top: -1px; bottom: -1px; width: 100vw; display: flex; visibility: hidden; }
+.qlist li[data-swiping="1"] .swipe-acts { visibility: visible; }
+.qlist li[data-swiping="1"], .qlist li[data-swiping="1"]:active { background: var(--paper); }
+.swipe-acts button {
+  appearance: none;
+  flex: 0 0 84px;
+  margin: 0;
+  padding: 0;
+  border: solid var(--line-1);
+  border-width: 1px 0 1px 1px;
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--fg-2);
+  font-family: var(--sans);
+  font-size: var(--t-sm);
+}
+.swipe-acts button[data-act="postpone"] { flex: 1 1 auto; padding-left: 26px; text-align: start; color: var(--fg-1); transition: background-color 120ms ease-out; }
+.swipe-acts button:active { background: var(--line-2); }
+.qlist li[data-armed="1"] .swipe-acts button[data-act="postpone"] { background: color-mix(in oklab, var(--accent) 16%, var(--bg)); }
+[data-theme="eink"] .qlist li[data-armed="1"] .swipe-acts button[data-act="postpone"] { background: var(--line-1); }
 
 /* ⏎'s words, a line each */
 .ra-when { display: block; margin-top: 1px; font-family: var(--sans); font-size: var(--t-xs); color: var(--fg-3); }
@@ -129,7 +164,7 @@ html[data-shape="phone"] .recall-wrap {
 }
 html[data-shape="phone"] .recall-meta { margin-bottom: 8px; gap: 10px; font-size: var(--t-sm); min-height: var(--finger); flex-shrink: 0; }
 html[data-shape="phone"] .sess-nav { gap: 0; margin-right: 0; flex-shrink: 0; }
-html[data-shape="phone"] .sess-nav .sn-btn { width: 40px; height: var(--finger); border: 0; color: var(--fg-2); --ic: 18px; }
+html[data-shape="phone"] .sess-nav .sn-btn { width: var(--finger); height: var(--finger); border: 0; color: var(--fg-2); --ic: 18px; }
 html[data-shape="phone"] .sess-nav .sn-btn:hover:not(:disabled) { color: var(--fg-3); }
 html[data-shape="phone"] .recall-wrap .card { font-size: calc(21px * var(--zoom)); gap: 10px; }
 html[data-shape="phone"] .recall-wrap .card .face { padding: 18px 16px; }
@@ -298,8 +333,8 @@ html[data-shape="phone"] .palette-foot { display: none; }
 
 html[data-shape="phone"] .tweaks { left: 8px; right: 8px; bottom: calc(8px + var(--safe-b)); width: auto; max-height: calc(var(--shell-h, 100dvh) - var(--safe-t) - var(--safe-b) - 24px); overflow: auto; font-size: 14px; }
 html[data-shape="phone"] .tw-rows .tw-text, html[data-shape="phone"] .tw-rows .tw-num, html[data-shape="phone"] .tw-rows .tw-sel { font-size: 16px; padding: 7px 8px; }
-html[data-shape="phone"] .tw-rows .tw-seg button { min-height: 38px; font-size: var(--t-sm); }
-html[data-shape="phone"] .tw-rows .tw-x { width: 40px; height: 40px; margin: -10px -12px; --ic: 16px; }
+html[data-shape="phone"] .tw-rows .tw-seg button { min-height: var(--finger); font-size: var(--t-sm); }
+html[data-shape="phone"] .tw-rows .tw-x { width: var(--finger); height: var(--finger); margin: -12px -14px; --ic: 16px; }
 
 /* the welcome, before any of it */
 html[data-shape="phone"] .welcome-row { min-height: 48px; }
@@ -309,7 +344,7 @@ html[data-shape="phone"] .welcome input { font-size: 16px; }
 /* ── a document: a single page ────────────────────────────────── */
 html[data-shape="phone"] .reader-wrap { padding-left: max(16px, var(--safe-l)); padding-right: max(16px, var(--safe-r)); }
 html[data-shape="phone"] .reader .meta { flex-wrap: wrap; row-gap: 6px; font-size: var(--t-sm); }
-html[data-shape="phone"] .reader .meta .frozen-tag { min-height: 32px; font-size: var(--t-sm); }
+html[data-shape="phone"] .reader .meta .frozen-tag { min-height: var(--finger); font-size: var(--t-sm); }
 html[data-shape="phone"] .reader .meta .kbd { display: none; }
 html[data-shape="phone"] .notes-toggle, html[data-shape="phone"] .pages-toggle { color: var(--fg-2); }
 html[data-shape="phone"] .fv-new button { min-height: var(--finger); font-size: 14px; }
@@ -318,7 +353,7 @@ html[data-shape="phone"] .fv-view button { min-height: var(--finger); font-size:
 html[data-shape="phone"] .deck-study .ds-study { min-height: var(--finger); font-size: 15px; }
 html[data-shape="phone"] .deck-bar .db-search { font-size: 16px; }
 html[data-shape="phone"] .deck-bar .db-row kbd { display: none; }
-html[data-shape="phone"] .deck-bar .chip { min-height: 36px; font-size: var(--t-sm); }
+html[data-shape="phone"] .deck-bar .chip { min-height: var(--finger); font-size: var(--t-sm); }
 /* a card's row: its form over its faces, the faces the width of the page */
 html[data-shape="phone"] .deck-view .card-span.deck-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; padding-top: 10px; padding-bottom: 10px; }
 html[data-shape="phone"] .deck-row .dr-form { grid-column: 1 / -1; padding-left: 0; font-size: var(--t-xs); }
@@ -348,7 +383,7 @@ html[data-shape="phone"] .deck-row .dr-when { font-size: var(--t-xs); }
   padding: 0 16px;
 }
 .quick .composer .hd { padding: 8px 0 10px; font-size: var(--t-sm); border-bottom: 0; flex-shrink: 0; }
-.quick .composer .type-toggle button { min-height: 36px; padding: 0 10px; font-size: 14px; }
+.quick .composer .type-toggle button { min-height: 44px; padding: 0 10px; font-size: 14px; }
 .quick .composer textarea, .quick .composer input { font-size: 19px; line-height: 1.35; }
 .quick .composer > textarea { flex: 1; min-height: 0; }
 .quick .composer .qa-fields { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -356,7 +391,7 @@ html[data-shape="phone"] .deck-row .dr-when { font-size: var(--t-xs); }
 .quick-blank {
   appearance: none;
   align-self: flex-start;
-  min-height: 36px;
+  min-height: 44px;
   margin: 6px 0;
   padding: 0 12px;
   border: 1px solid var(--line-1);

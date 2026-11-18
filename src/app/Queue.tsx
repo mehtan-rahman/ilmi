@@ -9,7 +9,7 @@
 // above the fold are the day's work, the rest sit dimmed below a rule, and
 // `postpone the rest` pushes the backlog among the reading and writing out.
 
-import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, dayOf, examKey, inScope, overflow, type ExamAt, type QueueItem } from '../schedule/index.js';
 import { FOCUSES, FOCUS_EMPTY, QUEUE_EMPTY, focusOf, inFocus, nextFocus, nextLook, nextUp, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing, dueTone } from './items.js';
@@ -115,16 +115,36 @@ function TopicActs({ item, now }: { item: ReadItem | WriteItem | SectionItem; no
     }).catch(failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss'));
   };
   return (
-    <span className="topic-acts">
-      <button type="button" data-act="on" onClick={(e) => act(e, atEnd ? 'done' : 'on')}>{twoLines(words.on)}</button>
-      <button type="button" data-act="postpone" onClick={(e) => act(e, 'postpone')}>{words.postpone}</button>
-      <button type="button" data-act="done" onClick={(e) => act(e, 'done')}>{words.done}</button>
-    </span>
+    <>
+      <span className="topic-acts">
+        <button type="button" data-act="on" onClick={(e) => act(e, atEnd ? 'done' : 'on')}>{twoLines(words.on)}</button>
+        <button type="button" data-act="postpone" onClick={(e) => act(e, 'postpone')}>{words.postpone}</button>
+        <button type="button" data-act="done" onClick={(e) => act(e, 'done')}>{words.done}</button>
+      </span>
+      {/* the same two again past the row's right end, where a swipe left finds them (`rowSwipe.ts`); `later` the outer one, which a swipe right across is */}
+      <span className="swipe-acts" aria-hidden="true">
+        <button type="button" tabIndex={-1} data-act="done" onClick={(e) => act(e, 'done')}>{words.done}</button>
+        <button type="button" tabIndex={-1} data-act="postpone" onClick={(e) => act(e, 'postpone')}>{words.postpone}</button>
+      </span>
+    </>
   );
 }
 
+/**
+ * `v`, or the value it was last time when that says the same: the queue is built anew each time it is looked at, and
+ * a list that has not changed is not drawn again for it.
+ */
+function useSame<T>(v: T): T {
+  const last = useRef<{ v: T; said: string } | null>(null);
+  if (last.current?.v === v) return v;
+  const said = JSON.stringify(v);
+  if (last.current && last.current.said === said) return last.current.v;
+  last.current = { v, said };
+  return v;
+}
+
 export function Queue({ scope, active }: Props) {
-  const all = useApp((s) => s.queue);
+  const all = useSame(useApp((s) => s.queue));
   const docs = useApp((s) => s.docs);
   const log = useApp((s) => s.log);
   const budget = useApp((s) => s.budget);
@@ -232,6 +252,65 @@ export function Queue({ scope, active }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [active, items, cursor, scope, filter, focus]);
 
+  // the rows, drawn again only when what they show has changed: not when the queue is merely no longer in front (a
+  // phone's day stays under the page opened from it, `Canvas.tsx`, and a long day's rows are the cost of drawing it)
+  const minute = Math.floor(now.getTime() / 60_000);
+  const list = useMemo(() => (
+    <ol className="qlist" ref={listRef}>
+      {items.slice(0, drawn).map((item, i) => {
+        const ref = standing(item, now, docs[item.path]?.pages?.first);
+        const pace = paceWords(item, now);
+        const ivl = item.kind === 'card' ? intervalLabel(item) : '';
+        const row = (
+          <li
+            key={`${item.kind}:${item.path}:${item.kind === 'card' ? `${item.block}:${JSON.stringify(item.group ?? null)}:${item.dir ?? ''}` : item.kind === 'section' ? `${item.block}:${item.passage ? `${item.passage.hash}:${item.passage.boxes}` : item.heading}` : ''}`}
+            data-active={i === cursor ? '1' : '0'}
+            data-el={item.kind}
+            data-fresh={isFresh(item) ? '1' : '0'}
+            data-below={i >= foldAt ? '1' : '0'}
+            data-swipe={phone && item.kind !== 'card' ? '1' : undefined}
+            onMouseEnter={phone ? undefined : () => setCursor(i)}
+            onClick={(e) => open(item, clickOpts(e))}
+          >
+            <span className="mark" data-el={markOf(item)}><Glyph g={glyphOf(item)} /></span>
+            <span className="body">
+              <span className="src" data-by={by}>
+                <span className="kindtag" data-el={item.kind} data-tag={kindTag(item)}>{kindTag(item)}</span>
+                <QueuePath item={item} docs={docs} by={by} />
+              </span>
+              <Body item={item} />
+              {ref && <span className="ref-line">{ref}</span>}
+              {pace && <span className="for-exam" data-pace="1">{pace}</span>}
+              {item.pulled && item.exam && !(item.kind === 'read' && item.byFinish) && <span className="for-exam" title={`brought forward from ${dueWhen(item.pulled, now)}`}>{forExam(item.exam)}</span>}
+            </span>
+            <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
+            <span className="due" title={ivl ? `interval ${ivl}` : undefined} data-st={dueTone(item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now))}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now)}</span>
+            {phone && item.kind !== 'card' && <TopicActs item={item} now={now} />}
+          </li>
+        );
+        if (i !== foldAt) return row;
+        return (
+          <Fragment key="fold">
+            <li className="fold" data-below="0">
+              <span className="fold-n">{items.length - foldAt} more</span>
+              {rest.length > 0 && (
+                <button type="button" className="fold-act" onClick={postpone}>
+                  postpone the rest<span className="fold-what">{restWord}</span>
+                </button>
+              )}
+            </li>
+            {row}
+          </Fragment>
+        );
+      })}
+      {drawn < items.length && (
+        <li className="fold" data-below={drawn >= foldAt ? '1' : '0'} onClick={() => setRows(drawn + QUEUE_ROWS)}>
+          <span className="fold-n">{items.length - drawn} more</span>
+        </li>
+      )}
+    </ol>
+  ), [all, docs, budget, by, focusBudget, examFilter, phone, focus, cursor, rows, scope, minute]);
+
   return (
     <div className="queue">
       <header>
@@ -282,58 +361,7 @@ export function Queue({ scope, active }: Props) {
           {scope === 'today' && nextUp(all.filter((i) => inFocus(i, focus)), now) && <div className="empty-next">{nextUp(all.filter((i) => inFocus(i, focus)), now)}</div>}
         </div>
       ) : (
-        <ol className="qlist" ref={listRef}>
-          {items.slice(0, drawn).map((item, i) => {
-            const ref = standing(item, now, docs[item.path]?.pages?.first);
-            const pace = paceWords(item, now);
-            const ivl = item.kind === 'card' ? intervalLabel(item) : '';
-            const row = (
-              <li
-                key={`${item.kind}:${item.path}:${item.kind === 'card' ? `${item.block}:${JSON.stringify(item.group ?? null)}:${item.dir ?? ''}` : item.kind === 'section' ? `${item.block}:${item.passage ? `${item.passage.hash}:${item.passage.boxes}` : item.heading}` : ''}`}
-                data-active={i === cursor ? '1' : '0'}
-                data-el={item.kind}
-                data-fresh={isFresh(item) ? '1' : '0'}
-                data-below={i >= foldAt ? '1' : '0'}
-                onMouseEnter={phone ? undefined : () => setCursor(i)}
-                onClick={(e) => open(item, clickOpts(e))}
-              >
-                <span className="mark" data-el={markOf(item)}><Glyph g={glyphOf(item)} /></span>
-                <span className="body">
-                  <span className="src" data-by={by}>
-                    <span className="kindtag" data-el={item.kind} data-tag={kindTag(item)}>{kindTag(item)}</span>
-                    <QueuePath item={item} docs={docs} by={by} />
-                  </span>
-                  <Body item={item} />
-                  {ref && <span className="ref-line">{ref}</span>}
-                  {pace && <span className="for-exam" data-pace="1">{pace}</span>}
-                  {item.pulled && item.exam && !(item.kind === 'read' && item.byFinish) && <span className="for-exam" title={`brought forward from ${dueWhen(item.pulled, now)}`}>{forExam(item.exam)}</span>}
-                </span>
-                <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
-                <span className="due" title={ivl ? `interval ${ivl}` : undefined} data-st={dueTone(item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now))}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now)}</span>
-                {phone && item.kind !== 'card' && <TopicActs item={item} now={now} />}
-              </li>
-            );
-            if (i !== foldAt) return row;
-            return (
-              <Fragment key="fold">
-                <li className="fold" data-below="0">
-                  <span className="fold-n">{items.length - foldAt} more</span>
-                  {rest.length > 0 && (
-                    <button type="button" className="fold-act" onClick={postpone}>
-                      postpone the rest<span className="fold-what">{restWord}</span>
-                    </button>
-                  )}
-                </li>
-                {row}
-              </Fragment>
-            );
-          })}
-          {drawn < items.length && (
-            <li className="fold" data-below={drawn >= foldAt ? '1' : '0'} onClick={() => setRows(drawn + QUEUE_ROWS)}>
-              <span className="fold-n">{items.length - drawn} more</span>
-            </li>
-          )}
-        </ol>
+        list
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BottomStrip } from './BottomStrip.js';
 import { Canvas } from './Canvas.js';
 import { listenForClips } from './clipper.js';
@@ -28,7 +28,11 @@ import './app.css';
 import './chrome.css';
 import './phone.css';
 import './motion.css';
-import { startMotion, useLinger } from './motion.js';
+import { quiet, startMotion, useLinger } from './motion.js';
+import { flushSync } from 'react-dom';
+import { backBusy, installEdge, onPeek, openedFromTree } from './edge.js';
+import { installRowSwipe } from './rowSwipe.js';
+import { installPull } from './pull.js';
 import { Glyph } from './icons.js';
 
 /** Narrower than this and a drag on the handle hides the sidebar. */
@@ -121,6 +125,19 @@ export function App() {
   const phone = shape === 'phone';
   const sheet = shape === 'portrait' || phone;
   const activeId = activeTab(panes)?.id;
+  // a phone's session is the whole screen: no strip, no bar. They stay under it while it comes in over them, and are
+  // put back under it while a finger pulls it away (`edge.ts`); where nothing moves they go at once
+  const inSession = phone && activeId === SESSION;
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!inSession) { setSettled(false); return; }
+    const t = setTimeout(() => { if (!backBusy()) setSettled(true); }, 460);
+    return () => clearTimeout(t);
+  }, [inSession]);
+  const inSessionNow = useRef(inSession);
+  inSessionNow.current = inSession;
+  useEffect(() => onPeek((on) => { if (inSessionNow.current) flushSync(() => setSettled(!on)); }), []);
+  const whole = inSession && (settled || quiet());
   // the sheet is for one choice: it closes once something opens, and when the iPad turns
   useEffect(() => { useApp.setState({ sideSheet: false }); }, [activeId, shape]);
   useLayoutEffect(() => {
@@ -158,13 +175,21 @@ export function App() {
       document.documentElement.removeAttribute('data-keyboard');
     };
   }, [mobile]);
-  // portrait: a swipe in from the left edge opens the sheet, a swipe left on it closes it
+  // under the finger: the sheet and a phone's page follow it (`edge.ts`), a queue's row is swiped to
+  // its actions (`rowSwipe.ts`), a list pulled down at its top syncs (`pull.ts`)
+  useEffect(() => {
+    if (!mobile) return;
+    const stops = [installEdge(), installRowSwipe(), installPull()];
+    return () => { for (const stop of stops) stop(); };
+  }, [mobile]);
+  // portrait: a swipe in from the left edge opens the sheet, a swipe left on it closes it (where nothing moves, `quiet`:
+  // elsewhere the sheet follows the finger)
   useEffect(() => {
     if (!sheet || vault === null) return;
     let from: { x: number; y: number; edge: boolean } | null = null;
     const start = (e: TouchEvent) => {
       const t = e.touches[0];
-      if (!t || e.touches.length !== 1) { from = null; return; }
+      if (!t || e.touches.length !== 1 || !quiet()) { from = null; return; }
       from = { x: t.clientX, y: t.clientY, edge: t.clientX <= EDGE };
     };
     const move = (e: TouchEvent) => {
@@ -325,10 +350,10 @@ export function App() {
   const sideLeaving = sheet && !sideOn && sideHeld;
   const active = activeId;
   // on a phone a tree row tapped goes to the page, the one in front too
-  const onTreeOpen: typeof openNode = (path, opts) => { openNode(path, opts); if (phone) useApp.setState({ sideSheet: false }); };
+  const onTreeOpen: typeof openNode = (path, opts) => { openNode(path, opts); if (phone) { openedFromTree(); useApp.setState({ sideSheet: false }); } };
   return (
     <>
-      <div className="shell" data-session={phone && activeId === SESSION ? '1' : undefined} style={{ '--side-w': `${sideW}px`, '--insp-w': `${inspW}px` } as React.CSSProperties}>
+      <div className="shell" data-session={whole ? '1' : undefined} style={{ '--side-w': `${sideW}px`, '--insp-w': `${inspW}px` } as React.CSSProperties}>
         <TopStrip />
         {sheet && sideOn && <div className="side-scrim" onClick={() => useApp.setState({ sideSheet: false })} />}
         {(sideOn || sideLeaving) && (
@@ -343,7 +368,7 @@ export function App() {
         <Canvas />
         {inspOn && <Inspector />}
         {inspOn && !mobile && <div className="insp-resize" onMouseDown={startInspResize} />}
-        {phone ? activeId !== SESSION && <PhoneBar /> : <BottomStrip />}
+        {phone ? !whole && <PhoneBar /> : <BottomStrip />}
         <Notice />
       </div>
       {paletteOpen && <Palette />}

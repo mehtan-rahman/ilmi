@@ -609,6 +609,22 @@ html[data-mobile="1"] .top .right { display: flex; }
 html[data-mobile="1"] .insp-toggle { padding: 9px 10px; margin: 0 -6px; }
 .side-toggle .panel-ico::after { right: auto; left: 0; border-left: 0; border-right: 1px solid var(--fg-4); }
 .side-toggle[data-on="1"] .panel-ico::after { border-right-color: var(--fg-2); }
+/* a list pulled down at its top (`pull.ts`): the word in the gap the pull opens above it, there only while it is
+   pulled. A list shorter than its pane is a hair taller than it, so it too gives under the finger as the system's
+   lists do */
+.pull-word { position: fixed; left: 0; top: 0; z-index: 56; height: 20px; display: flex; align-items: center; justify-content: center; font-family: var(--sans); font-size: var(--t-sm); color: var(--fg-4); pointer-events: none; opacity: 0; transition: color 120ms ease-out; }
+.pull-word[data-armed="1"] { color: var(--fg-1); }
+html[data-mobile="1"] .pane-body > .queue { min-height: calc(100% + 1px); box-sizing: border-box; }
+html[data-mobile="1"] .side { position: relative; }
+html[data-mobile="1"] .side::after { content: ""; position: absolute; left: 0; top: 0; width: 1px; height: calc(100% + 1px); visibility: hidden; pointer-events: none; }
+/* under a finger the chrome is not text: nothing in it is selected by a press, and no callout comes up over it.
+   What is read and written (a document, a card, a field) is still text */
+html[data-mobile="1"] :is(button, h6, .top, .phone-bar, .tabbar, .tab-rail, .queue header, .qlist li, .fv-row, .palette-row, .tweaks, .notice, .inkbar, .recall-meta, .session-bar, .grades, .pdf-bar, .welcome-row) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+html[data-mobile="1"] :is(input, textarea, [contenteditable="true"]) { -webkit-user-select: text; user-select: text; }
 /* a touch resting where a menu is (milestone 57, `touch.ts`): the long press is the menu's, so the
    system selects nothing under it and shows no callout */
 html[data-pressing] body, html[data-pressing] body * { -webkit-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; }

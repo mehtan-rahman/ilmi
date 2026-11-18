@@ -1058,6 +1058,21 @@ the whole screen: a card shows `reveal` across the foot and then, in the same
 place, the four grades; a topic shows its page with the three at the foot. `×`
 at the top goes back to the day.
 
+What you open comes in from the right, over the day, and goes back out to
+the right; the day is under it as you left it. A finger drawn in from the
+left edge pulls the page off with it: let go past the middle, or with a
+flick, and you are back on the day; let go short and the page settles where
+it was. On the day itself, and on a page you opened from the tree, the same
+swipe brings the tree in, following the finger, and a swipe left on the tree
+pushes it away (on an iPad held upright too). A topic's row swiped left shows
+`dismiss` and `later` at its right end; swiped most of the way across it is
+`later` at once, with a tick as you cross that point, and the notice can take
+it back. Where the collection syncs, the day and the tree pulled down past
+their top show `sync`, darker once you have pulled far enough, and letting go
+there syncs now, as the strip's word does when pressed. None of this moves
+on e-ink or where the system is set to reduce motion: there the swipes open
+and close at once, and the row's buttons are what a row has.
+
 An iPhone taps back as you go: a firm tap when a card's answer is shown; by the
 grade when you give one (`again` the system's error, three knocks, `hard` a
 heavy tap, `good` a sharp one, `easy` a light one); the system's success when the queue is walked

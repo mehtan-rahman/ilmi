@@ -20,6 +20,9 @@
 .side-scrim { animation: m-fade 200ms ease-out; }
 .side[data-sheet="1"][data-leaving="1"] { animation: m-to-left 180ms cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
 @keyframes m-to-left { to { transform: translateX(-100%); } }
+/* under the finger, and once it has been (`edge.ts`): where the sheet is is the finger's to say, and its settle a
+   transition from wherever it was let go; one that then leaves by its button still slides away (the rule above) */
+.side[data-sheet="1"][data-held]:not([data-leaving]), .side-scrim[data-held] { animation: none; }
 
 /* a folder opened: its rows settle in under it (each row its own, nothing laid out again) */
 .tree .trow { animation: m-pop 130ms ease-out; }
@@ -29,8 +32,14 @@
 .recall-wrap .card .face.back { animation: m-fade 150ms ease-out; }
 .grades:not([data-gone="1"]) { animation: m-fade 150ms ease-out; }
 
-/* a phone shows one thing at a time: what is opened comes in (an opacity only: the page's fixed parts stay where they are) */
-html[data-shape="phone"] .pane-body > * { animation: m-fade 140ms ease-out; }
+/* a phone shows one thing at a time: what is opened comes in from the right over the day, which gives way a little
+   to the left; going back it leaves to the right and the day comes back to its place (`Canvas.tsx`). Under the
+   finger at the left edge both are the finger's (`edge.ts`). The day under a settled page is not drawn. */
+@keyframes m-pop { to { transform: translateX(100%); } }
+@keyframes m-under-back { from { transform: translateX(-22%); } }
+html[data-shape="phone"] .pane-top[data-pop="1"] { animation: m-pop 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards; pointer-events: none; }
+html[data-shape="phone"] .pane-day[data-back="1"] { animation: m-under-back 280ms cubic-bezier(0.32, 0.72, 0, 1); }
+html[data-shape="phone"] .pane-day[data-held] { animation: none; }
 
 /* what is pressed answers, and lets go softly */
 .phone-bar button, .insp-toggle, .inkbar button { transition: transform 110ms ease-out, opacity 110ms ease-out; }

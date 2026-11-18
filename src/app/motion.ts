@@ -24,10 +24,13 @@ const LEAVING: readonly [selector: string, ms: number][] = [
   ['.page-setup', 120],
 ];
 
-const still = (): boolean => {
+export const still = (): boolean => {
   const root = document.documentElement;
   return root.dataset.still === '1' || root.dataset.theme === 'eink' || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 };
+
+/** Nothing follows a finger or settles: a smoke, a test, e-ink, or less motion asked for. What would have moved is where it ends at once. */
+export const quiet = (): boolean => import.meta.env.MODE === 'test' || still();
 
 /**
  * True while `on` is, and for `ms` after: what closes stays in the page that long, to leave (the sidebar's sheet,

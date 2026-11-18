@@ -15,9 +15,11 @@ import { Tree } from './Tree.js';
 import { Tweaks } from './Tweaks.js';
 import { Welcome } from './Welcome.js';
 import { activeTab, closeTab, cycleTab, splitPane } from './panes.js';
-import { SESSION } from './names.js';
+import { SESSION, queueScope } from './names.js';
 import { ACCENTS, accentOf, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } from './store.js';
-import { closeTabs, openInitialVault, openNode, rememberTab, reopenClosed, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
+import { appNow } from './clock.js';
+import { nextLook } from './items.js';
+import { closeTabs, openInitialVault, openNode, refreshQueue, rememberTab, reopenClosed, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
 import { bookShown, inspectorShown, sidebarShown } from './layout.js';
 import { shapeOf } from './platform.js';
 import { installLongPress } from './touch.js';
@@ -94,6 +96,24 @@ export function App() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+  // the queue follows the clock whatever is in front (a session, a document, a phone's page): the strip's count and
+  // the phone's bar read it. Looked at again when the window is come back to, when the next element ahead comes due
+  // (a card in its learning steps), and at the day's turn
+  const queue = useApp((s) => s.queue);
+  // (the day's list and the other queries look for themselves while one is in front, `Queue.tsx`)
+  const queueUp = useApp((s) => queueScope(activeTab(s.panes)?.id ?? '') !== null);
+  useEffect(() => {
+    if (!vault || queueUp) return;
+    const look = () => { if (document.visibilityState !== 'hidden') refreshQueue(); };
+    window.addEventListener('focus', look);
+    document.addEventListener('visibilitychange', look);
+    const t = setTimeout(look, Math.min(nextLook(queue, appNow()), 2 ** 31 - 1));
+    return () => {
+      window.removeEventListener('focus', look);
+      document.removeEventListener('visibilitychange', look);
+      clearTimeout(t);
+    };
+  }, [vault, queue, queueUp]);
   // an iPad's shape (`platform.ts`): landscape is a narrow Mac, portrait draws the sidebar as a sheet
   const shape = shapeOf(mobile, win, winH);
   // a phone's (milestone 56): the day its face, one page, the bar at the foot, and the tree and the palette behind one of its buttons

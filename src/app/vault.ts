@@ -10,7 +10,7 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { REVIEWS_DIR, meta, replaces, setField, type Doc, type Meta, type NodeType, type ReadKind, type Reading, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
-import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examKey, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
+import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examKey, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, sameItem, spentToday, stepsAhead, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
 import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, isPdfPath, joinRel, normRel, ordered, placeEntry, rekey, relFrom, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TextHit, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { createCollection, listCollections } from '../vault/tauri-store.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
@@ -416,12 +416,16 @@ export async function recordReview(r: Review, logged = false): Promise<void> {
   const vault = current;
   if (!vault) return;
   // a grade given again in its session takes the place of the line it replaces
+  const before = reviews.length;
   if (r.over !== undefined) reviews = reviews.filter((x) => !replaces(r, x));
+  const replaced = reviews.length < before;
   if (!reviews.includes(r)) reviews = [...reviews, r];
   logLines += 1;
   if (logged) {
-    // the write that carried it rebuilt the queue with it counted
-    useApp.setState({ reviews });
+    // the write that carried it rebuilt the queue with it counted; and, given again, with the line it replaces counted
+    // beside it (a new card's two grades spent two of the day's new cards): the queue is metered again without that one
+    if (replaced) useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
+    else useApp.setState({ reviews });
     return;
   }
   useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
@@ -1199,7 +1203,14 @@ function sessionQueue(only: string | null, focus: Focus): QueueItem[] {
  */
 export function openSession(item: QueueItem, opts: OpenOpts = {}, only: string | null = null, focus: Focus = 'all'): void {
   const s = useApp.getState();
-  const items = sessionItems(sessionQueue(only, focus), item);
+  const walk = sessionQueue(only, focus);
+  // with what is due, the cards in their steps due later today (of the exam, when narrowed to one; not when narrowed to
+  // reading or writing): asked at the end, as a card graded into its steps in the session is. So a session left with
+  // such a card still to come, and another begun, does not end with it minutes from due
+  const now = appNow();
+  const ahead = !walk.some((i) => sameItem(i, item)) || (focus !== 'all' && focus !== 'recall') ? []
+    : stepsAhead(s.queue, now).filter((i) => only === null || (!!i.exam && examKey(i.exam) === only));
+  const items = [...sessionItems(walk, item), ...ahead];
   useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items } });
   openNode(SESSION, opts);
 }

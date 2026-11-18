@@ -23,7 +23,7 @@ export function bareLined(card: Card): boolean {
 }
 
 /** The scheduler's attributes: what a link shares and a merge carries. The rest (`pri`, `sus`, `link`, unknown ones) stays the card's. */
-const STATE_KEYS = ['due', 'state', 'stability', 'difficulty', 'reps', 'lapses', 'steps', 'ivl', 'last', 'grade'] as const;
+const STATE_KEYS = ['due', 'state', 'stability', 'difficulty', 'reps', 'lapses', 'steps', 'ivl', 'last', 'grade', 'seen'] as const;
 
 /**
  * `to` with `from`'s state: every scheduler attribute from `from` (none, for

@@ -17,8 +17,8 @@ import { grade, type Grade } from './card.js';
 import { becomesLeech } from './options.js';
 import { capForExam, lineKey, type ExamAt } from './exams.js';
 import type { Exam, LeechAction } from '../format/index.js';
-import { addDays, dayOf, dayStart, whenToDate } from './dates.js';
-import { sampleKey } from './growth.js';
+import { addDays, dayOf, dayStart, instantOf, whenToDate } from './dates.js';
+import { hashSeed, sampleKey } from './growth.js';
 import { advanceRead, finishOf, leftToFinish } from './read.js';
 import { advanceWrite } from './write.js';
 import { advanceSection, sectionInQueue, sectionState } from './section.js';
@@ -395,6 +395,21 @@ export async function queue(vault: Vault, now: Date, scope: Scope = 'all'): Prom
   return queueItems(docs, now).filter((i) => inScope(i, scope, now));
 }
 
+/**
+ * The cards in their learning or relearning steps that come due later
+ * today (at an instant, minutes on), soonest first. A session begun now
+ * asks them at its end, as it asks again a card it grades into its steps:
+ * left and begun again, a session does not end with a card minutes from
+ * due. Not a card buried or held for tomorrow, nor a suspended one (which
+ * is no item).
+ */
+export function stepsAhead(items: readonly QueueItem[], now: Date): CardItem[] {
+  const turn = dayStart(addDays(dayOf(now), 1)).getTime();
+  return items
+    .filter((i): i is CardItem => i.kind === 'card' && !i.buried && !i.held && !!i.sched?.due && i.sched.due.length > 10 && i.dueAt.getTime() > now.getTime() && i.dueAt.getTime() < turn)
+    .sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
+}
+
 // ── the fold ─────────────────────────────────────────────────────
 
 export interface Fold { above: QueueItem[]; below: QueueItem[] }
@@ -459,6 +474,28 @@ export function newId(): string {
   return s;
 }
 
+/**
+ * The id a card is given when a schedule line is first written for it (a
+ * grade, `got it`, a suspension, a priority of its own): `c` and six
+ * characters made from where the card is and what it says (its document's
+ * path, its text, and which of the document's cards with that text it is),
+ * so two devices that each write the card's first line before they meet
+ * give it the same id, and what each wrote is found by it on both. The
+ * next one made the same way when the document already holds it.
+ */
+export function cardId(path: string, doc: Doc, card: Card): string {
+  const taken = usedIds(doc);
+  let k = 0;
+  for (const b of doc.blocks) {
+    if (b === card) break;
+    if (b.kind === 'card' && b.text === card.text) k++;
+  }
+  for (let n = 0; ; n++) {
+    const id = `c${(hashSeed(`${path}\n${card.text}\n${k}\n${n}`) % 36 ** 6).toString(36).padStart(6, '0')}`;
+    if (!taken.has(id)) return id;
+  }
+}
+
 function usedIds(doc: Doc): Set<string> {
   const ids = new Set<string>();
   for (const b of doc.blocks) if ((b.kind === 'card' || b.kind === 'paragraph') && b.id) ids.add(b.id);
@@ -485,7 +522,7 @@ export function numberBlank(text: string, index: number, n: number): string {
 }
 
 export interface GradeOptions {
-  /** Id generator, for tests. */
+  /** Id generator, for tests; absent, the card's own (`cardId`). */
   newId?: () => string;
   /** FSRS's request retention (`options.ts`); absent, its default 0.9. */
   retention?: number;
@@ -519,19 +556,19 @@ export function wasLeeched(before: CardSchedule | undefined, after: CardSchedule
 }
 
 /**
- * Grade a queue item in place. Assigns the card an id if it has none, numbers
- * an unnumbered blank on a multi-blank card, and rewrites exactly one
- * schedule line: the group's `sr cN` line, or the bare `sr` line for a
- * single-item card. Meant to run inside `vault.update`.
+ * The item's card in `doc`, made ready for a line of its own to be written: given an id if it has none, an
+ * unnumbered blank of a card of several numbered. `own`: the cloze group whose `sr cN` line the item asks; null,
+ * the bare line (or, of a reverse, its `sr r` line).
  */
-export function gradeItem(doc: Doc, item: CardItem, rating: Grade, now: Date, opts: GradeOptions = {}): CardSchedule {
+function lineFor(doc: Doc, item: CardItem, gen?: () => string): { card: Card & { id: string }; group: GroupKey | undefined; own: number | null } {
   const card = locate(doc, item);
   if (card.id === undefined) {
-    const taken = usedIds(doc);
-    const gen = opts.newId ?? newId;
-    let id = gen();
-    while (taken.has(id)) id = gen();
-    card.id = id;
+    if (gen) {
+      const taken = usedIds(doc);
+      let id = gen();
+      while (taken.has(id)) id = gen();
+      card.id = id;
+    } else card.id = cardId(item.path, doc, card);
   }
   let group = item.group;
   if (group && 'blank' in group && item.groups > 1) {
@@ -539,6 +576,51 @@ export function gradeItem(doc: Doc, item: CardItem, rating: Grade, now: Date, op
     card.text = numberBlank(card.text, group.blank, n);
     group = { n };
   }
+  const own = item.dir !== 'r' && group && 'n' in group && (item.groups > 1 || card.blanks?.[group.n] !== undefined) ? group.n : null;
+  return { card: card as Card & { id: string }, group, own };
+}
+
+/** A schedule never tested: a card new, with no review. */
+export const neverTested = (s: Pick<CardSchedule, 'state' | 'reps'> | undefined): boolean => (s?.state ?? 'new') === 'new' && !s?.reps;
+
+/** Never tested, and not learnt yet either (`seen`): it comes up answered first, to learn (the `learnNew` tweak). */
+export const owesLearning = (s: Pick<CardSchedule, 'state' | 'reps' | 'seen'> | undefined): boolean => neverTested(s) && s?.seen === undefined;
+
+/**
+ * A card learnt (`got it`): the line the item asks says so, `seen=<now>`, and is otherwise as it was, still new
+ * and due now, so the card is asked as a test wherever the queue is next walked and is not shown to learn again
+ * (FORMAT.md §6.2). The card is given an id if it has none, as a grade gives it one. A line that has a review, or
+ * says it already, is left alone. Meant to run inside `vault.update`; null when nothing was written.
+ */
+export function learnItem(doc: Doc, item: CardItem, now: Date, opts: Pick<GradeOptions, 'newId'> = {}): { id: string; key?: string; next: CardSchedule } | null {
+  const at = locate(doc, item);
+  const line = item.dir === 'r' ? at.reverse : scheduleOf(at, item.group, item.dir);
+  if (!owesLearning(line)) return null;
+  const { card, own } = lineFor(doc, item, opts.newId);
+  const seen = instantOf(now);
+  if (item.dir === 'r') {
+    const next = { ...card.reverse, seen };
+    card.reverse = next;
+    return { id: card.id, key: 'r', next };
+  }
+  if (own === null) {
+    const next = { ...card.sched, seen };
+    card.sched = next;
+    return { id: card.id, next };
+  }
+  const next = { ...card.blanks?.[own], seen };
+  card.blanks = { ...card.blanks, [own]: next };
+  return { id: card.id, key: `c${own}`, next };
+}
+
+/**
+ * Grade a queue item in place. Assigns the card an id if it has none, numbers
+ * an unnumbered blank on a multi-blank card, and rewrites exactly one
+ * schedule line: the group's `sr cN` line, or the bare `sr` line for a
+ * single-item card. Meant to run inside `vault.update`.
+ */
+export function gradeItem(doc: Doc, item: CardItem, rating: Grade, now: Date, opts: GradeOptions = {}): CardSchedule {
+  const { card, group, own } = lineFor(doc, item, opts.newId);
   const params = opts.retention !== undefined ? { request_retention: opts.retention } : undefined;
   // a leech set to suspend carries `sus=1` on the line it was graded on
   const leeched = (prev: CardSchedule | undefined, next: CardSchedule): CardSchedule => {
@@ -556,7 +638,6 @@ export function gradeItem(doc: Doc, item: CardItem, rating: Grade, now: Date, op
     opts.report?.({ id: card.id, key: 'r', ...(prev ? { prev } : {}), next });
     return next;
   }
-  const own = group && 'n' in group && (item.groups > 1 || card.blanks?.[group.n] !== undefined) ? group.n : null;
   const prev = from(own === null ? card.sched : card.blanks?.[own] ?? card.sched);
   const next = leeched(prev, capped(grade(prev, rating, now, params), group));
   if (own === null) card.sched = next;

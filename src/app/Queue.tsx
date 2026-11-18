@@ -22,9 +22,8 @@ import { clozeHTML, faceDir, richHTML } from './Reader.js';
 import { dirAttr } from '../reader/index.js';
 import { useApp } from './store.js';
 import { currentVault, openCard, openNode, openSession, postponeRest, refreshQueue, setFocus, startSession, unlogReading } from './vault.js';
-import { actOnDoc, actionWords, atEndOf, docLine, twoLines, type DocAction } from './Session.js';
+import { actOnDoc, actionWords, atEndOf, docLine, putBackDoc, twoLines, type DocAction } from './Session.js';
 import { failed, notify } from './land.js';
-import { restore } from './deck.js';
 import { passageOf, putPassage } from './passages.js';
 import type { ReadItem, SectionItem, WriteItem } from '../schedule/index.js';
 import './queue.css';
@@ -112,7 +111,7 @@ function TopicActs({ item, now }: { item: ReadItem | WriteItem | SectionItem; no
     }
     void vault.read(item.path).then(({ doc }) => {
       const before = structuredClone(doc);
-      return actOnDoc(item, action).then(() => notify(line, null, () => restore(vault, [{ path: item.path, doc: before }]).then(() => unlogReading(item.path, item.kind === 'section' ? item.heading : undefined))));
+      return actOnDoc(item, action).then(() => notify(line, null, () => putBackDoc(item, before).then(() => unlogReading(item.path, item.kind === 'section' ? item.heading : undefined))));
     }).catch(failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss'));
   };
   return (
@@ -161,6 +160,7 @@ export function Queue({ scope, active }: Props) {
   // a card in learning steps comes due by the minute; look again when shown
   useEffect(() => { if (active) refreshQueue(); }, [active, scope]);
   // and while it stays open: when the window is come back to, when the next element ahead comes due, at the day's turn
+  // (as the app does whatever else is in front, `App.tsx`: its strip and a phone's bar read the same queue)
   useEffect(() => {
     if (!active) return;
     const look = () => { if (document.visibilityState !== 'hidden') refreshQueue(); };
@@ -203,8 +203,15 @@ export function Queue({ scope, active }: Props) {
     const paths = [...new Set(rest.filter((i) => !(i.kind === 'section' && i.passage)).map((i) => i.path))];
     // the passages among them are in no file: each as it was, for the same undo
     const kept = rest.flatMap((i) => (i.kind === 'section' && i.passage ? [{ ...i.passage, was: passageOf(i.passage.hash, i.passage.boxes) }] : []));
+    const moved = rest.filter((i) => !(i.kind === 'section' && i.passage));
     void Promise.all(paths.map((path) => vault.read(path).then(({ doc }) => ({ path, doc: structuredClone(doc) }))))
-      .then((before) => postponeRest(true).then((n) => { if (n) notify(`postponed · ${plural(n, 'item')}`, null, async () => { await restore(vault, before); for (const k of kept) if (k.was) await putPassage(k.hash, k.boxes, k.was); }); }))
+      .then((before) => postponeRest(true).then((n) => {
+        // taken back, each element's own line as it was: what else was written to its document since stays
+        if (n) notify(`postponed · ${plural(n, 'item')}`, null, async () => {
+          for (const i of moved) { const was = before.find((b) => b.path === i.path); if (was) await putBackDoc(i, was.doc); }
+          for (const k of kept) if (k.was) await putPassage(k.hash, k.boxes, k.was);
+        });
+      }))
       .catch(failed('postpone'));
   };
 

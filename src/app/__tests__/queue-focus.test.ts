@@ -12,7 +12,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { meta as metaOf, type Doc, type Meta } from '../../format/index.js';
-import { activeExam, docItems, examKey, examQueue, examsAt, isDue, meterQueue, resolveOptions, spentToday, type ExamAt, type QueueItem } from '../../schedule/index.js';
+import { activeExam, docItems, examKey, examQueue, examsAt, isDue, meterQueue, resolveOptions, spentToday, stepsAhead, type ExamAt, type QueueItem } from '../../schedule/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import { appNow, setClockDay } from '../clock.js';
@@ -72,6 +72,8 @@ const legend = () => host.querySelector('.legend')?.textContent;
 let queue: QueueItem[] = [];
 let due: QueueItem[] = [];
 const of = (f: string) => due.filter((i) => focusOf(i) === f);
+/** The cards in their steps due later in the day: a session over cards asks them at its end. */
+const ahead = () => stepsAhead(queue, appNow());
 
 function build(now: Date): QueueItem[] {
   const items: QueueItem[] = [];
@@ -180,11 +182,11 @@ describe('the focus in the queue', () => {
     await mount(createElement(Queue, { scope: 'today', active: true }));
     await key('Enter');
     let items = useApp.getState().session?.items ?? [];
-    expect(items).toEqual(of('recall'));
+    expect(items).toEqual([...of('recall'), ...ahead()]);
     useApp.setState({ session: null });
     await act(async () => { rows()[2]!.click(); });
     items = useApp.getState().session?.items ?? [];
-    expect(items).toHaveLength(of('recall').length);
+    expect(items).toHaveLength(of('recall').length + ahead().length);
     expect(items[0]).toEqual(of('recall')[2]);
     expect(items.every((i) => i.kind === 'card')).toBe(true);
     unmount();
@@ -204,7 +206,7 @@ describe('the focus in the queue', () => {
     expect(host.querySelector('.qlist li.fold')).toBeNull();
     expect(rows()).toHaveLength(of('recall').length);
     await key('Enter');
-    expect(useApp.getState().session?.items).toHaveLength(of('recall').length);
+    expect(useApp.getState().session?.items).toHaveLength(of('recall').length + ahead().length);
   });
 
   it('with an exam\'s chip: the focus and the exam together, the counts of what the exam leaves', async () => {
@@ -225,7 +227,7 @@ describe('the focus in the queue', () => {
     // the chip stays to be taken off
     expect(host.querySelector('.exam-filter button')?.getAttribute('data-active')).toBe('1');
     await key('Enter');
-    expect(useApp.getState().session?.items).toEqual(cards);
+    expect(useApp.getState().session?.items).toEqual([...cards, ...stepsAhead(q, appNow()).filter((i) => i.exam)]);
   });
 
   it('nothing of a kind: the word dimmed and still pressed, the line saying so, the row there to go back', async () => {
@@ -263,7 +265,7 @@ describe('the focus elsewhere', () => {
     await mount(createElement(PhoneBar));
     expect(host.querySelector('.pb-day')?.textContent).toBe(`enter queue${of('recall').length}`);
     await act(async () => { host.querySelector<HTMLButtonElement>('.pb-day')!.click(); });
-    expect(useApp.getState().session?.items).toEqual(of('recall'));
+    expect(useApp.getState().session?.items).toEqual([...of('recall'), ...ahead()]);
     unmount();
     useApp.setState({ session: null, queueFocus: 'write', panes: openTab(emptyPanes(), ':queue/today'), queue: queue.filter((i) => i.kind !== 'write') });
     await mount(createElement(PhoneBar));

@@ -10,6 +10,18 @@ import { READ_AF, SECTION_SPECS, parseFrontmatter } from './frontmatter.js';
 import { parseBoxes } from './boxes.js';
 import type { Block, Card, CardSchedule, Diagnostic, Doc, Heading, Paragraph, Raw, SrState } from './model.js';
 
+// `seen` is the card schedule's (FORMAT.md §6.2); it is declared here, beside its spec.
+declare module './model.js' {
+  interface CardSchedule {
+    /**
+     * `seen=<instant>`: the card came up answered, to learn, and was got (`got it`), then; it has not been tested.
+     * Only on a line with no review: the first grade drops it. Such a card is still new, due now, and is asked
+     * as a test, not shown to learn again.
+     */
+    seen?: string;
+  }
+}
+
 export const SR_SPECS: AttrSpec<CardSchedule>[] = [
   specWhen('due', 'due'),
   specEnum('st', 'state', ['new', 'learning', 'review', 'relearning'] satisfies SrState[]),
@@ -21,6 +33,8 @@ export const SR_SPECS: AttrSpec<CardSchedule>[] = [
   specInt('ivl', 'ivl'),
   specWhen('last', 'last'),
   specIntRange('g', 'grade', 1, 4),
+  // learnt, not yet tested (`got it`): when
+  specWhen('seen', 'seen'),
   specIntRange('pri', 'pri', 0, 100),
   // `sus=1` suspends; read as a bool, written only when true (a `sus=0` is dropped on the next write)
   { key: 'sus', prop: 'suspended', parse: (v) => parseBool(v), format: () => '1' },

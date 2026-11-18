@@ -18,11 +18,10 @@
 // which asking brought which element, and which are not asked after all.
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { learntToday, markLearnt } from './learnt.js';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
 import type { CardSchedule, Doc } from '../format/index.js';
-import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, nextGap, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, whenToDate, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
+import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, neverTested, nextGap, owesLearning, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, whenToDate, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, paceWords, sourceLabel, standing, trailParts, dueTone } from './items.js';
 import { writeDoc } from './sections.js';
 import { queueId } from './names.js';
@@ -39,11 +38,11 @@ import { focusInBook } from './bookNotes.js';
 import { activeExamAt, currentVault, logDocAction, note, openNode, optionsAt, unlogReading } from './vault.js';
 import { openNotes } from './book.js';
 import { sessionEnded } from './sync.js';
-import { gradeAhead, gradeCard, inSteps, type Graded } from './grading.js';
+import { gradeAhead, gradeCard, inSteps, learnCard, type Graded } from './grading.js';
 import { hapticFinished, hapticGrade, hapticReveal, hapticTick } from './haptics.js';
 import { CardFaces } from './CardFaces.js';
 import { bulkCards, saveCardEdit } from './deckOps.js';
-import { cardRef as refOfCard, cardSuspended, restore, type CardRef } from './deck.js';
+import { cardRef as refOfCard, cardSuspended, type CardRef } from './deck.js';
 import { failed, notify } from './land.js';
 import './session.css';
 import './incontext.css';
@@ -186,9 +185,11 @@ interface CardProps {
   onGone(gone: boolean): void;
   /** An edit being written: a grade after it waits for it, so it finds the card as edited. */
   onEdit(run: Promise<unknown>): void;
-  /** It may come up to learn: never tested, the tweak on, not learnt already in this session (`learnsFirst`). */
+  /** It may come up to learn: the tweak on, and not learnt already at another element of this session. */
   learnable?: boolean;
-  /** Learnt (space, ⏎): it is tested at the session's end; nothing is written. */
+  /** It was learnt at this element, in this session: come back to with ‹, it is up to learn again, though its line says it was. */
+  learntHere?: boolean;
+  /** Learnt (space, ⏎): its line says so (`seen`), and it is tested at the session's end. */
   onLearnt?: () => void;
   /** `s`: the card suspended (the session moves on, nothing graded), or one come back to brought back. */
   onSuspend(ref: CardRef, on: boolean): void;
@@ -200,16 +201,16 @@ let endFelt: number | undefined;
 /** One card's line, however often it is in the walk (learnt, then tested). */
 const learnKey = (c: CardItem) => `${c.path}#${c.id ?? c.block}#${c.group ? JSON.stringify(c.group) : ''}#${c.dir ?? ''}`;
 
-/** A schedule never tested: a card new, with no review. */
-export const neverTested = (s: { state?: string; reps?: number } | undefined): boolean => (s?.state ?? 'new') === 'new' && !s?.reps;
+export { neverTested };
 
-function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onEdit, learnable, onLearnt, onSuspend }: CardProps) {
+function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onEdit, learnable, learntHere, onLearnt, onSuspend }: CardProps) {
   const loaded = useDoc(item.path);
   const docPri = useApp((s) => s.docs[item.path]?.pri);
-  // a card never tested comes up answered, to learn: its test is at the session's end (the `learnNew` tweak)
-  const [learning] = useState(() => !given && !!learnable && neverTested(item.sched));
+  // a card never tested, and not learnt yet (its line has no `seen`), comes up answered, to learn: its test is at the
+  // session's end (the `learnNew` tweak). As the walk had it when the element came up
+  const [learnAt] = useState(() => !given && !!learnable && owesLearning(item.sched));
   // a card graded in this session comes back answered, its grade marked
-  const [revealed, setRevealed] = useState(!!given || learning);
+  const [revealed, setRevealed] = useState(!!given || learnAt);
   // `e`, or a press on a revealed box: the two boxes live in place (`CardFaces.tsx`)
   const [editing, setEditing] = useState(false);
   // the press that opened the boxes, for the caret to land where it was
@@ -226,6 +227,10 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
   const f = cardFields(text);
   // the item's schedule stands in only until the document is loaded; a card reset since reads as new
   const sched = !card ? item.sched : scheduleOf(card, item.group, item.dir);
+  // and as the document has it now: a line that has a review since the walk was made (a sync), or that says it was
+  // learnt elsewhere, is not up to learn; it is asked, its answer down
+  const learning = learnAt && !(card && (!neverTested(sched) || (sched?.seen !== undefined && !learntHere)));
+  useEffect(() => { if (learnAt && !learning && !given) setRevealed(false); }, [learning]);
   const exam = activeExamAt(item.path, now);
   // a grade given again is given from before the one it replaces: so are its hints
   const from = given?.written ? regradeFrom(sched, given.written) : sched;
@@ -520,6 +525,26 @@ export function actOnDoc(item: ReadItem | WriteItem | SectionItem, action: DocAc
   return run;
 }
 
+/**
+ * One of the three taken back: the element's own line as it was in `before` (a section's `read` line under its
+ * heading; a source's or a draft's fields), and nothing else of its document: what was written to it since (a card in
+ * it graded or learnt, another section passed) stays.
+ */
+export function putBackDoc(item: ReadItem | WriteItem | SectionItem, before: Doc): Promise<unknown> {
+  return writeDoc(item.path, (doc) => {
+    if (item.kind !== 'section') {
+      if (before.frontmatter) doc.frontmatter = structuredClone(before.frontmatter);
+      else delete doc.frontmatter;
+      return;
+    }
+    const at = (d: Doc) => { const h = d.blocks[item.block]; return h?.kind === 'heading' && h.text === item.heading ? h : d.blocks.find((b) => b.kind === 'heading' && b.text === item.heading); };
+    const [was, now] = [at(before), at(doc)];
+    if (now?.kind !== 'heading') return;
+    if (was?.kind === 'heading' && was.read) now.read = structuredClone(was.read);
+    else delete now.read;
+  });
+}
+
 function DocSession({ item, active, onAct, done, onPass, ...nav }: DocProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const info = useApp((s) => s.docs[item.path]);
@@ -690,9 +715,42 @@ export function Session({ active, onOpen }: Props) {
     if (!learnt.has(k)) {
       // where it was learnt: ‹ back there shows it to learn again, its test still the one at the end
       learnt.set(k, key);
-      // kept past this session: left before its end and come back to, the card is tested, not shown to learn again
-      markLearnt(k);
+      const place = idx;
       useApp.setState((s) => (s.session && s.session.seq === seq ? { session: { ...s.session, items: [...s.session.items, shown] } } : {}));
+      // and its line says so (`seen`), at once: the session left before its end, the app closed, the next day, another
+      // device, the card is asked as a test and not shown to learn again. After an edit of it still being written; a
+      // grade waits for this as it waits for an edit
+      let wrote = null as { id: string; key?: string } | null;
+      const run = edits.current.then(() => {
+        const s = useApp.getState().session;
+        const live = s?.seq === seq ? s?.items[place] : undefined;
+        const item = live?.kind === 'card' && live.path === shown.path && live.block === shown.block ? live : shown;
+        return learnCard(item, appNow(), (w) => { wrote = w; }).then((loaded) => ({ item, loaded }));
+      }).then(({ item, loaded }) => {
+        const w = wrote;
+        if (!loaded || !w) return;
+        // a card that had no id has one now, and a blank it numbered is numbered: the session's other items of it follow
+        const at = loaded.doc.blocks.find((b): b is Card => b.kind === 'card' && b.id === w.id);
+        if (!at) return;
+        const n = w.key?.startsWith('c') ? Number(w.key.slice(1)) : null;
+        const blank = item.group && 'blank' in item.group ? item.group.blank : null;
+        useApp.setState((s) => (s.session && s.session.seq === seq ? {
+          session: {
+            ...s.session,
+            items: s.session.items.map((i) => {
+              if (i.kind !== 'card' || i.path !== item.path || i.block !== item.block || (item.id === undefined ? i.id !== undefined : i.id !== item.id)) return i;
+              const mine = n !== null && blank !== null && i.group && 'blank' in i.group && i.group.blank === blank;
+              const to = { ...i, id: w.id, text: at.text, ...(mine ? { group: { n } } : {}) } as CardItem;
+              // what was learnt is kept by the card's line, which is named by its id now
+              const [was, now] = [learnKey(i), learnKey(to)];
+              const where = learnt.get(was);
+              if (was !== now && where !== undefined) { learnt.delete(was); learnt.set(now, where); }
+              return to;
+            }),
+          },
+        } : {}));
+      });
+      onEdit(run.catch(failed('got it')));
     }
     advance();
   };
@@ -827,19 +885,25 @@ export function Session({ active, onOpen }: Props) {
     else {
       void run.then(() => notify(line, null, before || putBack ? async () => {
         if (putBack) await putBack();
-        else await restore(vault, [{ path: item.path, doc: before! }]);
+        else await putBackDoc(item, before!);
         unlogReading(item.path, item.kind === 'section' ? item.heading : undefined);
         unmark(at);
       } : undefined), () => {});
     }
-    run.catch((e: unknown) => { unmark(at); failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss')(e); });
+    run.catch((e: unknown) => {
+      unmark(at);
+      // no longer enrolled (dismissed since the walk was made: on another device, synced in under the session; from its
+      // row): there was nothing to act on, and the session has moved on
+      if (e instanceof Error && /not enrolled/.test(e.message)) { note(`${glyphOf(item)} no longer in the queue`); return; }
+      failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss')(e);
+    });
     advance();
   };
 
   // a card learnt and then tested is in the walk twice: one element
   const distinct = new Set(items.map((i) => (i.kind === 'card' ? learnKey(i) : `${i.kind}#${i.path}#${i.kind === 'section' ? `${i.block}#${i.passage ? `${i.passage.hash}#${i.passage.boxes}` : i.heading}` : ''}`))).size;
   // the tests still to come of cards that will be learnt first: counted from the start, so the total does not grow underfoot
-  const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && neverTested(c.sched) && !learnt.has(learnKey(c)) && !learntToday(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
+  const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && owesLearning(c.sched) && !learnt.has(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
   // a card that comes back is one more when its grade brings it: that cannot be told from the start
   const shownTotal = asked + ahead;
 
@@ -872,7 +936,7 @@ export function Session({ active, onOpen }: Props) {
           <span className="ms-arrow">↗</span>
         </button>
       </div>
-      <CardElement key={key} item={el} active={active} given={given.get(key)} locked={given.has(`${seq}:${returns.get(key)}`)} onGrade={(g, line) => onGrade(el, g, line)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key && (learnt.has(learnKey(el)) || !learntToday(learnKey(el)))} onLearnt={() => onLearnt(el)} onSuspend={onSuspend} />
+      <CardElement key={key} item={el} active={active} given={given.get(key)} locked={given.has(`${seq}:${returns.get(key)}`)} onGrade={(g, line) => onGrade(el, g, line)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key} learntHere={learnt.get(learnKey(el)) === key} onLearnt={() => onLearnt(el)} onSuspend={onSuspend} />
     </div>
   );
 }

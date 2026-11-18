@@ -4,7 +4,7 @@
 
 import { PRI_DEFAULT, meta } from '../format/index.js';
 import { applyEdit, insertCard } from './cardEdit.js';
-import { applyBulk, bulkLine, docsUnder, restore, type BulkAction, type CardRef } from './deck.js';
+import { applyBulk, bulkLine, docsUnder, restore, restoreCards, type BulkAction, type CardRef } from './deck.js';
 import { notify } from './land.js';
 import { SESSION, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
@@ -32,7 +32,8 @@ export async function bulkCards(refs: readonly CardRef[], action: BulkAction): P
   const s = useApp.getState();
   const to = action.kind === 'move' ? titleOf(action.to, s.docs, s.vault) : undefined;
   const n = action.kind === 'move' ? refs.filter((r) => r.path !== action.to).length : refs.length;
-  notify(bulkLine(action, n, to), null, () => restore(vault, snaps));
+  // taken back: a card's lines as they were, alone; cards deleted or moved, their files as they were
+  notify(bulkLine(action, n, to), null, () => (action.kind === 'delete' || action.kind === 'move' ? restore(vault, snaps) : restoreCards(vault, snaps, refs)));
 }
 
 /** The document's priority, the default when it has none. */

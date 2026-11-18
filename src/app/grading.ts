@@ -4,7 +4,7 @@
 // app's, never required: a write that fails there leaves the card graded.
 
 import { overAt, type CardSchedule, type Review } from '../format/index.js';
-import { cardsById, copyToPartner, daysBetween, grade, gradeItem, instantOf, isDay, linkedWith, whenToDate, wasLeeched, type CardItem, type Grade } from '../schedule/index.js';
+import { cardsById, copyToPartner, daysBetween, grade, gradeItem, instantOf, isDay, learnItem, linkedWith, whenToDate, wasLeeched, type CardItem, type Grade } from '../schedule/index.js';
 import type { Loaded, StoreFs } from '../vault/index.js';
 import { activeExamAt, allDocs, anyLinks, currentVault, dropReview, note, optionsAt, recordReview, stageReview } from './vault.js';
 
@@ -40,6 +40,34 @@ export function gradeAhead(path: string, from: CardSchedule | undefined, g: Grad
   const next = grade(from, g, now, opts.retention !== undefined ? { request_retention: opts.retention } : undefined);
   if (opts.leechAction === 'suspend' && wasLeeched(from, next, opts.leech)) next.suspended = true;
   return next;
+}
+
+/**
+ * A card learnt (`got it`, the `learnNew` tweak): the line `item` asks says so (`seen`, FORMAT.md §6.2) and is
+ * otherwise as it was, so the card is asked as a test, not shown to learn again, in this session or any after it,
+ * here or on another device. A linked card's other side says it too: the two are one schedule. Nothing is logged:
+ * it is not a review. `told` hears the card's id and the line's key as written (a card with no id has one now).
+ * Resolves to the document; null with no collection open.
+ */
+export async function learnCard(item: CardItem, now: Date, told?: (wrote: { id: string; key?: string }) => void): Promise<Loaded | null> {
+  const vault = currentVault();
+  if (!vault) return null;
+  let wrote: { id: string; key?: string; next: CardSchedule } | null = null;
+  const loaded = await vault.update(item.path, (doc) => { wrote = learnItem(doc, item, now); });
+  const w = wrote as { id: string; key?: string; next: CardSchedule } | null;
+  if (!w) return loaded;
+  told?.(w);
+  if (w.key === undefined && anyLinks()) {
+    const docs = allDocs();
+    const byId = cardsById(docs);
+    const me = byId.get(w.id);
+    const other = me ? linkedWith(me.card, docs, byId) : undefined;
+    if (other?.card.id !== undefined) {
+      const id = other.card.id;
+      await vault.update(other.path, (doc) => { copyToPartner(doc, id, w.next); }).catch((e: unknown) => console.error('link', e));
+    }
+  }
+  return loaded;
 }
 
 /** A grade as it was written: what a grade given again in the session replaces (`gradeCard`'s `over`). */

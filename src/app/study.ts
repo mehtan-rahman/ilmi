@@ -2,7 +2,8 @@
 // document with children, or a selection. Pure; `studyDeck` in vault.ts
 // opens it. Suspended cards are never here (`docItems` leaves them out).
 //
-// Due only: the cards due now, in the queue's order. `include not due`
+// Due only: the cards due now, in the queue's order, and after them the
+// cards in their steps that come due later today. `include not due`
 // crams: every unsuspended card, the reviewed ones in the queue's order
 // (due first, then the rest by due), the new ones last in deck order. A card graded
 // early is graded as usual: FSRS reads the short elapsed time off `last`
@@ -10,7 +11,7 @@
 // the review.
 
 import type { Doc } from '../format/index.js';
-import { buryLinked, cardsById, docItems, examQueue, isDue, sortQueue, type CardItem, type ExamAt, type LinkedCard } from '../schedule/index.js';
+import { buryLinked, cardsById, docItems, examQueue, isDue, sortQueue, stepsAhead, type CardItem, type ExamAt, type LinkedCard } from '../schedule/index.js';
 
 export interface StudyOptions {
   /** `include not due`: every unsuspended card, new ones last. */
@@ -42,7 +43,8 @@ export function studyItems(docs: Iterable<[string, Doc]>, now: Date, opts: Study
   if (opts.exams) examQueue(all, now, opts.exams);
   // of two linked cards, one a day, unless cramming (asked for)
   if (!opts.cram) buryLinked(all, opts.linked ?? cardsById(list), now);
-  if (!opts.cram) return sortQueue(all.filter((i) => isDue(i, now) && !opts.held?.(i)), now) as CardItem[];
+  // what is due, then the cards in their steps due later today: asked at the end, as a card graded into its steps here is
+  if (!opts.cram) return [...(sortQueue(all.filter((i) => isDue(i, now) && !opts.held?.(i)), now) as CardItem[]), ...stepsAhead(all, now)];
   const fresh = all.filter(isNew);
   const rest = sortQueue(all.filter((i) => !fresh.includes(i)), now) as CardItem[];
   return [...rest, ...fresh];

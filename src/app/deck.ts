@@ -4,7 +4,7 @@
 // `DeckLens` in Lenses.tsx; the session over a deck is `study.ts`.
 
 import { PRI_DEFAULT, cardFields, cardForm, faceText, fold, meta, type Card, type CardForm, type CardSchedule, type Doc } from '../format/index.js';
-import { cardGroups, isSuspended, newId, whenToDate, type GroupKey } from '../schedule/index.js';
+import { cardGroups, cardId, isSuspended, newId, whenToDate, type GroupKey } from '../schedule/index.js';
 import { childDirOf, directories, ordered, type Order, type TreeNode } from '../vault/index.js';
 
 // ── the rows ─────────────────────────────────────────────────────
@@ -439,7 +439,12 @@ export async function applyBulk(store: CardStore, refs: readonly CardRef[], acti
         const gone = new Set<Card>(cards);
         doc.blocks = doc.blocks.filter((b) => !(b.kind === 'card' && gone.has(b)));
       } else {
-        for (const c of cards) changeCard(c, action);
+        for (const c of cards) {
+          changeCard(c, action);
+          // a card given a schedule line here (suspended, a priority of its own) has an id from then, as one graded has
+          // (FORMAT.md §6.1): a collection that syncs finds the line by it, and one with none never left this device
+          if (c.id === undefined && (c.sched || c.reverse || c.blanks)) c.id = cardId(path, doc, c);
+        }
       }
     });
   }
@@ -453,6 +458,28 @@ export async function restore(store: CardStore, snaps: readonly Snapshot[]): Pro
       doc.blocks = structuredClone(s.doc.blocks);
       if (s.doc.frontmatter) doc.frontmatter = structuredClone(s.doc.frontmatter);
       else delete doc.frontmatter;
+    });
+  }
+}
+
+/**
+ * A change to cards taken back (suspended, brought back, reset, a priority): each card's schedule lines as they were
+ * in `snaps`, and nothing else of its file, so what was written to the file since (the next card graded, a card
+ * learnt) stays. A card the action gave an id keeps it.
+ */
+export async function restoreCards(store: CardStore, snaps: readonly Snapshot[], refs: readonly CardRef[]): Promise<void> {
+  for (const s of snaps) {
+    const mine = refs.filter((r) => r.path === s.path);
+    await store.update(s.path, (doc) => {
+      for (const r of mine) {
+        const was = findCard(s.doc, r);
+        const now = was && (findCard(doc, r) ?? doc.blocks.find((b): b is Card => b.kind === 'card' && b.text === was.text) ?? null);
+        if (!was || !now) continue;
+        for (const k of ['sched', 'reverse', 'blanks'] as const) {
+          if (was[k] === undefined) delete now[k];
+          else (now as unknown as Record<string, unknown>)[k] = structuredClone(was[k]);
+        }
+      }
     });
   }
 }

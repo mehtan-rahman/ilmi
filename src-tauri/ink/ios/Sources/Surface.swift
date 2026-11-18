@@ -334,6 +334,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private var spent = false
   private var joined = false
   private var clearing = false
+  /// How many of the canvas's strokes are ours already: left on it while the Pencil was down.
+  private var taken = 0
+  private var swept: DispatchWorkItem?
   private var picked: (leaf: Leaf, at: [Int])?
   private let held = CALayer()
   private var heldRegion = CGRect.zero
@@ -1397,6 +1400,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     }
     let p = point(t, in: l)
     let tool = plugin.tool
+    // the eraser and the lasso work on what is ours: nothing of PencilKit's is left over it
+    if tool.kind == "eraser" || tool.kind == "select" { sweep() }
     if tool.kind == "eraser" {
       unpick()
       doing = .erase(before: [:], last: p)
@@ -1497,6 +1502,16 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     finish(l)
     plugin.emit(["kind": "end", "sheet": l.id])
     wait(l)
+    // what was left on the canvas under the Pencil goes once it has been up a moment (the stroke just ended is handed over by then)
+    if taken > 0 {
+      swept?.cancel()
+      let item = DispatchWorkItem { [weak self] in
+        guard let self = self, !self.down, self.taken >= self.canvas.drawing.strokes.count else { return }
+        self.sweep()
+      }
+      swept = item
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
+    }
   }
 
   private func finish(_ l: Leaf) {
@@ -1522,14 +1537,14 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
     if clearing { return }
-    let strokes = canvasView.drawing.strokes
-    if strokes.isEmpty { return }
+    let all = canvasView.drawing.strokes
+    if all.count <= taken { taken = all.count; return }
+    // PencilKit hands a stroke over a moment after it ends, and by then the next may be under the Pencil:
+    // only what it has not handed over before is new
+    let strokes = Array(all[taken...])
     defer {
-      // ours is on the glass first, then PencilKit's goes: never a frame with neither
-      CATransaction.flush()
-      clearing = true
-      canvasView.drawing = PKDrawing()
-      clearing = false
+      // the canvas is emptied only with no Pencil on the glass: emptied under one, the stroke being written is lost
+      if down { taken = all.count } else { sweep() }
     }
     if joined { joined = false; return }
     // the canvas stands over the view: a point of it is a point of the view, as large as the sheets are laid out
@@ -1553,6 +1568,18 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
         }
       }
     }
+  }
+
+  /// PencilKit's own copy of what is ours already taken off the glass (ours is there first: never a frame with neither).
+  private func sweep() {
+    swept?.cancel()
+    swept = nil
+    guard taken > 0 || !canvas.drawing.strokes.isEmpty else { return }
+    CATransaction.flush()
+    clearing = true
+    canvas.drawing = PKDrawing()
+    clearing = false
+    taken = 0
   }
 
   /// The stroke just written, drawn again as the shape it most nearly is: one more step to undo.

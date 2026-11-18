@@ -398,8 +398,8 @@ impl<R: Runtime> Ink<R> {
         self.call::<_, serde_json::Value>("surface", surface).await.map(|_| ())
     }
     /// A surface asked to go to a place or a zoom: `{ id, op, place, zoom, animated }`.
-    pub async fn surface_do(&self, ask: serde_json::Value) -> Result<(), String> {
-        self.call::<_, serde_json::Value>("surfaceDo", ask).await.map(|_| ())
+    pub async fn surface_do(&self, ask: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.call("surfaceDo", ask).await
     }
     /// How the canvases stand, for the checks.
     pub async fn state(&self) -> Result<serde_json::Value, String> {

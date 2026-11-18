@@ -125,7 +125,7 @@ import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
 import { addSurface, afterScene, covered, fillSheet, forgetSheet, hasCanvas, holdScenes, inContent, onFingers, onLayout, onSurface, pagePaper, pinchSheets, portOf, sceneSoon, settleSheets, type Box as InkBox, type PenEvent, type SheetSpec, type Surface } from './ink.js';
-import { dropSurface, hexOf, holesOver, paperArgs, sendSurface, surfaceGo, surfaceZoom, type SurfaceMark } from './surface.js';
+import { dropSurface, hexOf, holesOver, paperArgs, sendSurface, surfaceGo, surfacePicture, surfaceZoom, type SurfaceMark } from './surface.js';
 import { Icon } from './icons.js';
 import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
@@ -2800,6 +2800,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     return out;
   }, [native, drawn, pending, lit, flash]);
   const surfaceOpen = useRef<{ page: number; y: number; x: number | null } | null | undefined>(undefined);
+  const surfaceVeil = useRef<{ state: 'off' | 'asking' | 'on' }>({ state: 'off' });
   const sendRef = useRef<() => void>(() => {});
   sendRef.current = () => {
     const el = surfaceEl;
@@ -2813,6 +2814,25 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     // where it opens: where these pages were left, read once (it says where it is from then on)
     if (surfaceOpen.current === undefined) { const was = places.get(id); surfaceOpen.current = was?.at ? { page: was.at.page, y: was.at.y, x: was.x } : null; }
     const spec = paperOf(written, 0);
+    // something not known to be laid over pages lies over them (the tree's sheet with its shade): the surface cannot be
+    // cut to it, so the page shows a picture of the surface in its place, under whatever that is, and the surface
+    // stands aside until it is gone
+    const holes = holesOver(el);
+    const wanted = holes.some((h) => h.wide);
+    const veil = surfaceVeil.current;
+    if (wanted && veil.state === 'off') {
+      veil.state = 'asking';
+      void surfacePicture(surfaceId).then((url) => {
+        if (surfaceVeil.current.state !== 'asking') return;
+        if (url) el.style.backgroundImage = `url(${url})`;
+        surfaceVeil.current.state = 'on';
+        sendRef.current();
+      });
+    } else if (!wanted && veil.state !== 'off') {
+      veil.state = 'off';
+      // (the surface is shown again first, then the picture under it goes)
+      setTimeout(() => { if (surfaceVeil.current.state === 'off') el.style.backgroundImage = ''; }, 250);
+    }
     sendSurface({
       id: surfaceId,
       at: { x: r.left, y: r.top, w: r.width, h: r.height },
@@ -2824,9 +2844,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       zoom: zoomRef.current,
       open: surfaceOpen.current,
       marks: surfaceMarks,
-      holes: holesOver(el),
+      holes: veil.state === 'on' ? [] : holes,
       add: !pageless,
       tagRoom: TAG_ROOM,
+      ...(veil.state === 'on' ? { veiled: true } : {}),
     });
   };
   // told again whenever this draws, the page's layout changes, something is laid over the pages or taken away

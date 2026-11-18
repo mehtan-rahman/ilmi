@@ -185,10 +185,10 @@ describe('what the page lays over a surface', () => {
     const layer = add(document.body, 'sheet-layer', [0, 0, 300, 900]);
     const row = add(add(layer, 'tree-sheet', [0, 0, 300, 900]), 'row', [0, 100, 300, 30]);
     under = (x, y) => (x < 300 ? row : el);
-    expect(holesOver(el)).toEqual([{ x: 100, y: 50, w: 200, h: 800 }]);
+    expect(holesOver(el)).toEqual([{ x: 100, y: 50, w: 200, h: 800, wide: true }]);
     // the same thing found at every place asked is one hole
     under = () => row;
-    expect(holesOver(el)).toEqual([{ x: 100, y: 50, w: 200, h: 800 }]);
+    expect(holesOver(el)).toEqual([{ x: 100, y: 50, w: 200, h: 800, wide: true }]);
   });
 
   it('a menu, a notice, the go-to field: each is its own hole, not the whole of what holds it', () => {

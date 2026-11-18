@@ -18285,16 +18285,18 @@ export async function smokeSharp(path: string | null): Promise<void> {
         // the tree brought over the book and taken away: the surface is where the pages' place is, cut away for what lies over it
         {
           const before = await surf();
-          useApp.setState({ bookSide: true });
-          await sleep(1100);
-          const open = await rested('the tree open');
-          log(`the tree open: the surface ${Math.round(open.at.x)},${Math.round(open.at.y)} ${Math.round(open.at.w)}×${Math.round(open.at.h)} (it was ${Math.round(before.at.x)},${Math.round(before.at.y)} ${Math.round(before.at.w)}×${Math.round(before.at.h)}), ${open.holes} holes`);
-          must(open.holes > 0 || open.at.x > before.at.x + 40 || open.at.w < before.at.w - 40, 'the tree lies beside the pages or over them: the surface is narrower, or cut away for it');
+          const { toggleSidebar } = await import('./vault.js');
+          toggleSidebar();
+          const place = q<HTMLElement>('.note-surface', b)!;
+          // (a sheet with its shade over the pages is nothing the surface can be cut to: the page shows a picture of the surface under it, and the surface stands aside)
+          await poll(async () => place.style.backgroundImage.startsWith('url(') || ((await surfaceNow(b))?.at.w ?? 9999) < before.at.w - 40, 'the tree over the book: the pages are a picture of themselves under it, or the surface is narrower beside it', 8000);
+          await sleep(900);
+          log(`the tree open: the place shows ${place.style.backgroundImage.startsWith('url(') ? `a picture of the surface (${Math.round(place.style.backgroundImage.length / 1024)} kB)` : 'the surface itself'}`);
           await shot('zoom-tree');
-          useApp.setState({ bookSide: false });
-          await sleep(1100);
+          toggleSidebar();
+          await poll(() => !place.style.backgroundImage, 'the tree closed: the surface itself again', 8000);
           const shut = await rested('the tree closed');
-          must(shut.holes === 0 && Math.abs(shut.at.w - before.at.w) < 1, 'closed, the surface is whole again');
+          must(shut.holes === 0 && Math.abs(shut.at.w - before.at.w) < 1, 'whole, where it was');
         }
         // left for another app and come back to: as it was
         {

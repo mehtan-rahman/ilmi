@@ -23,7 +23,8 @@ export interface SurfacePlace { page: number; y: number; x?: number | null }
 /** A passage's box as the surface draws it: on a page by its place, in fractions of it; `tag` what stands beside its first box. */
 export interface SurfaceMark { key: string; page: number; x: number; y: number; w: number; h: number; tag?: string; cur?: boolean; dis?: boolean; flash?: boolean; pending?: boolean; no?: number }
 
-export interface SurfaceHole { x: number; y: number; w: number; h: number; r?: number; rides?: boolean }
+/** A hole in a surface: `rides` when it lies on the pages and goes while they move; `wide` when it is something not known to be laid over pages (a sheet with its shade, a pane slid over): the surface then stands aside whole (`veiled`). */
+export interface SurfaceHole { x: number; y: number; w: number; h: number; r?: number; rides?: boolean; wide?: boolean }
 
 export interface SurfaceSpec {
   id: string;
@@ -41,6 +42,8 @@ export interface SurfaceSpec {
   holes: SurfaceHole[];
   add: boolean;
   tagRoom: number;
+  /** The surface is not shown and takes no touch: the page shows a picture of it in its place, under what it has laid over the whole of it. */
+  veiled?: boolean;
 }
 
 const said = new Map<string, string>();
@@ -64,6 +67,10 @@ export const surfaceGo = (id: string, place: SurfacePlace, animated = false): Pr
 
 export const surfaceZoom = (id: string, zoom: number, animated = true): Promise<void> =>
   invoke<void>('ink_surface_do', { ask: { id, op: 'zoom', zoom, animated } }).catch(console.error);
+
+/** A picture of the surface as it is shown now (a JPEG, as a `data:` address), for the page to show in its place while something lies over the whole of it; null where there is none. */
+export const surfacePicture = (id: string): Promise<string | null> =>
+  invoke<{ data?: string } | null>('ink_surface_do', { ask: { id, op: 'picture' } }).then((got) => (got?.data ? `data:image/jpeg;base64,${got.data}` : null), () => null);
 
 /** A dev run's: once every picture on the surface is made. */
 export const surfaceSettle = (id: string): Promise<void> => invoke<void>('ink_surface_do', { ask: { id, op: 'settle' } }).catch(() => {});
@@ -103,6 +110,7 @@ export function holesOver(el: HTMLElement): SurfaceHole[] {
   const r = el.getBoundingClientRect();
   if (r.width <= 0 || r.height <= 0 || typeof document.elementFromPoint !== 'function') return [];
   const found = new Set<Element>();
+  const wide = new Set<Element>();
   for (const k of Array.from(el.querySelectorAll('[data-ink-over], .ink-menu, .pend'))) found.add(k);
   // (and what is known to be laid over pages wherever it is: a small thing may fall between the places asked)
   for (const k of Array.from(document.querySelectorAll(OVER))) if (!k.contains(el)) found.add(k);
@@ -119,6 +127,7 @@ export function holesOver(el: HTMLElement): SurfaceHole[] {
       if (known && !known.contains(el)) { found.add(known); continue; }
       while (at.parentElement && !at.parentElement.contains(el)) at = at.parentElement;
       found.add(at);
+      wide.add(at);
     }
   }
   const out: SurfaceHole[] = [];
@@ -127,7 +136,7 @@ export function holesOver(el: HTMLElement): SurfaceHole[] {
     const x0 = Math.max(b.left, r.left), y0 = Math.max(b.top, r.top), x1 = Math.min(b.right, r.right), y1 = Math.min(b.bottom, r.bottom);
     if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
     const radius = parseFloat(getComputedStyle(k).borderTopLeftRadius) || 0;
-    out.push({ x: Math.round(x0 * 100) / 100, y: Math.round(y0 * 100) / 100, w: Math.round((x1 - x0) * 100) / 100, h: Math.round((y1 - y0) * 100) / 100, ...(radius > 0 ? { r: Math.min(radius, 24) } : {}), ...(k.matches(RIDES) ? { rides: true } : {}) });
+    out.push({ x: Math.round(x0 * 100) / 100, y: Math.round(y0 * 100) / 100, w: Math.round((x1 - x0) * 100) / 100, h: Math.round((y1 - y0) * 100) / 100, ...(radius > 0 ? { r: Math.min(radius, 24) } : {}), ...(k.matches(RIDES) ? { rides: true } : {}), ...(wide.has(k) ? { wide: true } : {}) });
   }
   return out.sort((a, b) => a.y - b.y || a.x - b.x);
 }

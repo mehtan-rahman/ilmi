@@ -738,7 +738,7 @@ async fn ink_surface(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, s
 
 /// A surface asked to go to a place (`go`) or a zoom (`zoom`); `settle` answers once every picture on it is made (a dev run's).
 #[tauri::command]
-async fn ink_surface_do(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, ask: serde_json::Value) -> Result<(), String> {
+async fn ink_surface_do(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, ask: serde_json::Value) -> Result<serde_json::Value, String> {
     ink.surface_do(ask).await
 }
 

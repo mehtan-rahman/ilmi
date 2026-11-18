@@ -2520,6 +2520,8 @@ class InkPlugin: Plugin, PenEars {
         invoke.resolve()
       case "settle":
         f.whenSharp { invoke.resolve() }
+      case "picture":
+        invoke.resolve(["data": f.picture() ?? ""])
       default:
         invoke.reject("not something a surface does")
       }

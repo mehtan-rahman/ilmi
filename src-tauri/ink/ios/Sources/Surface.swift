@@ -92,6 +92,8 @@ struct SurfaceArgs: Decodable {
   var add: Bool?
   /// Room beside the pages for a passage's name: less, and its tag is a § in the gutter.
   var tagRoom: Double?
+  /// Not shown, and taking no touch: the page shows a picture of it in its place, under something it has laid over all of it.
+  var veiled: Bool?
 }
 
 /// Something asked of a surface: `go` to a place, `zoom` to a zoom (or a step `by`), `settle` (a dev run's: every picture made).
@@ -536,6 +538,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     if repaint { for l in leaves.values { l.ver += 1; l.restKey = nil; l.fineKey = nil; l.restAsked = nil; l.fineAsked = nil } }
     if let m = a.marks, m != markSpecs { markSpecs = m; drawMarks() } else if relay || moved { drawMarks() }
     if let h = a.holes { holeSpecs = h }
+    let veiled = a.veiled ?? false
+    if view.isHidden != veiled { view.isHidden = veiled }
     cut()
     tend()
     saySoon()
@@ -1163,6 +1167,19 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   }
 
   func wipe(_ l: Leaf) { put(l, [], dirty: box(of: l.model)) }
+
+  /// The surface as it is shown now, as a JPEG: what the page shows in its place while it stands aside.
+  func picture() -> String? {
+    let b = scroll.bounds.size
+    guard b.width > 0, b.height > 0 else { return nil }
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = screen
+    format.opaque = true
+    let img = UIGraphicsImageRenderer(size: b, format: format).image { _ in
+      scroll.drawHierarchy(in: CGRect(origin: .zero, size: b), afterScreenUpdates: false)
+    }
+    return img.jpegData(compressionQuality: 0.9)?.base64EncodedString()
+  }
 
   /// A dev run's: every picture made, for a capture to be of the sheets as they are.
   func whenSharp(_ f: @escaping () -> Void, tries: Int = 80) {

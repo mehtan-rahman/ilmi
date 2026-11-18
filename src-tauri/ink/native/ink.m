@@ -320,7 +320,7 @@ static void paper(CGContextRef c, uint32_t kind, double w, double h, double rule
   CGContextSetLineWidth(c, 0.5);
   if (kind == 2) {
     CGContextSetRGBStrokeColor(c, lc[0], lc[1], lc[2], 1);
-    double end = run ? h - 1e-6 : h - bottom + 1e-6;
+    double end = run ? h + 1e-6 : h - bottom + 1e-6;
     for (double y = from(top); y <= end; y += rule) { CGContextMoveToPoint(c, x0, y); CGContextAddLineToPoint(c, x1, y); }
     CGContextStrokePath(c);
   } else if (kind == 3 || kind == 4) {
@@ -329,7 +329,7 @@ static void paper(CGContextRef c, uint32_t kind, double w, double h, double rule
     double offX = fmod(x1 - x0, rule) / 2;
     double fx = x0 + offX, lx = fx + floor((x1 - offX - fx) / rule + 1e-6) * rule;
     double fy, ly;
-    if (run) { fy = from(head ? top : fmod(h, rule) / 2); ly = fy + floor((h - 1e-6 - fy) / rule) * rule; }
+    if (run) { fy = from(head ? top : fmod(h, rule) / 2); ly = fy + floor((h + 1e-6 - fy) / rule) * rule; }
     else { double y0 = top, y1 = h - bottom, offY = fmod(y1 - y0, rule) / 2; fy = y0 + offY; ly = fy + floor((y1 - offY - fy) / rule + 1e-6) * rule; }
     if (kind == 3) {
       // each line ends on the grid's outermost line at an edge that has a margin, and runs to the sheet's edge at one that has none

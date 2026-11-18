@@ -161,7 +161,8 @@ enum Paint {
       let k = max(0, ((at - first) / step - 1e-9).rounded(.up))
       var out: [Double] = []
       var v = first + k * step - at
-      while v < p.h - 1e-6 { out.append(r3(v)); v += step }
+      // (a line at the sheet's very foot is the next sheet's first too: both draw their part of it)
+      while v <= p.h + 1e-6 { out.append(r3(v)); v += step }
       return out
     }
     let x0 = p.left, x1 = p.w - p.right
@@ -205,9 +206,10 @@ enum Paint {
       // the paper's lines, in the picture's own pixels from its top left: each on whole pixels, half a point wide and never under one
       let l = lines(j.paper, index: j.index)
       let wide = max(1, (0.5 * sy).rounded())
-      // (a line at the very head of the sheet is drawn on its first pixels, not half off it: where a pageless notebook's sheets meet, the rule that falls there is the lower sheet's first, 88)
-      func row(_ y: Double) -> CGFloat { let r = ((CGFloat(y) - j.region.minY) * sy - wide / 2).rounded(); return y == 0 && j.region.minY == 0 && r < 0 ? 0 : r }
-      func col(_ x: Double) -> CGFloat { ((CGFloat(x) - j.region.minX) * sx - wide / 2).rounded() }
+      // (halves go up, on every sheet alike: the rule that falls exactly where two of a pageless notebook's sheets
+      // meet is drawn by both, each its part of it, and the two parts are one line; 88)
+      func row(_ y: Double) -> CGFloat { ((CGFloat(y) - j.region.minY) * sy - wide / 2 + 0.5).rounded(.down) }
+      func col(_ x: Double) -> CGFloat { ((CGFloat(x) - j.region.minX) * sx - wide / 2 + 0.5).rounded(.down) }
       // (a picture is drawn from its foot up)
       func down(_ y: CGFloat, _ h: CGFloat) -> CGFloat { CGFloat(j.ph) - y - h }
       c.setFillColor(cg(j.look.rule, .lightGray))

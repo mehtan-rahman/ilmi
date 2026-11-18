@@ -2978,7 +2978,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           <div className="pt-row">
           {status === 'ok' && !written && <button type="button" className="pt-btn" data-tool="contents" title="contents t" aria-label="contents" onClick={() => openContents(id)}><Icon name="menu" /></button>}
           <h1 className="pt-title" title={id}>{titleOf(id, docs, root)}</h1>
-          {!(phone && session) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} data-has={hasNotes ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>{notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes'}</button>}
+          {/* a written notebook is its own notes: the word is there only when it has a note already */}
+          {!(phone && session) && (!written || hasNotes) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} data-has={hasNotes ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>{notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes'}</button>}
           {!phone && canAddNote && (hasNotes || !written) && <button type="button" className="pt-btn notes-add" data-tool="new-note" title={written ? 'new note' : 'new notes'} aria-label={written ? 'new note' : 'new notes'} aria-haspopup={written ? undefined : 'menu'} onClick={(e) => addMenu(e.currentTarget)}>+</button>}
           {!isPdfPath(id) && !written && <TabsToggle path={id} />}
           {/* paper is written on where there is a canvas; anywhere else it is shown, and says where it is written */}

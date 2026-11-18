@@ -96,7 +96,49 @@ fn is_text_path(path: &str) -> bool {
 }
 
 fn open(root: &str) -> R<Repository> {
-    Repository::open(root).map_err(err)
+    let repo = Repository::open(root).map_err(err)?;
+    on_main(&repo, Path::new(root))?;
+    Ok(repo)
+}
+
+/// The repository brought onto `main`, where every device meets. A clone of a remote that was still empty comes
+/// out on git's own default (`master`), with no `.gitignore`: left there, that device pushes a branch no other
+/// device reads, and the two never see each other's work. An unborn HEAD is pointed at `main`; a branch with
+/// commits is renamed to it when there is no `main` here yet (the next pull then merges the remote's `main`, two
+/// histories with nothing in common, by the format's rules); the ignore file is written and what it names is no
+/// longer tracked.
+fn on_main(repo: &Repository, root: &Path) -> R<()> {
+    let target = format!("refs/heads/{BRANCH}");
+    let head = match repo.find_reference("HEAD") {
+        Ok(h) => h,
+        Err(_) => return Ok(()),
+    };
+    let Some(cur) = head.symbolic_target().map(|t| t.to_string()) else { return Ok(()) };
+    if cur == target || repo.is_bare() {
+        return Ok(());
+    }
+    if repo.find_reference(&target).is_ok() {
+        // a `main` of its own beside the branch it is on: someone's doing, left as it is
+        return Ok(());
+    }
+    match repo.find_reference(&cur) {
+        Ok(mut r) => {
+            r.rename(&target, false, "ilmi: onto main").map_err(err)?;
+        }
+        Err(_) => {}
+    }
+    repo.set_head(&target).map_err(err)?;
+    let ignore = root.join(".gitignore");
+    if !ignore.exists() {
+        std::fs::write(&ignore, GITIGNORE).map_err(err)?;
+    }
+    if let Ok(mut index) = repo.index() {
+        if index.get_path(Path::new(".ilmi/state.json"), 0).is_some() {
+            index.remove_path(Path::new(".ilmi/state.json")).map_err(err)?;
+            index.write().map_err(err)?;
+        }
+    }
+    Ok(())
 }
 
 /// HEAD's commit, or `None` on an unborn branch.
@@ -265,7 +307,13 @@ pub fn clone(url: &str, token: Option<String>, dest: &str) -> R<()> {
     fo.remote_callbacks(callbacks(token));
     let mut b = git2::build::RepoBuilder::new();
     b.fetch_options(fo);
-    b.clone(url, d).map_err(err)?;
+    let repo = b.clone(url, d).map_err(err)?;
+    // a remote with nothing in it yet leaves the clone on git's default branch: `main` is where the devices meet
+    on_main(&repo, d)?;
+    let ignore = d.join(".gitignore");
+    if !ignore.exists() {
+        std::fs::write(&ignore, GITIGNORE).map_err(err)?;
+    }
     Ok(())
 }
 
@@ -498,6 +546,48 @@ pub fn push(root: &str, token: Option<String>) -> R<Status> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_clone_of_an_empty_remote_is_on_main_and_a_master_from_before_is_renamed() {
+        let dir = std::env::temp_dir().join(format!("ilmi-onmain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // an empty remote whose HEAD names no `main` (a host's empty repository)
+        let bare = dir.join("remote.git");
+        let mut o = git2::RepositoryInitOptions::new();
+        o.bare(true).initial_head("master");
+        git2::Repository::init_opts(&bare, &o).unwrap();
+        let a = dir.join("a");
+        super::clone(bare.to_str().unwrap(), None, a.to_str().unwrap()).unwrap();
+        assert_eq!(super::status(a.to_str().unwrap()).unwrap().branch.as_deref(), Some("main"));
+        assert!(a.join(".gitignore").exists());
+        // a device from before: commits on `master`, the view state tracked, no ignore file
+        let b = dir.join("b");
+        let mut o = git2::RepositoryInitOptions::new();
+        o.initial_head("master");
+        let repo = git2::Repository::init_opts(&b, &o).unwrap();
+        std::fs::create_dir_all(b.join(".ilmi")).unwrap();
+        std::fs::write(b.join(".ilmi/state.json"), "{}").unwrap();
+        std::fs::write(b.join("note.md"), "a note\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("note.md")).unwrap();
+        index.add_path(std::path::Path::new(".ilmi/state.json")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::now("t", "t@t").unwrap();
+        let made = repo.commit(Some("HEAD"), &sig, &sig, "first", &tree, &[]).unwrap();
+        drop(tree);
+        drop(repo);
+        let st = super::status(b.to_str().unwrap()).unwrap();
+        assert_eq!(st.branch.as_deref(), Some("master"), "status alone renames nothing");
+        let repo = super::open(b.to_str().unwrap()).unwrap();
+        assert_eq!(super::branch_name(&repo).unwrap(), "main");
+        assert_eq!(repo.head().unwrap().peel_to_commit().unwrap().id(), made, "the commits come along");
+        assert!(repo.find_reference("refs/heads/master").is_err());
+        assert!(b.join(".gitignore").exists());
+        assert!(repo.index().unwrap().get_path(std::path::Path::new(".ilmi/state.json"), 0).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_refusal_is_said_plainly() {
         assert!(super::plain("too many redirects or authentication replays; class=Http (34)").starts_with("the remote does not accept this token"));

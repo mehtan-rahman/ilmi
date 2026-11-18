@@ -412,6 +412,17 @@ grid closed inside its margins, 85's field read as it was, a pageless
 notebook's column cut
 to the length of a made-up drawing's ink, longer when more is kept on the
 second sheet, shorter only when it is opened again.
+Last, a notebook's tabs (milestone 89; `writtenTabs`, alone with `"part":
+"tabs"`): `new tab` from `more`, the child's page setup read against the
+parent's, the rail's name field typed into, then `dev_ink_state` asked for
+its one surface each time a tab is pressed in the rail (the rig's tap):
+its sheets must be the open notebook's, with none of the other's strokes
+on them from the first time a surface is there again, and it must lie on
+the rectangle the page gives it beside the rail, folded, unfolded and on
+its side; each tab at its own zoom; a tool's settings and page setup left
+open across a switch; `+ add tab` over paper; `tabs` off and on. On the
+Mac (`writtenTabsMac`, `ILMI_PART=tabs`): the same from `more`, a typed
+note as a third tab, the bar's `tabs`.
 
 `ILMI_SMOKE=sharp` (milestones 86, 87), a simulated iPad under the touch
 rig, over a copy of the sample (`vault` in `smoke.json`): how sharp ink and

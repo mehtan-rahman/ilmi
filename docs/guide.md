@@ -404,6 +404,22 @@ any size (a fountain pen's and a pencil's strokes as pictures). A pageless
 notebook is cut into pages of its size, as many as what you wrote
 reaches.
 
+A notebook can have tabs, as any document can. `new tab`, first in its
+`more`, makes a written notebook under it with the same page setup (paper,
+spacing, margins, colours, pages or pageless), named `untitled` for you to
+name where it appears in the rail beside the pages, and opens it; from
+then the notebook shows `tabs` in its bar, which puts the rail away and
+brings it back. The rail is the one typed documents have: the notebook
+first, its tabs under it, `+ add tab` (paper, when you are on paper) and
+the menu beside it for a typed note, a deck or a file as a tab; rows are
+renamed, dragged and nested as there. Each tab is a notebook of its own:
+its page setup can be changed without touching the others', and each keeps
+its own zoom and place. On an iPad the pages lie beside the rail and take
+its room when it is folded. A phone shows no rail, as for typed documents:
+a tab is opened from the tree. A notebook that is one of a PDF's notes
+shows its tabs when it is opened on its own, not in the pane beside the
+PDF.
+
 On the Mac a notebook shows its pages and what is written on them, and
 cannot be written on; the bar says `written on an ipad`.
 

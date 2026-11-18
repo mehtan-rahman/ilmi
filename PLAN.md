@@ -9867,6 +9867,35 @@ again when the notebook is paged); a line across the head or the foot;
 a margin's own paper colour. A real Pencil's feel of the growth is the device's to
 judge.
 
+### [ ] 89. A written notebook's children as tabs beside its pages
+Asked by the user, 2026-11-18: "do we have tabs for written documents as
+well? If not let's add please. would be useful for pageless especially."
+Notes: The rail (39) was any document's already: a notebook with children
+and `tabs: true` drew it. What was missing was the way in. `tabs` shows in
+a notebook's bar once it has children (`showsTabsToggle`, as for any
+document; the reader had hidden it for paper). `new tab`, first in a
+notebook's `more`, makes a written notebook in its children directory,
+last, with its page setup (paper, spacing, margins, lines, colours, pages
+or pageless, size), named `untitled`; turns `tabs` on unless the notebook
+is itself a page of one that has it (the new one is then its subtab);
+opens it; and the rail begins its rename (`newWrittenTab` in `written.ts`;
+`railRename` in the store, taken by the rail that shows the row). In the
+rail `+ add tab` adds paper when the page shown is paper, with that page's
+setup, and the menu beside it has `written notes` among the kinds. A tab
+is a notebook of its own from then on. **Decided:** `new tab` is a row of
+`more`, not a button: beside a rail an iPad's bar has no room for one more
+in its first row. On an iPad each tab is its own lens and its own surface,
+made when the one before is taken away, at its own zoom and place; the
+surface lies where the page says, so it follows the rail folded, unfolded
+and resized. A phone has no rail, as for typed documents. A notebook that
+is one of a PDF's notes shows its tabs when opened on its own, not in the
+pane beside the PDF (the lens's order of asking, unchanged). FORMAT §3 says
+a notebook may have children and what `tabs` means on it.
+**Not done:** a tab made by dragging one notebook onto another from the
+bar (the rail and the tree drag as they did); the page setup of a tab
+following its parent's later changes (decided against: each is its own);
+`new tab` naming on a phone, where there is no rail to rename in.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

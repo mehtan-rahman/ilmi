@@ -1219,7 +1219,7 @@ describe('a written notebook in the lens', () => {
     await mount(NB);
     await click(more());
     expect(menuRows().map((r) => [r.dataset.act, r.textContent])).toEqual([
-      ['more-pages', 'all pages'], ['more-setup', 'page setup'], ['more-share', 'export as pdf'],
+      ['more-tab', 'new tab'], ['more-pages', 'all pages'], ['more-setup', 'page setup'], ['more-share', 'export as pdf'],
       ['page-add-after', 'add page after this one'], ['page-duplicate', 'duplicate this page'], ['page-delete', 'delete this page'],
     ]);
     expect(menuRows().filter((r) => r.classList.contains('danger')).map((r) => r.dataset.act)).toEqual(['page-delete']);
@@ -1285,7 +1285,7 @@ describe('a written notebook in the lens', () => {
     expect(q('.meta [data-tool="pages"]')).toBeNull();
     expect(q('.meta .pt-page')).toBeNull();
     await click(more());
-    expect(menuRows().map((r) => r.dataset.act)).toEqual(['more-setup', 'more-share']);
+    expect(menuRows().map((r) => r.dataset.act)).toEqual(['more-tab', 'more-setup', 'more-share']);
     await key('Escape');
     // pages again: apart, each ruled alike, and counted
     await act(async () => { useApp.setState((s) => ({ docs: { ...s.docs, [NB]: { ...s.docs[NB]!, written: { id: ID, paper: 'ruled', sheets: [1, 2, 3], rule: 25 } } } })); });

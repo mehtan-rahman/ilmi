@@ -108,7 +108,7 @@ import {
 import { pickPos, type Band } from '../reader/index.js';
 import { passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
 import { INKS, passageId, childDirOf, isPdfPath, type InkStroke, type Mark, type Portal, type Quad, type StoreFs } from '../vault/index.js';
-import { PAPERS, SHEET_H, SHEET_W, addSheet, addSheetAfter, addWritten, duplicateSheet, healSheets, inkFoot, placeOfSheet as placeAmong, removeSheet, setPaper, sheetAt as sheetAmong, type PaperKind } from './written.js';
+import { PAPERS, SHEET_H, SHEET_W, addSheet, addSheetAfter, addWritten, duplicateSheet, healSheets, inkFoot, newWrittenTab, placeOfSheet as placeAmong, removeSheet, setPaper, sheetAt as sheetAmong, type PaperKind } from './written.js';
 import { InkMenu, PageGrid, PageSetup, PaperSheet, sharePages } from './PageTools.js';
 import { paperLook, paperOf, runLength, sheetSize, type PaperSpec } from './paper.js';
 import { InkBar, InkToggle } from './InkBar.js';
@@ -2441,6 +2441,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const sheet = sheetAt(current);
     const held = sheet === null ? null : heldOn(sheet);
     const items: PopItem[] = [
+      // a written notebook under this one, with this one's page setup, shown as a tab beside it
+      { label: 'new tab', act: 'more-tab', run: () => void newWrittenTab(id).catch(failed('new tab')) },
       ...(pageless ? [] : [{ label: 'all pages', act: 'more-pages', run: () => setGrid(true) }]),
       { label: 'page setup', act: 'more-setup', run: () => setSetup(true) },
       { label: mobile ? 'share as pdf' : 'export as pdf', act: 'more-share', run: () => sharePdf(at) },
@@ -2981,7 +2983,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           {/* a written notebook is its own notes: the word is there only when it has a note already */}
           {!(phone && session) && (!written || hasNotes) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} data-has={hasNotes ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>{notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes'}</button>}
           {!phone && canAddNote && (hasNotes || !written) && <button type="button" className="pt-btn notes-add" data-tool="new-note" title={written ? 'new note' : 'new notes'} aria-label={written ? 'new note' : 'new notes'} aria-haspopup={written ? undefined : 'menu'} onClick={(e) => addMenu(e.currentTarget)}>+</button>}
-          {!isPdfPath(id) && !written && <TabsToggle path={id} />}
+          {/* a notebook of paper has its children as tabs as any document has (`tabs`), once it has any */}
+          {!isPdfPath(id) && <TabsToggle path={id} />}
           {/* paper is written on where there is a canvas; anywhere else it is shown, and says where it is written */}
           {written && !canWrite && !phone && <span className="pt-readonly" role="note">written on an ipad</span>}
           <StudyButton path={id} />

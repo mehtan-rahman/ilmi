@@ -45,7 +45,8 @@ import { useApp } from './store.js';
 import { goToHeading } from './headings.js';
 import { plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
-import { RAIL_INDENT, RAIL_PAD, TAB_DEPTH, foldedHeadings, notebookPages, outline, railKeyPlace, railPad, railRows, stepPage, tabAncestors, type RailRow } from './tabs.js';
+import { newWrittenTab } from './written.js';
+import { RAIL_INDENT, RAIL_PAD, TAB_DEPTH, foldedHeadings, notebookOf, notebookPages, outline, railKeyPlace, railPad, railRows, stepPage, tabAncestors, type RailRow } from './tabs.js';
 import { isMenuKey, treeKey, typeahead } from './treeModel.js';
 import { useDoc } from './useDoc.js';
 import { createTab, noteAfter, placeNode, renameNode, setRailFolded, setRailWidth } from './vault.js';
@@ -170,6 +171,16 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
     setOpen((o) => ({ ...o, [id]: true }));
     add(childDirOf(id), 'note', 'untitled');
   };
+  /** A written notebook as a tab of this notebook, with the page setup of the page shown when that is one (`written.ts`). */
+  const written = () => { void newWrittenTab(nb, docs[page]?.written ? page : nb).then((p) => setSelected(p), fail); };
+  // a tab made from outside the rail (a notebook's `new tab`): its rename begins here, once its row is there
+  const renameAsked = useApp((s) => s.railRename);
+  useEffect(() => {
+    if (!renameAsked || renameAsked === nb || !findNode(tree, renameAsked) || notebookOf(renameAsked, docs) !== nb) return;
+    useApp.setState({ railRename: null });
+    setSelected(renameAsked);
+    setTimeout(() => beginRename(renameAsked), 0);
+  }, [renameAsked, tree, docs, nb]);
   const after = (id: string) => { noteAfter(id).then((p) => { setSelected(p); beginRename(p); }).catch(fail); };
 
   // the shared drag (`drag.ts`): a rested folded tab opens, a drop into a tab opens it
@@ -402,7 +413,8 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
       ) : (
         <nav className="tab-rail" aria-label="tabs" ref={navRef} style={{ width }}>
           <div className="rail-head">
-            <button type="button" className="rail-add" title="a new note as a tab" onClick={() => add(childDirOf(nb), 'note', 'untitled')}><Plus text="+ add tab" /></button>
+            {/* in a notebook of paper the tab added is paper too (the menu beside has the rest) */}
+            <button type="button" className="rail-add" data-kind={docs[page]?.written ? 'written' : 'note'} title={docs[page]?.written ? 'new written notes as a tab' : 'a new note as a tab'} onClick={() => (docs[page]?.written ? written() : add(childDirOf(nb), 'note', 'untitled'))}><Plus text="+ add tab" /></button>
             <button
               type="button"
               className="rail-more"
@@ -435,6 +447,9 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
               <span className="cg"><Glyph g={GLYPH[type]} /></span>{label}
             </div>
           ))}
+          <div className="ci" data-add="written" onClick={() => { setPlus(null); written(); }}>
+            <span className="cg"><Glyph g={WRITTEN_GLYPH} /></span>written notes
+          </div>
           <div className="cd" />
           <div className="ci" onClick={() => { setPlus(null); void importFiles(childDirOf(nb)).catch(failed('import')); }}>
             <span className="cg"><Glyph g="↧" /></span>import a file…

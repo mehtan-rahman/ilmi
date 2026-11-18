@@ -252,7 +252,8 @@ describe('the rail in the canvas', () => {
     expect(calls).toEqual([`tab ${KIDS}|note|untitled`]);
     mouse(host.querySelector('.rail-more')!, 'click');
     const entries = Array.from(host.querySelectorAll<HTMLElement>('.rail-menu .ci')).map((e) => e.textContent?.slice(1));
-    expect(entries).toEqual(['note', 'source', 'deck', 'draft', 'import a file…']);
+    // (and paper: a written notebook as a tab)
+    expect(entries).toEqual(['note', 'source', 'deck', 'draft', 'written notes', 'import a file…']);
     mouse(host.querySelectorAll<HTMLElement>('.rail-menu .ci')[2]!, 'click');
     expect(calls[1]).toBe(`tab ${KIDS}|deck|`);
   });

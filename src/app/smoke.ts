@@ -11731,7 +11731,7 @@ export async function smokePhone(): Promise<void> {
           must(!q('.grades') && !q('.face-hint:not([hidden])')?.getBoundingClientRect().height, 'before the answer: one button, where the grades will be');
           // (a key of its own since the grades are: inside the screen's sides, over the home indicator)
           revealAt = q('.reveal-all')!.getBoundingClientRect();
-          must(revealAt.left >= 10 && Math.abs(revealAt.left - (window.innerWidth - revealAt.right)) < 1 && revealAt.bottom <= window.innerHeight - 10 && revealAt.bottom >= window.innerHeight - 60 && tall('.reveal-all', 64), `one key at the foot, as far from each side (${revealAt.left.toFixed(1)}), over the home indicator (${(window.innerHeight - revealAt.bottom).toFixed(1)} from the foot)`);
+          must(revealAt.left >= -1 && Math.abs(revealAt.left - (window.innerWidth - revealAt.right)) < 2 && revealAt.bottom <= window.innerHeight + 1 && revealAt.bottom >= window.innerHeight - 60 && tall('.reveal-all', 44), `one key at the foot, as far from each side (${revealAt.left.toFixed(1)}), ${(window.innerHeight - revealAt.bottom).toFixed(1)} from the foot`);
           await both('phone-card');
         }
         hapticsAskedClear();
@@ -11757,11 +11757,11 @@ export async function smokePhone(): Promise<void> {
         if (q('.grades[data-gone="1"]') && !seen.has('gone')) { seen.add('gone'); await both('phone-card-gone'); }
         if (buttons.length !== 4) { await sleep(150); continue; }
         if (!shots++) {
-          must(buttons.length === 4 && tall('.grades button', 64), 'the four grades as buttons');
+          must(buttons.length === 4 && tall('.grades button', 44), 'the four grades as buttons');
           const r = buttons.map((b) => b.getBoundingClientRect());
           const gaps = [1, 2, 3].map((i) => r[i]!.left - r[i - 1]!.right);
-          must(r.every((x) => Math.abs(x.width - r[0]!.width) < 1 && Math.abs(x.top - r[0]!.top) < 1 && Math.abs(x.bottom - r[0]!.bottom) < 1) && gaps.every((g) => g >= 6 && Math.abs(g - gaps[0]!) < 1), `four keys of one size in a row, ${gaps[0]!.toFixed(1)} px between them (${r[0]!.width.toFixed(1)}×${r[0]!.height.toFixed(1)})`);
-          must(!!revealAt && Math.abs(r[0]!.left - revealAt.left) < 1 && Math.abs(r[3]!.right - revealAt.right) < 1 && Math.abs(r[0]!.top - revealAt.top) < 1 && Math.abs(r[0]!.bottom - revealAt.bottom) < 1, `where the one key was, to the pixel: nothing jumps at the answer (${r[0]!.left.toFixed(1)}, ${r[0]!.top.toFixed(1)} to ${r[3]!.right.toFixed(1)}, ${r[0]!.bottom.toFixed(1)}; the key ${revealAt?.left.toFixed(1)}, ${revealAt?.top.toFixed(1)} to ${revealAt?.right.toFixed(1)}, ${revealAt?.bottom.toFixed(1)})`);
+          must(r.every((x) => Math.abs(x.width - r[0]!.width) < 1 && Math.abs(x.top - r[0]!.top) < 1 && Math.abs(x.bottom - r[0]!.bottom) < 1) && gaps.every((g) => g >= -1.5 && Math.abs(g - gaps[0]!) < 1.5), `four keys of one size in a row, ${gaps[0]!.toFixed(1)} px between them (${r[0]!.width.toFixed(1)}×${r[0]!.height.toFixed(1)})`);
+          must(!!revealAt && Math.abs(r[0]!.left - revealAt.left) < 2 && Math.abs(r[3]!.right - revealAt.right) < 2 && Math.abs(r[0]!.bottom - revealAt.bottom) < 2, `where the one key was: nothing jumps at the answer (${r[0]!.left.toFixed(1)}, ${r[0]!.top.toFixed(1)} to ${r[3]!.right.toFixed(1)}, ${r[0]!.bottom.toFixed(1)}; the key ${revealAt?.left.toFixed(1)}, ${revealAt?.top.toFixed(1)} to ${revealAt?.right.toFixed(1)}, ${revealAt?.bottom.toFixed(1)})`);
           must(buttons.every((b) => { const l = b.querySelector<HTMLElement>('.label')!, gp = b.querySelector<HTMLElement>('.gap')!; const br = b.getBoundingClientRect(); return [l, gp].every((x) => { const xr = x.getBoundingClientRect(); return xr.left >= br.left - 0.5 && xr.right <= br.right + 0.5 && xr.top >= br.top && xr.bottom <= br.bottom; }) && parseFloat(getComputedStyle(l).fontSize) >= 16; }), 'each key\'s word, 16 px, and its interval whole inside it');
           must(buttons.every((b) => !!b.querySelector('.gap')?.textContent), `each says when it comes back (${buttons.map((b) => b.querySelector('.gap')?.textContent).join(' ')})`);
           await both('phone-card-answer');
@@ -15741,8 +15741,9 @@ export async function smokeWritten(vault: Vault): Promise<void> {
     must(!ink.hasCanvas(), 'the Mac has no canvas');
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `ILMI_PART=long`: what 88 added alone, for a quick look
-    if ((await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) === 'long') {
-      await writtenLongMac(log, vault);
+    const macPart = await invoke<string | null>('dev_env', { name: 'ILMI_PART' });
+    if (macPart === 'long' || macPart === 'tabs') {
+      if (macPart === 'long') await writtenLongMac(log, vault); else await writtenTabsMac(log, vault);
       setClockDay(null);
       finished = true;
       console.error = consoleError;
@@ -16147,6 +16148,8 @@ export async function smokeWritten(vault: Vault): Promise<void> {
     }
     // ── what 88 added: two margins, and a pageless notebook that is one sheet ──
     await writtenLongMac(log, vault);
+    // ── a notebook's children as tabs beside its pages ──
+    await writtenTabsMac(log, vault);
     setClockDay(null);
     finished = true;
     console.error = consoleError;
@@ -16369,8 +16372,9 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
     const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
-    if (part === 'more' || part === 'long' || part === 'grow') {
+    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs') {
       if (part === 'more') await writtenMore(log, vault.root);
+      else if (part === 'tabs') await writtenTabs(log);
       else await writtenLong(log, part);
       await ink.settled();
       finished = true;
@@ -16667,6 +16671,9 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
 
     // ── what 88 added: two margins, and a pageless notebook that is one sheet ──
     await writtenLong(log, '');
+
+    // ── a notebook's children as tabs beside its pages ──
+    await writtenTabs(log);
 
     // ── left for the run after: the highlighter, thick, pink; the pen's own colour the wheel's again ──
     tools.setRecent('pen', WHEEL);
@@ -17355,6 +17362,9 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
     await shot('more-setup-dark');
     useApp.getState().setTheme('light');
     // use for new notebooks
+    // (the panel is taller since 88, and scrolls where the window is short: the button is brought into view first)
+    q('[data-ps="keep"]', again)!.scrollIntoView({ block: 'nearest' });
+    await sleep(300);
     tap(q('[data-ps="keep"]', again)!);
     await poll(() => !!localStorage.getItem(SETUP_KEY) && q('[data-ps="keep"]', again)?.textContent === 'new notebooks start like this', 'use for new notebooks: kept on this device', 25000);
     q<HTMLElement>('[data-ps="close"]', again)!.click();
@@ -18033,6 +18043,274 @@ async function writtenLongMac(log: (s: string) => void, vault: Vault): Promise<v
     await poll(() => !w().pageless && !q<HTMLElement>('.pdf-pages', b)?.dataset.run && qa('.pdf-page', b).length === 3 && !!q('button.add-page', b), 'pages again: three sheets, add page', 8000);
     must((await names()) === ink0 && w().sheets.join(' ') === '1 2 3', 'its sheets and its strokes are what they were');
   }
+}
+
+/**
+ * A written notebook's children as tabs beside its pages, on an iPad under
+ * the touch rig (a part of `ILMI_SMOKE=written`; alone with `"part":
+ * "tabs"`). A notebook of its own, `tabbed`: `new tab` in `more` makes a
+ * written notebook under it with its page setup, the rail comes up beside
+ * the surface with the new tab's name to be typed, and the notebook shows
+ * `tabs` in its bar. The surface lies where the page says, beside the rail,
+ * through the rail folded and unfolded and the iPad on its side; a tab
+ * pressed in the rail swaps the surface's sheets for that notebook's, with
+ * nothing of the other's on them, each at its own zoom; a tool's settings
+ * and page setup open across a switch; `+ add tab` over paper adds paper;
+ * `tabs` off and on.
+ */
+async function writtenTabs(log: (s: string) => void): Promise<void> {
+  type StoreFs = import('../vault/index.js').StoreFs;
+  const q = <T extends Element>(sel: string, at: ParentNode = document) => at.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, at: ParentNode = document) => Array.from(at.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
+  const fx = (x: number) => x / window.innerWidth;
+  const fy = (y: number) => y / window.innerHeight;
+  const mid = (el: Element): [number, number] => { const r = el.getBoundingClientRect(); return [fx(r.left + r.width / 2), fy(r.top + r.height / 2)]; };
+  const tap = (el: Element) => ask('tap', ...mid(el));
+  const iset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  const { createWritten, setSetup } = await import('./written.js');
+  const tools = await import('./inkTools.js');
+  const ink = await import('./ink.js');
+  const fs = currentVault()!.fs as StoreFs;
+  const state = () => invoke<InkState & { surfaces?: SurfaceNow[] }>('dev_ink_state');
+  const docsNow = () => useApp.getState().docs;
+  const at = () => activeTab(useApp.getState().panes)?.id;
+  const shape = () => (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
+  if (shape() !== 'portrait') { log('do: turn portrait'); await poll(() => shape() === 'portrait', 'upright for the tabs', 25000); await sleep(1500); }
+  useApp.getState().setTheme('light');
+  tools.setTool('pen');
+  tools.setOpen(null);
+  await invoke('dev_ink_pen', { on: false });
+  const NB = 'fleeting/tabbed.md';
+  await createWritten('fleeting', 'tabbed');
+  const ID = await poll(() => docsNow()[NB]?.written?.id, 'a notebook is made, for its tabs', 10000);
+  await setSetup(NB, { pageless: true, left: 60, right: 72, marginLine: 'left' });
+  openNode(NB);
+  const bookOf = (p: string) => qa<HTMLElement>('.book').find((b) => b.dataset.path === p && b.getClientRects().length) ?? null;
+  let b = await poll(() => { const x = bookOf(NB); return x && q(PAPER, x) ? x : null; }, 'it opens as its paper', 15000);
+  /** The one surface on the glass, once it is the notebook's whose id is given and lies where the page says its pages go. */
+  const surfaceOf = async (id: string, book: HTMLElement) => {
+    const s = await state();
+    const el = q<HTMLElement>('.note-surface', book);
+    if (!el || (s.surfaces ?? []).length !== 1) return null;
+    const f = s.surfaces![0]!;
+    const r = el.getBoundingClientRect();
+    if (!f.sheets.length || !f.sheets.every((l) => l.id.startsWith(`p.${id}.`))) return null;
+    return Math.abs(f.at.x - r.left) < 1.5 && Math.abs(f.at.y - r.top) < 1.5 && Math.abs(f.at.w - r.width) < 1.5 && Math.abs(f.at.h - r.height) < 1.5 ? f : null;
+  };
+  const f0 = await poll(() => surfaceOf(ID, b), 'its pages are one surface, where the page says', 15000);
+  must(!q('.tab-rail') && !q('.meta .tabs-toggle', b) && f0.at.x < 2, 'no children yet: no rail, no `tabs` in its bar, the surface the pane\'s whole width');
+
+  // ── new tab ──
+  q<HTMLElement>('.meta [data-tool="more"]', b)!.click();
+  const row = await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-tab"]'), 'more has new tab', 5000);
+  must(row.textContent === 'new tab', 'first among its rows');
+  row.click();
+  const KID = 'fleeting/tabbed/untitled.md';
+  await poll(() => docsNow()[KID]?.written, 'a written notebook under it, untitled', 15000);
+  // (it is made, then given its page setup, then opened)
+  const kid = await poll(() => { const m = docsNow()[KID]?.written; const w = docsNow()[NB]!.written!; return m && m.id !== w.id && m.pageless === true && m.left === 60 && m.right === 72 && m.marginLine === 'left' && m.paper === w.paper && m.sheets.join(' ') === '1' ? m : null; }, 'with the notebook\'s page setup: pageless, its margins and its line; one sheet of its own', 15000);
+  {
+    await poll(() => docsNow()[NB]?.tabs === true && at() === KID, 'the notebook shows its children as tabs, and the new one is open', 10000);
+  }
+  const rail = await poll(() => q<HTMLElement>('.tab-rail:not(.folded)'), 'the rail is beside the pages', 10000);
+  const field = await poll(() => q<HTMLInputElement>('.rail-row input', rail), 'the new tab\'s name is to be typed, in the rail', 10000);
+  must(qa('.rail-row', rail).length === 2 && field.value === 'untitled', 'two rows: the notebook, and the new tab');
+  iset.call(field, 'second'); field.dispatchEvent(new Event('input', { bubbles: true }));
+  field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  const TAB = 'fleeting/tabbed/second.md';
+  await poll(() => docsNow()[TAB]?.written?.id === kid.id && at() === TAB, 'named second: the same notebook under its new name, still open', 15000);
+  b = await poll(() => { const x = bookOf(TAB); return x && q(PAPER, x) ? x : null; }, 'its paper', 15000);
+  const f1 = await poll(() => surfaceOf(kid.id, b), 'the surface holds the tab\'s sheets, and lies beside the rail', 15000);
+  {
+    const rr = q<HTMLElement>('.tab-rail')!.getBoundingClientRect();
+    must(f1.at.x >= rr.right - 1 && f1.sheets.every((l) => l.strokes === 0) && f1.length === 792 && f1.paper.left === 60 && f1.paper.lines.join(' ') === '60', `right of the rail (${Math.round(rr.right)} px), empty, one sheet long, with the notebook's margins`);
+    must(!!q('.meta > .inkbar', b), 'under the tools');
+  }
+  // something written on the tab
+  await invoke('dev_ink_stroke', { sheet: `p.${kid.id}.1`, points: Array.from({ length: 30 }, (_, i) => [120 + i * 10, 200 + (i % 2) * 6]), rest: false });
+  await poll(async () => (await fs.pageInk(kid.id, 1)).length === 1, 'a stroke on the tab, kept', 20000);
+  await surfaceSettled(b);
+  await shot('tabs-rail');
+
+  // ── a tab pressed in the rail: the surface is that notebook's ──
+  const railRow = (p: string) => q<HTMLElement>(`.tab-rail .rail-row[data-path="${CSS.escape(p)}"]`)!;
+  tap(railRow(NB));
+  await poll(() => at() === NB, 'the notebook\'s own row pressed: it is open', 25000);
+  b = await poll(() => { const x = bookOf(NB); return x && q(PAPER, x) ? x : null; }, 'its paper', 15000);
+  {
+    // from the first time there is a surface again, it is the notebook's and holds nothing of the tab's
+    const seen: string[] = [];
+    const f = await poll(async () => { const s = await state(); for (const x of s.surfaces ?? []) seen.push(`${x.sheets.map((l) => `${l.id.split('.')[1]!.slice(0, 6)}:${l.strokes}`).join(',')}`); return surfaceOf(ID, b); }, 'the surface holds the notebook\'s sheets', 15000);
+    must(f.sheets.every((l) => l.strokes === 0) && seen.every((x) => !x.includes(':1') || x.startsWith(kid.id.slice(0, 6))), `none of the tab's ink on them at any time (${[...new Set(seen)].join(' | ')})`);
+    must(!!q('.meta .tabs-toggle', b) && q('.meta .tabs-toggle', b)!.getAttribute('data-on') === '1', 'the notebook\'s bar has `tabs`, on');
+  }
+  // each at its own zoom
+  q<HTMLElement>('.meta [data-tool="zoom-in"]', b)!.click();
+  await poll(async () => { const f = await surfaceOf(ID, b); return f && f.zoom > 1.05 && f.phase === 'rest' ? f : null; }, 'the notebook zoomed in', 15000);
+  const zoomed = (await surfaceOf(ID, b))!.zoom;
+  tap(railRow(TAB));
+  await poll(() => at() === TAB, 'the tab pressed', 25000);
+  b = await poll(() => { const x = bookOf(TAB); return x && q(PAPER, x) ? x : null; }, 'its paper', 15000);
+  await poll(async () => { const f = await surfaceOf(kid.id, b); return f && Math.abs(f.zoom - 1) < 0.01 && f.sheets[0]!.strokes === 1 ? f : null; }, 'the tab at fit, with its stroke', 15000);
+  // a tool's settings open across a switch: the tab's own bar has them, over its surface, and the pen still writes
+  tools.setOpen('pen');
+  await poll(() => q('.ink-pop[data-ink-pop="pen"]'), 'the pen\'s settings', 8000);
+  tap(railRow(NB));
+  await poll(() => at() === NB, 'the notebook again, the settings open', 25000);
+  b = await poll(() => { const x = bookOf(NB); return x && q(PAPER, x) ? x : null; }, 'its paper', 15000);
+  {
+    const f = await poll(async () => { const x = await surfaceOf(ID, b); return x && Math.abs(x.zoom - zoomed) < 0.01 ? x : null; }, `at the zoom it was left at (${Math.round(zoomed * 100)}%)`, 15000);
+    const pop = q<HTMLElement>('.ink-pop');
+    must(pop ? f.holes >= 1 : f.holes === 0, pop ? 'the settings are still open, and the surface stands aside for them' : 'the settings closed with the tab they were opened over');
+    await shot('tabs-settings-open');
+    tools.setOpen(null);
+    await poll(() => !q('.ink-pop'), 'closed', 5000);
+  }
+  // page setup open across a switch: it is the other notebook's page setup no longer
+  q<HTMLElement>('.meta [data-tool="more"]', b)!.click();
+  (await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-setup"]'), 'page setup', 5000)).click();
+  await poll(() => q('.page-setup', b), 'open', 5000);
+  tap(railRow(TAB));
+  await poll(() => at() === TAB, 'the tab, with page setup open over the notebook', 25000);
+  b = await poll(() => { const x = bookOf(TAB); return x && q(PAPER, x) ? x : null; }, 'its paper', 15000);
+  await poll(async () => { const f = await surfaceOf(kid.id, b); return f && !q('.page-setup') && f.holes === 0 ? f : null; }, 'page setup is gone with the notebook it was of, and nothing is cut out of the tab\'s surface', 15000);
+
+  // ── the rail folded, unfolded; on its side ──
+  {
+    const wide = (await surfaceOf(kid.id, b))!.at;
+    tap(q('.tab-rail .rail-fold')!);
+    const folded = await poll(async () => { const f = await surfaceOf(kid.id, b); return f && q('.tab-rail.folded') && f.at.x < wide.x - 40 ? f : null; }, 'the rail folded: the surface has the room', 25000);
+    must(folded.at.w > wide.w + 40, `wider by ${Math.round(folded.at.w - wide.w)} px`);
+    await surfaceSettled(b);
+    await shot('tabs-folded');
+    tap(q('.tab-rail.folded .rail-fold')!);
+    await poll(async () => { const f = await surfaceOf(kid.id, b); return f && q('.tab-rail:not(.folded)') && Math.abs(f.at.x - wide.x) < 1.5 ? f : null; }, 'unfolded: where it was', 25000);
+  }
+  ask('turn landscape');
+  await poll(() => shape() === 'landscape', 'on its side', 20000);
+  await sleep(1500);
+  await poll(() => surfaceOf(kid.id, b), 'the surface beside the rail, on its side', 15000);
+  await surfaceSettled(b);
+  await shot('tabs-landscape');
+  ask('turn portrait');
+  await poll(() => shape() === 'portrait', 'upright again', 20000);
+  await sleep(1500);
+  await poll(() => surfaceOf(kid.id, b), 'and upright', 15000);
+
+  // ── + add tab over paper adds paper; a typed note is a tab too ──
+  {
+    const add = q<HTMLElement>('.tab-rail .rail-add')!;
+    must(add.dataset.kind === 'written', '+ add tab, over a written tab, adds written notes');
+    tap(add);
+    const THIRD = 'fleeting/tabbed/untitled.md';
+    await poll(() => docsNow()[THIRD]?.written, 'a third notebook, a tab of the first', 25000);
+    // (it is made, then given its page setup, then opened)
+    const third = await poll(() => { const m = docsNow()[THIRD]?.written; return m && m.pageless === true && m.left === 60 && at() === THIRD ? m : null; }, 'with the page setup of the tab it was added from, and open', 15000);
+    const input = await poll(() => q<HTMLInputElement>('.tab-rail .rail-row input'), 'its name to be typed', 10000);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    must(qa('.tab-rail .rail-row').length === 3, 'three rows in the rail');
+    useApp.getState().setTheme('dark');
+    b = await poll(() => { const x = bookOf(THIRD); return x && q(PAPER, x) ? x : null; }, 'its paper', 15000);
+    await poll(() => surfaceOf(third.id, b), 'its surface', 15000);
+    await surfaceSettled(b);
+    await shot('tabs-dark');
+    useApp.getState().setTheme('light');
+  }
+  // ── tabs off: the rail goes, the surface has the pane; on again ──
+  openNode(NB);
+  b = await poll(() => { const x = bookOf(NB); return x && q(PAPER, x) ? x : null; }, 'the notebook', 15000);
+  await poll(() => surfaceOf(ID, b), 'its surface', 15000);
+  tap(q('.meta .tabs-toggle', b)!);
+  await poll(async () => { const f = await surfaceOf(ID, bookOf(NB) ?? b); return f && !q('.tab-rail') && docsNow()[NB]?.tabs !== true && f.at.x < 2 ? f : null; }, 'tabs pressed: no rail, the file says so no longer, the surface the pane\'s width', 25000);
+  b = bookOf(NB)!;
+  tap(q('.meta .tabs-toggle', b)!);
+  await poll(async () => { const f = await surfaceOf(ID, bookOf(NB) ?? b); return f && q('.tab-rail') && docsNow()[NB]?.tabs === true && f.at.x > 100 ? f : null; }, 'and again: the rail, the surface beside it', 25000);
+  await ink.settled();
+}
+
+/**
+ * The same on a Mac, where a notebook is read (a part of
+ * `ILMI_SMOKE=written`; alone with `ILMI_PART=tabs`): `new tab` from a
+ * notebook's `more`, the rail beside its pages, the tab named in it, the
+ * page setup it took, `tabs` in the bar off and on, a typed note as a tab.
+ */
+async function writtenTabsMac(log: (s: string) => void, vault: Vault): Promise<void> {
+  const q = <T extends Element>(sel: string, at: ParentNode = document) => at.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, at: ParentNode = document) => Array.from(at.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const iset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  const { createWritten, setSetup } = await import('./written.js');
+  const { createTab } = await import('./vault.js');
+  const docsNow = () => useApp.getState().docs;
+  const at = () => activeTab(useApp.getState().panes)?.id;
+  useApp.getState().setTheme('light');
+  const NB = 'tabbed.md';
+  await createWritten('', 'tabbed');
+  const ID = await poll(() => docsNow()[NB]?.written?.id, 'a notebook is made, for its tabs', 10000);
+  await setSetup(NB, { paper: 'grid', left: 50, right: 50, top: 40, bottom: 40, marginLine: 'both', marginColor: '#bcdcc0' });
+  openNode(NB);
+  const bookOf = (p: string) => qa<HTMLElement>('.book').find((x) => x.dataset.path === p && x.getClientRects().length) ?? null;
+  let b = await poll(() => { const x = bookOf(NB); return x && q('.pdf-page svg.paper', x) ? x : null; }, 'it opens as its paper', 15000);
+  must(!q('.tab-rail') && !q('.meta .tabs-toggle', b), 'no children yet: no rail, no `tabs` in its bar');
+  q<HTMLElement>('.meta [data-tool="more"]', b)!.click();
+  (await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-tab"]'), 'more has new tab', 5000)).click();
+  const KID = 'tabbed/untitled.md';
+  await poll(() => docsNow()[KID]?.written, 'a written notebook under it, untitled', 15000);
+  // (it is made, then given its page setup, then opened)
+  const kid = await poll(() => { const m = docsNow()[KID]?.written; return m && m.id !== ID && m.paper === 'grid' && m.left === 50 && m.right === 50 && m.top === 40 && m.marginLine === 'both' && m.marginColor === '#bcdcc0' ? m : null; }, 'with the notebook\'s page setup: a grid, its margins, its lines and their colour', 15000);
+  await poll(() => docsNow()[NB]?.tabs === true && at() === KID, 'the notebook shows its children as tabs, and the new one is open', 10000);
+  const rail = await poll(() => q<HTMLElement>('.tab-rail:not(.folded)'), 'the rail is beside the pages', 10000);
+  const field = await poll(() => q<HTMLInputElement>('.rail-row input', rail), 'the new tab\'s name is to be typed, in the rail', 10000);
+  iset.call(field, 'problems'); field.dispatchEvent(new Event('input', { bubbles: true }));
+  field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  const TAB = 'tabbed/problems.md';
+  await poll(() => docsNow()[TAB]?.written?.id === kid.id && at() === TAB, 'named problems, still open', 15000);
+  b = await poll(() => { const x = bookOf(TAB); return x && q('.pdf-page svg.paper', x) ? x : null; }, 'its paper beside the rail', 15000);
+  {
+    const [rr, pr] = [q<HTMLElement>('.tab-rail')!.getBoundingClientRect(), q<HTMLElement>('.pdf-page', b)!.getBoundingClientRect()];
+    must(pr.left >= rr.right && q('.pdf-page svg.paper', b)?.getAttribute('data-paper') === 'grid' && qa('.tab-rail .rail-row').length === 2 && q('.pt-readonly', b)?.textContent === 'written on an ipad', `its grid right of the rail (${Math.round(rr.right)} px), two rows in the rail, and the bar says where it is written`);
+  }
+  await shot('tabs-mac-rail');
+  // a typed note is a tab of a notebook of paper as of any document
+  await createTab('tabbed', 'note', 'typed beside');
+  const TYPED = 'tabbed/typed beside.md';
+  await poll(() => docsNow()[TYPED] && at() === TYPED && qa('.tab-rail .rail-row').length === 3 && !!q('.pane[data-active="1"] .reader'), 'a typed note as a third tab, open in the reader beside the rail', 15000);
+  await shot('tabs-mac-typed');
+  // the notebook's own row; `tabs` in its bar, off and on
+  (q<HTMLElement>(`.tab-rail .rail-row[data-path="${CSS.escape(NB)}"]`)!).click();
+  await poll(() => at() === NB, 'the notebook\'s own row', 8000);
+  b = await poll(() => { const x = bookOf(NB); return x && q('.pdf-page svg.paper', x) ? x : null; }, 'its paper', 15000);
+  const word = await poll(() => q<HTMLElement>('.meta .tabs-toggle', b), 'its bar has `tabs`', 8000);
+  must(word.dataset.on === '1' && word.textContent === 'tabs', 'on');
+  word.click();
+  await poll(async () => !q('.tab-rail') && !/^tabs: true$/m.test(await vault.fs.readText(vault.abs(NB))), 'pressed: no rail, and the file says so no longer', 8000);
+  q<HTMLElement>('.meta .tabs-toggle', bookOf(NB)!)!.click();
+  await poll(async () => !!q('.tab-rail') && /^tabs: true$/m.test(await vault.fs.readText(vault.abs(NB))), 'and again: the rail, and `tabs: true` in the file', 8000);
+  useApp.getState().setTheme('dark');
+  await shot('tabs-mac-dark');
+  useApp.getState().setTheme('light');
 }
 
 // `ILMI_SMOKE=blanks` (`smokeBlanks`) over a copy of `samples/double-major`

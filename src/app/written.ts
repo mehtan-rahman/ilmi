@@ -9,11 +9,12 @@ import { MARGIN_LINES, PAPERS, PAPER_INSET_RANGE, PAPER_MARGIN_RANGE, PAPER_RULE
 import { invoke } from '@tauri-apps/api/core';
 import { MARGIN_AT, RULE_TOP, newInsets, paperHex, ruleOf } from './paper.js';
 import { passageMarksOf } from '../pdf/index.js';
-import { isPdfPath, newId, passageId, type InkStroke, type PassageMark, type StoreFs } from '../vault/index.js';
+import { childDirOf, childrenAt, entryOf, isDoc, isPdfPath, newId, ordered, passageId, type InkStroke, type PassageMark, type StoreFs } from '../vault/index.js';
 import { askNote, loadMarks, openNotes, setMark } from './book.js';
 import { isPagesPath, isWritten, pdfForNotes } from './names.js';
 import { useApp, type DocInfo } from './store.js';
-import { currentVault } from './vault.js';
+import { notebookOf } from './tabs.js';
+import { currentVault, openNode, setTabs } from './vault.js';
 
 export { PAPERS, type PaperKind, isPagesPath, isWritten };
 
@@ -117,6 +118,30 @@ export async function createWritten(dir: string, name: string, pdf?: string): Pr
   // its rules begin and end a little in from the sides, where a file that says nothing has them edge to edge)
   const mine = defaultSetup();
   await setSetup(path, mine ?? newInsets('ruled')).catch(console.error);
+  return path;
+}
+
+/**
+ * `new tab`: a written notebook as a child of the document `parent`, last
+ * among its children, with the page setup of the notebook `like` (the
+ * parent's own when it is one; else what a new notebook has), named
+ * `untitled` to be renamed in the rail. `parent` shows its children as tabs
+ * from then on, unless it is itself a page of a notebook that does (the new
+ * one is then a subtab there). Opened; its path.
+ */
+export async function newWrittenTab(parent: string, like: string = parent): Promise<string> {
+  const vault = need();
+  const docs = useApp.getState().docs;
+  const dir = childDirOf(parent);
+  const path = await vault.createWritten(dir, 'untitled', newId());
+  const shown = ordered(childrenAt(vault.tree, dir) ?? [], vault.order[dir]).map((n) => entryOf(n.path)).filter((e) => e !== entryOf(path));
+  await vault.setOrder(dir, [...shown, entryOf(path)]);
+  const from = docs[like]?.written ?? docs[parent]?.written;
+  await setSetup(path, from ? setupOf(from) : defaultSetup() ?? newInsets('ruled')).catch(console.error);
+  if (isDoc(parent) && notebookOf(parent, docs) === null) await setTabs(parent, true);
+  await whenKnown(path);
+  openNode(path);
+  useApp.setState({ railRename: path });
   return path;
 }
 

@@ -717,6 +717,14 @@ is, each written sheet as `.ilmi/ink/<id>/<sheet>.pkdrawing` and the
 passages as `.ilmi/marks/<id>.json`; an import of that folder has all three
 again.
 
+A notebook may have children as any document may (§1, its children
+directory): written notebooks, typed notes, folders. `tabs: true` on it
+means what it means on any document (*Tabs*, below): its children are
+drawn as tabs beside its sheets, the notebook itself first. A child that is
+a notebook is a notebook of its own, with its own id, sheets and page
+setup; the app starts one made as a tab with the page setup of the notebook
+it was made from, and nothing ties the two after that.
+
 **Clippings.** A page that came in by its address carries `url`, and
 `author` and `published` when the page said. `url` and `author` are written
 plain or quoted like `title`; `published` is a day or a UTC instant, as the

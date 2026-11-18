@@ -1079,3 +1079,35 @@ describe('a sheet lost from a pageless notebook\'s list in a merge', () => {
     await removeNode(path);
   });
 });
+
+describe('a new tab of a written notebook', () => {
+  it('is a written notebook among its children, last, with its page setup; the notebook shows its children as tabs from then on, and the rail is asked to rename it', async () => {
+    const { showsTabsToggle } = await import('../tabs.js');
+    const parent = await written.createWritten('', 'tabbed');
+    await written.setSetup(parent, { paper: 'grid', rule: 14.17, left: 50, right: 40, top: 30, bottom: 20, marginLine: 'left', marginColor: '#b5d2f2', pageless: true, color: '#fbf6e9', line: '#bcdcc0' });
+    const was = (await front(parent)).written!;
+    // with no children it has no `tabs` word in its bar; with one it has
+    expect(showsTabsToggle(parent, useApp.getState().tree, useApp.getState().docs)).toBe(false);
+    const child = await written.newWrittenTab(parent);
+    expect(child).toBe('tabbed/untitled.md');
+    const got = (await front(child)).written!;
+    expect(got.id).not.toBe(was.id);
+    expect({ ...got, id: was.id }).toEqual({ ...was, sheets: [1] });
+    expect((await front(parent)).tabs).toBe(true);
+    expect(useApp.getState().railRename).toBe(child);
+    expect(showsTabsToggle(parent, useApp.getState().tree, useApp.getState().docs)).toBe(true);
+    // one more: after the first in the directory's order, with the setup of the notebook it was asked to be like
+    await written.setSetup(child, { paper: 'ruled', pageless: false, left: 12, right: null, marginLine: null });
+    const second = await written.newWrittenTab(parent, child);
+    expect(second).not.toBe(child);
+    const two = (await front(second)).written!;
+    expect([two.paper, two.pageless, two.left, two.right, two.marginLine]).toEqual(['ruled', undefined, 12, undefined, undefined]);
+    expect(useApp.getState().order['tabbed']?.slice(-2)).toEqual([child, second].map((p) => p.split('/').pop()));
+    // a tab's own new tab is a subtab: the notebook above already shows tabs, and the tab itself is not made one
+    const sub = await written.newWrittenTab(child);
+    expect(sub.startsWith('tabbed/untitled/')).toBe(true);
+    expect((await front(child)).tabs).toBeUndefined();
+    useApp.setState({ railRename: null });
+    await removeNode(parent);
+  });
+});

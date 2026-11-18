@@ -390,6 +390,8 @@ export interface AppState {
   railFolded: Record<string, true>;
   /** The tab rail's width in px, one for every notebook (`tabs.ts`'s `clampRail`). Per vault, in `.ilmi/state.json`. */
   railWidth: number;
+  /** A tab just made from outside the rail (a notebook's `new tab`): the rail that shows it begins its rename, once. Not kept. */
+  railRename: string | null;
   /** The deck browser's chips and sort, per lens id (`.ilmi/state.json`'s `decks`). */
   deckViews: Record<string, DeckView>;
   /** The headings folded in the reader, by document path: the keys `fold.ts` gives them. Per vault, in `.ilmi/state.json`'s `folds`. */
@@ -515,6 +517,7 @@ export const useApp = create<AppState>((set, get) => ({
   order: {},
   railFolded: {},
   railWidth: 200,
+  railRename: null,
   deckViews: {},
   folds: {},
   reviews: [],

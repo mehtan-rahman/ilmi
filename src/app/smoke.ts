@@ -19412,7 +19412,7 @@ export async function smokeSharp(path: string | null): Promise<void> {
 // written one after another. Last (`tools`) the eraser, undo and redo, the
 // lasso carrying a stroke, a shape and the pen's pressure, each looked for
 // in the page's own paths. `"part"` runs some alone (`slow`, `quick`, `tap`,
-// `scroll`, `write`, `tools`, by commas).
+// `scroll`, `write`, `most` (a capture at 400%), `tools`, by commas).
 // ─────────────────────────────────────────────────────────────────────────
 export async function smokePdfInk(path: string | null): Promise<void> {
   let last = { at: Date.now(), what: 'start' };
@@ -19649,6 +19649,20 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       must(qa(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb).length === had + 5, `the page draws them all: ${had + 5} paths`);
       watching = false;
       await invoke('dev_ink_pen', { on: false });
+    }
+    if (want('most')) {
+      // at the most the pages zoom to, where a page is drawn with fewer pixels than the screen has: the writing is paths still
+      setBookZoom(PAGEINK_BOOK, 4);
+      await poll(() => zoomNow() === 4, 'at 400%', 8000);
+      await sleep(2500);
+      const r = page();
+      sc.scrollLeft += r.left + (A[0] / W) * r.width - 200;
+      sc.scrollTop += r.top + (((A[1] + B[1]) / 2) / H) * r.height - window.innerHeight / 2;
+      await sleep(2500);
+      phase('at the most');
+      await shot('pdfink-most');
+      setBookZoom(PAGEINK_BOOK, 1);
+      await sleep(1500);
     }
     if (want('tools')) {
       // ── the tools on a page the page draws: each thing done is in the page's own paths at once ──

@@ -122,12 +122,21 @@ describe('mergeMarkdown', () => {
     expect(mergeMarkdown('a.md', 'x', 'y', 'z').text).toBe('y\n\nz\n');
   });
 
-  it('a card graded here and reworded there is kept both ways: damage stays local', () => {
+  // (until 2026-11-18 both versions were kept, the card twice; a card learnt writes a line too, so that met far more often)
+  it('a card graded here and reworded there is one card: the words of the one, the grade of the other', () => {
     const ours = graded(DECK, 'cv-mut', '2026-11-04T09:00:00Z', 4);
+    const theirs = DECK.replace('der Mut :: courage', 'der Mut :: courage, nerve');
+    const want = ours.replace('der Mut :: courage', 'der Mut :: courage, nerve');
+    expect(mergeMarkdown('german.md', DECK, ours, theirs)).toEqual({ text: want, kept: [] });
+    expect(mergeMarkdown('german.md', DECK, theirs, ours)).toEqual({ text: want, kept: [] });
+  });
+
+  it('a card reworded on both sides is kept both ways: damage stays local', () => {
+    const ours = DECK.replace('der Mut :: courage', 'der Mut :: courage, pluck');
     const theirs = DECK.replace('der Mut :: courage', 'der Mut :: courage, nerve');
     const m = mergeMarkdown('german.md', DECK, ours, theirs);
     expect(m.kept).toEqual([{ path: 'german.md', heading: 'german' }]);
-    expect(m.text).toContain('der Mut :: courage ^cv-mut\n<!-- sr due=2026-11-04 st=review s=4 d=5 r=2 l=0 ivl=4 last=2026-11-04T09:00:00Z g=4 -->\n\nder Mut :: courage, nerve ^cv-mut\n');
+    expect(m.text).toContain('der Mut :: courage, pluck ^cv-mut\n<!-- sr due=2026-11-04 st=review s=4 d=5 r=2 l=0 ivl=4 last=2026-10-31T08:00:00Z g=3 -->\n\nder Mut :: courage, nerve ^cv-mut\n');
     // the other cards are untouched
     expect(m.text).toContain('der Vorsatz :: resolution ^cv-vorsatz\n<!-- sr due=2026-11-04 st=review s=4 d=5 r=2 l=0 ivl=4 last=2026-10-31T08:00:00Z g=3 -->');
   });
@@ -163,6 +172,83 @@ describe('mergeMarkdown', () => {
       const cut = text.split('\n').slice(0, Math.max(1, Math.floor(text.split('\n').length / 2))).join('\n');
       expect(mergeMarkdown(f, text, text, cut).text.replace(/\n+$/, '\n'), f).toBe(`${cut.replace(/\n+$/, '')}\n`);
     }
+  });
+});
+
+// What the queue-and-session model found (`src/app/__tests__/queue-session.model.test.ts`, 2026-11-18): two devices
+// each writing a card's first schedule line, or different lines of one card, before they met.
+describe('mergeMarkdown, one card written on both sides', () => {
+  const NEW = '---\ntype: deck\n---\n\nq :: a\n\nhin ::: her ^kb\n<!-- sr due=2026-11-04 st=review s=4 d=5 r=2 l=0 ivl=4 last=2026-10-31T08:00:00Z g=3 -->\n\nthe {{c1::one}} and the {{c2::two}} ^kc\n\n## a section\n<!-- read made=2026-11-01 due=2026-11-10 ivl=3 reps=1 -->\n\nwords\n';
+  const G = (at: string, g = 3) => `due=2026-11-20 st=review s=4 d=5 r=1 l=0 ivl=2 last=${at} g=${g}`;
+  const both = (ours: string, theirs: string) => {
+    const [a, b] = [mergeMarkdown('d.md', NEW, ours, theirs), mergeMarkdown('d.md', NEW, theirs, ours)];
+    // whichever device merges, the same file
+    expect(b.text).toBe(a.text);
+    expect(a.kept).toEqual([]);
+    return a.text;
+  };
+
+  it('a card learnt on both (`seen`), each giving it an id: one card, one id, learnt', () => {
+    const ours = NEW.replace('q :: a\n', 'q :: a ^caaaaaa\n<!-- sr seen=2026-11-18T09:00:00Z -->\n');
+    const theirs = NEW.replace('q :: a\n', 'q :: a ^cbbbbbb\n<!-- sr seen=2026-11-18T09:05:00Z -->\n');
+    expect(both(ours, theirs)).toBe(theirs.replace('^cbbbbbb', '^caaaaaa'));
+  });
+
+  it('a card learnt here and graded there: the grade stands, with the id it was graded under', () => {
+    const ours = NEW.replace('q :: a\n', 'q :: a ^caaaaaa\n<!-- sr seen=2026-11-18T09:30:00Z -->\n');
+    const theirs = NEW.replace('q :: a\n', `q :: a ^cbbbbbb\n<!-- sr ${G('2026-11-18T09:05:00Z')} -->\n`);
+    expect(both(ours, theirs)).toBe(theirs);
+  });
+
+  it('a new card graded on both: one card, the later grade and its id', () => {
+    const ours = NEW.replace('q :: a\n', `q :: a ^caaaaaa\n<!-- sr ${G('2026-11-18T09:00:00Z', 1)} -->\n`);
+    const theirs = NEW.replace('q :: a\n', `q :: a ^cbbbbbb\n<!-- sr ${G('2026-11-18T09:05:00Z', 4)} -->\n`);
+    expect(both(ours, theirs)).toBe(theirs);
+  });
+
+  it('a card learnt here, untouched there: learnt; and a later grade there is not undone by it', () => {
+    const learnt = NEW.replace('q :: a\n', 'q :: a ^caaaaaa\n<!-- sr seen=2026-11-18T09:00:00Z -->\n');
+    expect(both(learnt, NEW)).toBe(learnt);
+    const gradedOn = learnt.replace('seen=2026-11-18T09:00:00Z', G('2026-11-18T10:00:00Z'));
+    expect(mergeMarkdown('d.md', learnt, learnt, gradedOn).text).toBe(gradedOn);
+    expect(later('<!-- sr seen=2026-11-19T09:00:00Z -->', `<!-- sr ${G('2026-11-18T10:00:00Z')} -->`)).toBe('theirs');
+  });
+
+  it('a both-ways card: its forward graded here, its reverse first graded there: one card with both lines', () => {
+    const ours = NEW.replace('last=2026-10-31T08:00:00Z g=3', 'last=2026-11-18T09:00:00Z g=4');
+    const theirs = NEW.replace('g=3 -->\n\nthe', `g=3 -->\n<!-- sr r ${G('2026-11-18T09:05:00Z')} -->\n\nthe`);
+    expect(both(ours, theirs)).toBe(theirs.replace('last=2026-10-31T08:00:00Z g=3', 'last=2026-11-18T09:00:00Z g=4'));
+  });
+
+  it('a cloze: one blank learnt here, the other graded there: one card with both lines, in their order', () => {
+    const ours = NEW.replace('^kc\n', '^kc\n<!-- sr c2 seen=2026-11-18T09:00:00Z -->\n');
+    const theirs = NEW.replace('^kc\n', `^kc\n<!-- sr c1 ${G('2026-11-18T09:05:00Z')} -->\n`);
+    expect(both(ours, theirs)).toBe(NEW.replace('^kc\n', `^kc\n<!-- sr c1 ${G('2026-11-18T09:05:00Z')} -->\n<!-- sr c2 seen=2026-11-18T09:00:00Z -->\n`));
+  });
+
+  it('a section passed here and dismissed there (its line taken away): the heading once, the line that changed kept', () => {
+    const ours = NEW.replace('due=2026-11-10 ivl=3 reps=1', 'due=2026-11-24 ivl=6 reps=2');
+    const theirs = NEW.replace('<!-- read made=2026-11-01 due=2026-11-10 ivl=3 reps=1 -->\n', '');
+    expect(both(ours, theirs)).toBe(ours);
+  });
+
+  it('a card graded on both and a card added after it on one: the grade merged, the new card once', () => {
+    const ours = NEW.replace('last=2026-10-31T08:00:00Z g=3', 'last=2026-11-18T09:00:00Z g=4');
+    const theirs = NEW.replace('last=2026-10-31T08:00:00Z g=3 -->\n', 'last=2026-11-18T09:05:00Z g=1 -->\n\nnew :: card\n');
+    expect(both(ours, theirs)).toBe(theirs);
+  });
+
+  it('a card learnt here (given its id) and reworded there: one card, reworded, learnt, with the id', () => {
+    const ours = NEW.replace('q :: a\n', 'q :: a ^caaaaaa\n<!-- sr seen=2026-11-18T09:00:00Z -->\n');
+    const theirs = NEW.replace('q :: a\n', 'q :: a, more\n');
+    expect(both(ours, theirs)).toBe(ours.replace('q :: a ^', 'q :: a, more ^'));
+  });
+
+  it('a prose line that begins `read:` is prose: changed on both, both are kept', () => {
+    const base = 'a\n\nread: chapter 3\n';
+    const m = mergeMarkdown('n.md', base, 'a\n\nread: chapter 4\n', 'a\n\nread: chapter 5\n');
+    expect(m.text).toBe('a\n\nread: chapter 4\n\nread: chapter 5\n');
+    expect(m.kept).toHaveLength(1);
   });
 });
 

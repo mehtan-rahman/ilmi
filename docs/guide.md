@@ -654,6 +654,15 @@ once everything else has had its turn, and again until a grade moves it out
 of today; the count grows by one each time. A deck studied ahead (`cram`)
 asks each card once.
 
+A card never tested comes up answered the first time, to learn, with one
+choice, `got it`; its test waits at the session's end. `got it` is
+remembered in the collection: leave the queue, close the app, or pick up
+another device after a sync, and the card is asked as a test, not shown to
+learn again. A card graded into its learning steps is asked at the end of
+whatever session you start next that day, not only the one you graded it
+in. Undo after later, dismiss or suspend takes back only that; a card
+graded in the same file meanwhile keeps its grade.
+
 The day is one list, every kind mixed, in priority order. Under its count a
 row of words narrows it to one thing to do: `all · recall · read · write`,
 each with how many are due. `recall` is the cards, `read` the sources and
@@ -785,7 +794,9 @@ reached. Clear the field and the timers are all there is.
 
 Two devices changing different cards in one file merge clean. The same card
 graded on both keeps the later grade; a source read on on both keeps the
-later pass. A paragraph edited on both keeps both versions, one block after
+later pass. A card reworded on one device and graded on the other is one
+card, with the words of the one and the grade of the other; two directions
+of a card, or two blanks of a cloze, each graded on one device are both kept. A paragraph edited on both keeps both versions, one block after
 the other, under a notice naming the file and the heading; `2 conflicts` in
 the strip opens the files. A file edited on one side and deleted on the
 other keeps the edit; the order chosen for a folder takes the pulled side;

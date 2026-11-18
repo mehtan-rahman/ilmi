@@ -1094,8 +1094,12 @@ forms). Stripped from the text and stored as `id`. Written back as ` ^id` on
 the last line, or alone on the next line when the last line is empty or ends
 in whitespace, so that whitespace survives. Paragraphs and cards may carry ids; headings and raw blocks do
 not (their `^…` is literal). The app assigns an id to a card the first time it
-writes a schedule for it and never changes it; the id is how the tree, the
-queue, and extract backrefs refer to a card.
+writes a schedule line for it (a grade, `got it`, a suspension, a priority of
+its own) and never changes it; the id is how the tree, the queue, and extract
+backrefs refer to a card. The id is `c` and six characters made from the
+document's path, the card's text, and which of the document's cards with
+that text it is, so two devices that each write the card's first line before
+they sync give it the same id. Ids written before this, at random, stay.
 
 ### 6.2 Schedule `<!-- sr … -->`
 
@@ -1123,6 +1127,7 @@ most one of each; a duplicate key is resolved later-wins with a diagnostic.
 | `ivl`   | int ≥ 0                | `scheduled_days`  | last interval                            |
 | `last`  | day or instant         | `last_review`     |                                          |
 | `g`     | int 1–4                |                   | last grade: again hard good easy         |
+| `seen`  | instant                |                   | learnt, not yet tested: shown answered and got (`got it`), then |
 | `pri`   | int 0–100              |                   | the card's own priority, over the document's (§3) |
 | `sus`   | bool, written `1`      |                   | suspended: out of the queue, the session, and the counts |
 | `link`  | id `[A-Za-z0-9_-]+`    |                   | the card with that `^id` tests the same fact: one schedule for both (below) |
@@ -1137,7 +1142,20 @@ left out of the queue, any session, and the queue's counts until the app
 removes the attribute (unsuspend); it is still listed where its document's
 cards are. `sus` is read as a bool and written only as `sus=1`; a `sus=0`
 says what absence says and is dropped on the first write (§8). A card with
-only `sus=1` on its bare line is a new card, suspended. `elapsed_days` is not stored; the scheduler derives it from `last`.
+only `sus=1` on its bare line is a new card, suspended.
+`seen=<instant>` says the card was shown answered, to learn, and
+acknowledged (`got it`) at that instant, and has not been tested. It is
+written only on a line with no review, on the line the card asks (bare,
+`sr r`, `sr cN`), and the first grade drops it. A card whose line carries it
+is still a new card, due now, counted and held as one; the app asks it as a
+test and does not show it to learn again, on any device, on any day. On a
+line that has a review it means nothing. In a merge a line with a review is
+later than one with only `seen`; of two with only `seen`, the later. Two
+lines of one card each written on one side of a merge are both kept; a line
+one side took away and the other changed stays; a block reworded on one
+side with only its schedule lines changed on the other takes the words of
+the one and the lines of both.
+ `elapsed_days` is not stored; the scheduler derives it from `last`.
 Unknown attributes are kept in order after the known ones. A known attribute
 with an unparsable value is dropped with a diagnostic; the rest of the line
 survives.

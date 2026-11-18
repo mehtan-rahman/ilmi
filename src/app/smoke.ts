@@ -8855,8 +8855,9 @@ export async function smokeLearn(vault: Vault): Promise<void> {
     (document.activeElement as HTMLElement | null)?.blur?.();
     key(' ');
     await poll(() => q('.sess-count')?.textContent === '2 / 4', `got it: on to the second, the total told from the start (${q('.sess-count')?.textContent})`);
-    await sleep(500);
-    must((await text(a.path)) === before, 'nothing written to the first card\'s file');
+    let learnt = before;
+    for (let i = 0; i < 40 && learnt === before; i++) { await sleep(100); learnt = await text(a.path); }
+    must(/<!-- sr seen=[^ >]+ -->/.test(learnt), `got it says so on the card's line and no more: seen (${learnt.split('\n').find((l) => l.includes('seen=')) ?? 'no line'})`);
     key(' ');
     await poll(() => q('.sess-count')?.textContent === '3 / 4', 'the second learnt too');
     await poll(() => q('.recall-wrap .card[data-revealed="0"]') && !q('.grades[data-learn="1"]'), 'the first again, as a test: the question alone');

@@ -27,6 +27,12 @@ export interface CardSchedule {
   /** `sus=1`: left out of the queue, the session, and the counts; the schedule is kept. */
   suspended?: true;
   /**
+   * `seen=<instant>`: the card came up answered, to learn, and was got (`got it`), then; it has not been tested.
+   * Only on a line with no review: the first grade drops it. Such a card is still new, due now, and is asked
+   * as a test, not shown to learn again (FORMAT.md §6.2).
+   */
+  seen?: string;
+  /**
    * `link=<id>`: the card with that `^id` tests the same fact; the two share
    * one schedule, one shown a day (FORMAT.md §6.2, *links*). Only on the bare line.
    */

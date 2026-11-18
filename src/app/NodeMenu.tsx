@@ -37,7 +37,9 @@ export const MENU_W = 190;
 export function placeMenu(el: HTMLElement | null): void {
   if (!el) return;
   const r = el.getBoundingClientRect();
-  if (r.bottom > window.innerHeight) el.style.top = `${Math.max(0, window.innerHeight - r.height - 6)}px`;
+  // (on a device the foot of the glass is the home bar's: the menu ends above it)
+  const foot = document.documentElement.dataset.mobile === '1' ? 26 : 6;
+  if (r.bottom > window.innerHeight - foot + 6) el.style.top = `${Math.max(0, window.innerHeight - r.height - foot)}px`;
 }
 
 /** An open menu: the node it is for (`''` the root), where, whether `move to…` is showing, and whether it is the `+` menu. */

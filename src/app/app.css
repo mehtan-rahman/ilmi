@@ -473,6 +473,10 @@
   padding: var(--s-1);
   font-family: var(--sans);
   user-select: none;
+  /* never taller than the glass less its edges: a long menu scrolls */
+  max-height: calc(100dvh - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 /* a row: its icon and its keys hang outside the words, so the words are the
    row's first letters */
@@ -498,7 +502,9 @@ html[data-mobile="1"] .ctx-menu .ci { line-height: 40px; }
 .ctx-menu .ci .cg {
   position: absolute;
   left: 10px;
-  top: 7px;
+  /* in the middle of the row, whatever its height (a finger's row is taller) */
+  top: 50%;
+  margin-top: -7px;
   width: 14px;
   height: 14px;
   color: var(--fg-3);
@@ -519,7 +525,7 @@ html[data-mobile="1"] .ctx-menu .ci { line-height: 40px; }
   color: var(--fg-4);
   display: flex;
   align-items: center;
-  height: 28px;
+  height: 100%;
   --ic: 12px;
 }
 .ctx-menu .ci.danger { color: var(--danger); }

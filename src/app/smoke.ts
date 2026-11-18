@@ -12217,6 +12217,14 @@ async function addPageAt(b: HTMLElement): Promise<{ x: number; y: number; h: num
   const r = el.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2, h: r.height, text: el.textContent ?? '' };
 }
+/** Once every picture on a book's surface is made (a capture is then of the sheets as they are). */
+async function surfaceSettled(b: Element | null | undefined): Promise<void> {
+  const id = surfaceIn(b);
+  if (!id) return;
+  const { surfaceSettle } = await import('./surface.js');
+  await surfaceSettle(id);
+  await sleep(200);
+}
 /** A notebook's paper as it is drawn where its pages are: the page's own `svg`, or the place a surface's sheet lies. */
 const PAPER = '.pdf-page svg.paper, .pdf-page.sheet-place';
 
@@ -17198,6 +17206,27 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
       must((await inkOf()) === ink0, 'and nothing written has moved or gone: only the paper');
     }
     await shot('more-setup-ruled');
+    // ── the paper's colour and its lines' (87): chosen by a tap, the pages behind the panel that colour at once ──
+    {
+      const told = async () => (native ? await surfaceNow(b) : null);
+      must(on('color-none') && on('line-none') && ps('color-said')?.textContent === 'follows the theme', 'paper colour and line colour: none chosen, the paper follows the theme');
+      must(qa<HTMLElement>('.ps-col', panel).every((x) => x.getBoundingClientRect().height >= 40 && x.getBoundingClientRect().width >= 36), 'each colour a finger\'s size');
+      tap(ps('color-cream')!);
+      await poll(async () => w().color === '#fbf6e9' && /^paper-color: #fbf6e9$/m.test(await vaultText(NB)) && (!native || (await told())?.colours[0] === '#fbf6e9'), 'cream: the file says paper-color, and the pages are cream', 25000);
+      tap(ps('line-red')!);
+      await poll(async () => w().line === '#f0c2c2' && /^paper-line: #f0c2c2$/m.test(await vaultText(NB)) && (!native || (await told())?.colours[1] === '#f0c2c2'), 'red lines: paper-line, and the rules are red', 25000);
+      if (native) await surfaceSettled(b);
+      await shot('more-setup-colours');
+      tap(ps('color-dark')!);
+      await poll(async () => w().color === '#1c1c1e' && (!native || ((await told())?.dark === true && (await state()).sheets.find((x) => x.id === sheet1)?.blend === 'screenBlendMode')), 'dark paper, in the light theme: the ink on it is drawn the dark way, and lightens', 25000);
+      if (native) await surfaceSettled(b);
+      await shot('more-setup-dark-paper');
+      tap(ps('color-none')!);
+      await poll(() => w().color === undefined, 'the first round again: no colour chosen', 25000);
+      tap(ps('line-none')!);
+      await poll(async () => w().line === undefined && !/^paper-(color|line)/m.test(await vaultText(NB)) && (!native || ((await told())?.colours[0] === '#ffffff' && (await told())?.dark === false)), 'and no line colour: neither is in the file, and the paper follows the theme again', 25000);
+      must((await inkOf()) === ink0, 'nothing written has moved or gone');
+    }
     // pageless: the sheets run on as one
     const before = { n: pagesOf(b).length };
     tap(ps('layout-pageless')!);
@@ -18057,6 +18086,8 @@ export async function smokeSharp(path: string | null): Promise<void> {
         const first = s.sheets[0]!.device;
         must(Math.abs(p.left * dpr - first.x) < 1.01 && Math.abs(p.top * dpr - first.y) < 1.01 && Math.abs(p.width * dpr - first.w) < 1.01, 'and the page knows where the first sheet lies');
         must(s.memory < 420e6, `the pictures within what an iPad can hold (${(s.memory / 1e6).toFixed(0)} MB)`);
+        const place = q<HTMLElement>('.note-surface', b)!.getBoundingClientRect();
+        must(Math.abs(s.at.x - place.left) < 1 && Math.abs(s.at.y - place.top) < 1 && Math.abs(s.at.w - place.width) < 1 && Math.abs(s.at.h - place.height) < 1, `the surface lies where the page keeps its place (${Math.round(s.at.x)},${Math.round(s.at.y)} ${Math.round(s.at.w)}×${Math.round(s.at.h)})`);
         return s;
       };
 
@@ -18250,6 +18281,29 @@ export async function smokeSharp(path: string | null): Promise<void> {
           ask('flick', 0.5, 0.3, 0.5, 0.85);
           await sleep(3000);
           await rested('scrolled back');
+        }
+        // the tree brought over the book and taken away: the surface is where the pages' place is, cut away for what lies over it
+        {
+          const before = await surf();
+          useApp.setState({ bookSide: true });
+          await sleep(1100);
+          const open = await rested('the tree open');
+          log(`the tree open: the surface ${Math.round(open.at.x)},${Math.round(open.at.y)} ${Math.round(open.at.w)}×${Math.round(open.at.h)} (it was ${Math.round(before.at.x)},${Math.round(before.at.y)} ${Math.round(before.at.w)}×${Math.round(before.at.h)}), ${open.holes} holes`);
+          must(open.holes > 0 || open.at.x > before.at.x + 40 || open.at.w < before.at.w - 40, 'the tree lies beside the pages or over them: the surface is narrower, or cut away for it');
+          await shot('zoom-tree');
+          useApp.setState({ bookSide: false });
+          await sleep(1100);
+          const shut = await rested('the tree closed');
+          must(shut.holes === 0 && Math.abs(shut.at.w - before.at.w) < 1, 'closed, the surface is whole again');
+        }
+        // left for another app and come back to: as it was
+        {
+          const before = await surf();
+          log('mark: away');
+          ask('away', 2);
+          await sleep(4500);
+          const s = await rested('away and back');
+          must(Math.abs(s.offset[1] - before.offset[1]) < 1 && s.sheets[0]!.strokes === before.sheets[0]!.strokes && s.pages === before.pages, 'the app left and come back to: the pages where they were, with what was on them');
         }
         // turned on its side and back: the same place, laid out again
         {

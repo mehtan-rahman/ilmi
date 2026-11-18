@@ -926,10 +926,10 @@ describe('page setup', () => {
   it('has a row for the paper\'s colour and one for the ruling\'s: none chosen, the ones offered by name, and the wheel\'s', async () => {
     await mount(panel());
     expect(qa('.ps-colours').map((r) => [r.dataset.psRow, r.querySelector('.ps-l')!.textContent, r.querySelector('.ps-cv')!.textContent])).toEqual([['color', 'paper colour', 'follows the theme'], ['line', 'line colour', 'default']]);
-    expect(qa('[data-ps-row="color"] .ps-sw').map((b) => [b.dataset.ps, b.getAttribute('aria-label'), b.getAttribute('aria-pressed')])).toEqual([
+    expect(qa('[data-ps-row="color"] .ps-col').map((b) => [b.dataset.ps, b.getAttribute('aria-label'), b.getAttribute('aria-pressed')])).toEqual([
       ['color-none', 'follows the theme', 'true'], ['color-white', 'white', 'false'], ['color-cream', 'cream', 'false'], ['color-yellow', 'yellow', 'false'], ['color-grey', 'grey', 'false'], ['color-dark', 'dark', 'false'], ['color-wheel', 'colours', 'false'],
     ]);
-    expect(qa('[data-ps-row="line"] .ps-sw').map((b) => [b.dataset.ps, b.getAttribute('aria-label'), b.getAttribute('aria-pressed')])).toEqual([
+    expect(qa('[data-ps-row="line"] .ps-col').map((b) => [b.dataset.ps, b.getAttribute('aria-label'), b.getAttribute('aria-pressed')])).toEqual([
       ['line-none', 'default', 'true'], ['line-blue-grey', 'blue-grey', 'false'], ['line-grey', 'grey', 'false'], ['line-blue', 'blue', 'false'], ['line-red', 'red', 'false'], ['line-green', 'green', 'false'], ['line-wheel', 'colours', 'false'],
     ]);
     expect(qa('.ps-colours [role="group"]').map((g) => g.getAttribute('aria-label'))).toEqual(['paper colour', 'line colour']);

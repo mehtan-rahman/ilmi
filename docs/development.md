@@ -332,7 +332,9 @@ bottom strip) and log that they did.
 copy of the sample: a notebook made from the sidebar's `+`, its pages and
 papers, pages added and deleted, strokes put on its sheets through what a
 canvas keeps through (a made-up drawing), a passage and a clip from a
-sheet, a notebook made for a PDF, the export. On a simulated iPad it is the
+sheet, a notebook made for a PDF, the export. On a simulated iPad, where
+the notebook's pages are a surface (milestone 87) and what was asked of the
+page is asked of `dev_ink_state`, it is the
 row of tools (`InkBar.tsx`) under real touches: a copy of the sample in the
 app's Documents, `{"mode": "written", "vault": "double-major"}`,
 `TEST_RUNNER_MODE=written`. The rig's finger stands in for the Pencil; each
@@ -372,30 +374,33 @@ file read after each, pageless and a stroke across the seam, A4 on its
 side, `use for new notebooks`; and the row whole at every width it is
 given.
 
-`ILMI_SMOKE=sharp` (milestone 86), a simulated iPad under the touch rig,
-over a copy of the sample (`vault` in `smoke.json`): how sharp ink and
-paper are on the glass, and how the pages zoom. A notebook of blank paper,
-a level, an upright and a slanted stroke in each ink (`dev_ink_stroke`),
-then the pages at fit, 150%, 300%, 137% and 73%, each twice: with the
-canvases laid as they were before 86 (`dev_ink_plain`), to measure against,
-and as they are, where the page and its canvas must lie on the same whole
-pixels of the screen, unstretched, drawn a pixel for a pixel or finer
-(`dev_ink_state`: each sheet's `device`, `stretch`, `drawn`). A `geo:` line
-says where every stroke lies in the capture and `dev_ink_picture` writes
-PencilKit's own picture of the drawing at the screen's pixels into the
-app's Documents, so a script can measure each edge in the capture and in
-the picture (the width over which it goes from 10% to 90% of its ink; a
-perfectly drawn edge measures 0.8 to 1.6 px that way, by where it falls on
-the pixels). Then ruled paper (`rules:`), and the zoom (alone with `"part":
-"zoom"`): the web view's layer for the pages found (`zoomer` in a host's
-state; `layers` lists what lies over them when it is not), two fingers
-spread about a place and closed past fit, past the least and the most, a
-finger's two taps (the rig's `do: tap2 x y`) to fit and back, a flick;
-after each nothing is left stretched, the page and canvas are on the same
-pixels, and the layout is within a pixel of where the pages were eased to
-(`data-zoom-off` on the view). Record the screen the while (`xcrun simctl
-io booted recordVideo`) and look at the frames: the long stroke drawn
-between two rules must stay between them in every one.
+`ILMI_SMOKE=sharp` (milestones 86, 87), a simulated iPad under the touch
+rig, over a copy of the sample (`vault` in `smoke.json`): how sharp ink and
+paper are on the glass, and how pages zoom and scroll. A notebook of blank
+paper (a surface, as above): a level, an upright and a slanted stroke and a
+tight curl in the even line, the pen (its width changing along it) and the
+highlighter (`dev_ink_stroke`; a point may say its own size), then the
+pages at fit, 150%, 300%, 137% and 73%, where the sheet must lie on whole
+pixels of the screen, unstretched, its picture a pixel for a pixel. A
+`geo:` line says where every stroke lies in the capture and
+`dev_ink_picture` writes the three pictures, so a script measures each
+edge on the glass, in ours, in PencilKit's and in PencilKit's oversampled
+(the width over which it goes from 10% to 90% of its ink; a perfectly
+drawn edge measures 0.8 to 1.6 px that way, by where it falls on the
+pixels). Then ruled paper (`rules:`), and the zoom and scroll (alone with
+`"part": "zoom"`), each after a `mark:` line: two fingers spread slowly,
+closed slowly past fit, a quick pinch, past the least and the most, a
+finger's two taps (`do: tap2 x y`) to fit and back, a stroke written and
+the pages pinched at once, a flick that coasts, the iPad turned and turned
+back. After each nothing is left stretched, the sheet is on whole pixels
+and drawn a pixel for a pixel, the bar says the zoom, and `sharp:` says how
+long after the zoom ended every picture was made again. Last a PDF's pages
+(`"part": "pdf"` alone; 86's way, the web view's layer for the pages
+stretched under the fingers): the same pinches, taps and flick over the
+sample's chapter with a stroke on its page, the page and its canvas on the
+same pixels after each. Record the screen the while (`xcrun simctl io
+booted recordVideo`): the long stroke drawn between two rules must stay
+between them in every frame.
 
 `ILMI_SMOKE=touch` (milestone 57) is three runs over one storage folder.
 On the Mac, `ILMI_VAULT=<a copy of the sample> ILMI_STORAGE=<an empty
@@ -502,6 +507,85 @@ zoom. `UIPencilInteraction` gives the double tap and the squeeze
 CoreGraphics, on the Mac as on iOS: a notebook's paper as lines, a PDF's
 page as the PDF's own, the ink as a picture at four pixels to the point,
 multiplied), and `ink_share` puts up the share sheet for it.
+
+Since milestone 87 a written notebook's pages on an iPad are not the web
+view's at all. They are one native surface (`Surface.swift`): a
+`UIScrollView` the plugin lays over the web view where the page says its
+pages go, so the scroll, its coasting, the pinch about the fingers and the
+give at either end are UIKit's, and nothing of ours runs while they move.
+The page (`surface.ts`, the `native` branch of `Pdf.tsx`) says one thing,
+`ink_surface`: a rectangle, the notebook's id and its sheets, the paper and
+its colours (`paperLook`), the passages' boxes, and the holes, the
+rectangles of whatever the page draws over the pages (`holesOver`: a menu,
+page setup, the overview, a notice, the box's bar, found by asking what is
+at a grid of places over the pages' place). It is said again only when one
+of those changes, never for a scroll. The surface is cut away at the holes
+and takes no touch there. It says back, through the same `window.__ink`
+the canvases use, `{ kind: 'surface', what }`: `view` (the page in view,
+the zoom, the place at the top, where the first sheet lies and how far
+apart the sheets are, at most ten times a second while the pages move and
+once when they rest), `zoomed`, `want` (sheets come near whose strokes it
+has not been given: `ink_fill` answers, as for a canvas), `grow` (a stroke
+begun low on the last sheet), `add`, `boxed` (a held finger's box),
+`tag`, `tap`, `touch`, `moving`. `ink_surface_do` asks it to `go` to a
+place or `zoom` to a zoom. What stands on the pages and is the page's to
+draw (the lasso's menu, the box's `passage`/`card` bar) is drawn in the
+placeholder at the place the surface said, and goes while the pages move.
+Hidden `.pdf-page.sheet-place` elements in the placeholder lie where the
+surface says each sheet is: nothing is drawn there, but a menu's place and
+a check's touches are reckoned from them.
+
+Inside the surface every sheet is a view in one zooming view. While two
+fingers are down the scroll view zooms that view (the sheets' pictures
+stretched); when the zoom ends, in the same turn of the main thread, the
+sheets are laid out at the zoom it ended at, each on whole pixels of the
+screen, the scroll view's own zoom is one again and its offset is where the
+same place of the same sheet was (`rebase`). The room round and between the
+sheets grows with the zoom, so what is laid out is what was stretched. A
+sheet is one picture of its paper and its ink (`Paint.swift`), made off the
+main thread at a pixel for a pixel of the screen; past a count of pixels by
+the device's memory the picture stays coarser and the part in view is drawn
+over it, a pixel for a pixel (`fine`). A change (a stroke written, erased,
+moved, undone) is drawn at once in a patch over the pictures and the
+pictures made again behind it. A sheet far from the view has no picture.
+
+The ink at rest is not PencilKit's drawing (`native/stroke.m`, for the Mac
+and iOS alike): each stroke is an outline filled by Core Graphics. What
+PencilKit makes of a stroke was measured from its own pictures: a pen and
+the even line are a round nib twice the point's `size.width` less four
+wide, whatever its opacity or force; a highlighter is a flat nib, 1.34 by
+0.47 of the point's size, lying the way its azimuth says, laying three
+quarters of its colour. A pen's and the even line's outlines differ from
+PencilKit's by under a twentieth of a pixel in place and width; a
+highlighter is filled once, flat, where PencilKit's is denser along its
+nib. A fountain pen's and a pencil's strokes are PencilKit's picture of
+that stroke, made with twice the pixels. A highlighter's strokes lie under
+the rest, and the ink is one layer multiplied onto the paper (screened on
+dark paper, in the colours PencilKit turns ink to on a dark canvas). The
+same code draws the pictures a Mac and a phone show, the overview's, a
+clip's, and the ink of `pages_pdf`, which is shapes now, not a picture.
+PencilKit still takes the Pencil: one `PKCanvasView` the size of the view,
+standing still over the scroll view with its recogniser on the scroll view,
+shows the stroke while it is written; when PencilKit hands it over
+(`canvasViewDrawingDidChange`) it is moved into its sheet's points, kept in
+the sheet's `PKStroke`s (what is stored and synced is as it was), drawn by
+us, and the canvas emptied in the same turn. The eraser, the lasso (what it
+holds lifted into a picture of its own while it is carried), shapes, undo
+and redo work on the sheet's strokes. A PDF's pages on an iPad, the typed
+notes' ink areas, the Mac and the phone are as they were: the canvases over
+the web view above, and 86's pinch for a PDF.
+
+`dev_ink_state` says each surface (`surfaces`: where it lies in the
+screen's pixels, the zoom laid out and the stretch over it, the offset,
+each sheet's place, strokes, the pixels of its picture and of the part in
+view, `drawn` its pixels to a pixel of the screen, patches, the bytes the
+pictures hold, the tags, `add page`, the last box) and lists a surface's
+sheets among `sheets` and the surface among `hosts`, so what a check asked
+of a notebook's canvases it asks of these. `dev_ink_picture` on a
+surface's sheet writes three pictures of its upper left into the app's
+Documents: ours, PencilKit's at the screen's pixels, PencilKit's at twice
+them. `scripts/touch-rig`'s `pinch` takes a ninth number, the seconds the
+fingers take on the way.
 
 An iPhone is the same build on another simulator (`npm run tauri ios dev
 "iPhone 18 Pro"`), and everything of a phone is the renderer's: `shapeOf`

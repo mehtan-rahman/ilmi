@@ -9676,6 +9676,107 @@ would keep twice the pixels at every zoom (past 150% the count of pixels
 brings it back to the screen's); momentum after a pinch; the zoom's last
 value before fit is kept for the session, not the device.
 
+### [ ] 87. On an iPad, a notebook's pages are the system's own surface, and its ink is drawn by us
+Asked by the user, 2026-11-17, from a real iPad Air after 86: "Zoom in/out
+pinching/scrolling still feels really buggy"; "the ink still feels a little
+bit blury, not as clear as goodnotes"; "on the ipad, it should feel like
+i'm opening goodnotes"; "color for grid line and page background color
+would also be appreciated"; "whenever i switch to the eraser by double
+tapping and i have the tool bar minimized, i'd like the pen logo to switch
+to an eraser".
+Notes: **Why the structure changed.** 85 and 86 kept a notebook's pages in
+the web view and PencilKit canvases over them, and made the two keep step
+through a scroll and a pinch by ever finer means. Two rounds of that did
+not hold on a real device. 86 weighed a native surface and declined it;
+here it is built, for a notebook on an iPad alone. A PDF's pages, the typed
+notes' ink areas, the Mac and the phone are as they were.
+**The surface** (`Surface.swift`). One `UIScrollView` laid over the web
+view where the page says its pages go (the page says one rectangle, and
+again only when its layout changes: never for a scroll). Its scroll, the
+coasting after a flick, the pinch about the fingers, the give past the
+least and the most are UIKit's; nothing of ours runs while they move. Every
+sheet is a view in the one view that zooms, on the desk's colour. A zoom
+ended, the sheets are laid out at the zoom it ended at in the same turn of
+the main thread (each on whole pixels of the screen, as 86 had them; the
+room round and between them grown with the zoom, so what is laid out is
+what was stretched), the scroll view's own zoom is one again and its offset
+is where the same place of the same sheet was: nothing moves at the
+handover, because there is no handover between two processes any more. All
+but fit is eased to fit. A finger tapped twice fits the pages and goes back
+to the zoom before. 50% to 400%.
+**A sheet is one picture** of its paper and its ink (`Paint.swift`), made
+off the main thread, a pixel for a pixel of the screen, so ink and paper
+cannot part by construction. Past a count of pixels a sheet (six million
+with 8 GB, four with less) the whole sheet's picture stays coarser and the
+part in view is drawn over it, a pixel for a pixel, again as the view moves
+past what it covers. Only sheets within a little over a view of the view
+have a picture; the rest are plain views the colour of their paper. A
+sheet's strokes are asked of the page as it comes near (`want`) and kept
+from then on, so undo holds across pages.
+**The ink at rest is ours** (`native/stroke.m`). PencilKit softens every
+edge over about 1.6 of the pixels it draws with (86). A stroke at rest is
+now an outline filled by Core Graphics: PencilKit's own curve walked half a
+point at a time, a band from each place to the next and a disc at each
+place, one path filled once. What PencilKit makes of a stroke was measured
+from its pictures: a pen and the even line are a round nib twice the
+point's `size.width` less four wide (its opacity and force change nothing);
+a highlighter is a flat nib lying the way the Pencil leans, filled once at
+three quarters of its colour. **Decided:** the even line, the pen and the
+highlighter are drawn this way; a fountain pen and a pencil, whose nib and
+grain are PencilKit's and would not be matched honestly, are PencilKit's
+picture of that stroke made with twice the pixels (86's way). PencilKit
+still takes the Pencil, for its latency and prediction: one canvas the size
+of the view stands still over the pages and shows the stroke while it is
+written; when it hands the stroke over it is moved into its sheet's points,
+kept in the sheet's strokes (`PKStroke`s still: what is stored and synced
+did not change), drawn by us, and the canvas emptied in the same turn, ours
+flushed to the glass first. A highlighter's strokes lie under the rest and
+the ink is one layer multiplied onto the paper, as PencilKit and the
+reader had it. On dark paper the colours are the ones PencilKit turns ink
+to on a dark canvas (`PKInkingTool.convertColor`), screened. The same code
+draws the pictures a Mac and a phone show, the overview's, a clip's, and
+`share as pdf`, whose ink is shapes now.
+**What the page still draws, over the surface.** The bar, the tools' row,
+every menu, a tool's settings, page setup, the overview, a notice, the
+go-to field, and on the pages the lasso's menu and a box's bar. The surface
+lies over the web view, so each is a hole cut in it where it takes no
+touch (`holesOver`: whatever is found at a grid of places over the pages'
+place that is not the place itself; 85's holes, found instead of listed).
+What rides on the pages goes while they move and comes back where the
+surface says they came to rest. A touch on the pages is told to the page,
+so what closes at a press anywhere else closes.
+**Fingers and the Pencil.** The Pencil writes at once; a finger scrolls and
+two zoom; with `draw with finger` one finger writes and two scroll and
+zoom. Two fingers tapped are undo and three redo, natively. A finger held
+(0.32 s, as before) and dragged boxes, the box drawn by the surface and
+told to the page, which draws `passage` and `card` under it; a tap lets go.
+A passage's boxes and its § tag are the surface's to draw, a tag pressed
+the page's to answer with its menu. A stroke begun low on the last sheet
+adds the next, and `add page` under the last is the surface's button.
+**Paper and line colours** (page setup): `paper-color`, `paper-line` in
+FORMAT §3; five papers, five lines and the wheel each; none chosen is the
+paper that follows the theme. **Decided:** a chosen paper is that colour in
+every theme; ink is drawn the dark way (black and white changed over,
+lightening) exactly when the paper is dark (its luminance under 0.4), by
+the paper and not by the theme, on every device, which keeps black ink on a
+dark paper and white on a light one legible; a colour near the paper's own
+is the writer's to avoid. The first round of each row is no colour chosen,
+and the one chosen pressed again clears it.
+**Tucked away, the tools' button is the tool in use** (`InkToggle`): pen,
+highlighter with its colour, eraser, select, at once when the Pencil's
+double tap changes it.
+**Found by the way.** 86's unrun smokes, run on the tree as it stood: the
+Mac's `written` held a rule to a hundredth of a point where it lies on a
+pixel since 86 (the smoke's); `pageink`'s second iPad run kept a lens that
+a sync landing at open had drawn anew (the smoke's); `sharp` on a 13-inch
+found the page's `scrollTop` a whole px where the scroll view rests on a
+half (the smoke's: both are drawn where the scroll view is). The commit
+before had the plugin's build products in it; they are out of the index.
+**Not done:** a PDF's pages as a native surface (they keep 86's pinch; see
+the build log for what it would take); the lasso's rotate; text or pictures
+on a sheet; a fountain pen and a pencil drawn by us; the Pencil's hover; a
+highlighter denser where it runs along its own nib, as PencilKit lays it.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

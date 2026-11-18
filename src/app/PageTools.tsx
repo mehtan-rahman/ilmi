@@ -444,16 +444,16 @@ function Colours({ name, label, none, presets, value, shown, pick }: { name: 'co
         <span className="ps-l">{label}</span>
         <span className="ps-cv" data-ps={`${name}-said`}>{value === null ? none : named ? named.name : value}</span>
       </div>
-      <div className="ps-sws" role="group" aria-label={label}>
-        <button type="button" className="ps-sw" data-ps={`${name}-none`} aria-label={none} title={none} aria-pressed={value === null} onClick={() => pick(null)}>
+      <div className="ps-cols" role="group" aria-label={label}>
+        <button type="button" className="ps-col" data-ps={`${name}-none`} aria-label={none} title={none} aria-pressed={value === null} onClick={() => pick(null)}>
           <span className="ps-dot ps-none" />
         </button>
         {presets.map((c) => (
-          <button key={c.name} type="button" className="ps-sw" data-ps={`${name}-${c.name}`} data-color={c.value} aria-label={value === c.value ? `${c.name}, press again for ${none}` : c.name} title={c.name} aria-pressed={value === c.value} onClick={() => pick(value === c.value ? null : c.value)}>
+          <button key={c.name} type="button" className="ps-col" data-ps={`${name}-${c.name}`} data-color={c.value} aria-label={value === c.value ? `${c.name}, press again for ${none}` : c.name} title={c.name} aria-pressed={value === c.value} onClick={() => pick(value === c.value ? null : c.value)}>
             <span className="ps-dot" style={{ background: c.value }} />
           </button>
         ))}
-        <button type="button" className="ps-sw ps-wheel" data-ps={`${name}-wheel`} data-color={own ?? undefined} aria-label="colours" title="colours" aria-haspopup="dialog" aria-expanded={mobile ? busy : undefined} aria-pressed={mine} onClick={(e) => void wheel(e.currentTarget)}>
+        <button type="button" className="ps-col ps-wheel" data-ps={`${name}-wheel`} data-color={own ?? undefined} aria-label="colours" title="colours" aria-haspopup="dialog" aria-expanded={mobile ? busy : undefined} aria-pressed={mine} onClick={(e) => void wheel(e.currentTarget)}>
           <span className="ps-dot ps-ring"><span className="ps-core" style={own ? { background: own } : undefined} /></span>
         </button>
         {!mobile && <input ref={field} type="color" className="ps-pick" tabIndex={-1} data-ps={`${name}-input`} aria-label={`${label}: colours`} value={own ?? value ?? shown} onChange={(e) => { const c = paperHex(e.currentTarget.value); if (c) { setOwn(c); pick(c); } }} />}

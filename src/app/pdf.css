@@ -609,12 +609,12 @@ html[data-mobile="1"] .book .pdf-view[data-tools="1"] ~ .page-setup, html[data-m
 .page-setup .ps-ch { min-height: 34px; padding-top: 4px; }
 .page-setup .ps-ch .ps-l { flex: 1 1 auto; }
 .page-setup .ps-cv { flex: 0 1 auto; white-space: nowrap; color: var(--fg-2); font-variant-numeric: tabular-nums; }
-.page-setup .ps-sws { display: flex; align-items: center; position: relative; margin: 0 -6px; padding-bottom: 4px; }
-.page-setup .ps-sw { flex: 1 1 0; min-width: 0; max-width: 46px; height: 44px; margin: 0; padding: 0; border: 0; border-radius: 6px; background: none; display: inline-flex; align-items: center; justify-content: center; cursor: default; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-.page-setup .ps-sw:active { background: var(--line-2); }
-.page-setup .ps-sw:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -3px; }
+.page-setup .ps-cols { display: flex; align-items: center; position: relative; margin: 0 -6px; padding-bottom: 4px; }
+.page-setup .ps-col { flex: 1 1 0; min-width: 0; max-width: 46px; height: 44px; margin: 0; padding: 0; border: 0; border-radius: 6px; background: none; display: inline-flex; align-items: center; justify-content: center; cursor: default; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.page-setup .ps-col:active { background: var(--line-2); }
+.page-setup .ps-col:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -3px; }
 .page-setup .ps-dot { display: block; box-sizing: border-box; width: 26px; height: 26px; border-radius: 50%; border: 1px solid color-mix(in oklab, var(--fg) 22%, transparent); transition: transform 120ms ease; }
-.page-setup .ps-sw[aria-pressed="true"] .ps-dot { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--fg-1); transform: scale(0.88); }
+.page-setup .ps-col[aria-pressed="true"] .ps-dot { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--fg-1); transform: scale(0.88); }
 /* none chosen: half a light sheet, half a dark one */
 .page-setup .ps-none { background: linear-gradient(135deg, #ffffff 0 50%, #1c1c1e 50% 100%); }
 .page-setup .ps-ring { display: flex; align-items: center; justify-content: center; border: 0; background: conic-gradient(from 0deg, #e5484d, #f5a524, #f2d43d, #46a758, #3aa7d9, #4f5bd5, #a044c4, #e5484d); }

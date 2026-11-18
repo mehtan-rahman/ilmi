@@ -2341,8 +2341,10 @@ class InkPlugin: Plugin, PenEars {
     DispatchQueue.main.async {
       if let (f, l) = self.leaf(args.sheet), args.points.count >= 1 {
         let w = self.ink.width
+        // (a highlighter's points as a finger's are: the nib upright, two thirds of the tool's width)
+        let marker = self.ink.inkType == .marker
         let pts = args.points.enumerated().map { i, p in
-          PKStrokePoint(location: CGPoint(x: p[0], y: p[1]), timeOffset: Double(i) * 0.01, size: CGSize(width: p.count > 2 ? p[2] : w * 1.3, height: p.count > 2 ? p[2] : w * 1.3), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
+          PKStrokePoint(location: CGPoint(x: p[0], y: p[1]), timeOffset: Double(i) * 0.01, size: CGSize(width: p.count > 2 ? p[2] : marker ? w / 1.5 : w * 1.3, height: p.count > 2 ? p[2] : marker ? w / 1.5 : w * 1.3), opacity: 1, force: 1, azimuth: marker ? .pi / 2 : 0, altitude: .pi / 2)
         }
         self.lastShape = nil
         f.write(l, PKStroke(ink: self.ink.ink, path: PKStrokePath(controlPoints: pts, creationDate: Date()), transform: .identity, mask: nil), rest: args.rest)

@@ -380,7 +380,9 @@ overview of its own pages, to go to one.
 notebook, its paper and what is written on it, and hands it to the
 system's share sheet (on a Mac, saves it where you say). Over a PDF it
 makes a PDF of that PDF's pages with what you wrote on them; the PDF's own
-text stays text. A pageless notebook is cut into its sheets.
+text stays text, and what you wrote is drawn in it as shapes, sharp at
+any size (a fountain pen's and a pencil's strokes as pictures). A pageless
+notebook is cut into its sheets.
 
 On the Mac a notebook shows its pages and what is written on them, and
 cannot be written on; the bar says `written on an ipad`.
@@ -971,17 +973,26 @@ of the tool in use.
 What you choose is kept on that iPad, through a restart, and is the same
 over every book and notebook.
 
-What you write stays as sharp as when you wrote it, at any zoom: on an
-iPad a page's writing is always drawn from its strokes, never from a
-picture of them.
-A page, its paper's lines and its writing lie on the screen's own pixels at
-every zoom, and the writing is drawn finer than the screen and shown at its
-size, so a stroke's edge is as crisp as the screen can make it. The pen
-starts as `fine`, a line of one even width; `pen`, softer and thinner where
-the Pencil is light, `fountain` and `pencil` are in its settings.
+On an iPad a notebook's pages scroll and zoom as the iPad's own things do:
+a finger's flick coasts and comes to rest, two fingers zoom about the place
+between them and give at either end, and the paper and what is written on
+it are one thing under them. A finger tapped twice fits the pages, and
+twice again goes back to the zoom they had. A finger held on a page and
+then dragged draws a box, with `passage` and `card` under it; a tap lets it
+go.
 
-The Mac and a phone show what you wrote as a picture over the page, made
-as fine as their screen at the size the page is drawn. Nothing is written into the PDF: the strokes are kept in the
+What you write stays as sharp as when you wrote it, at any zoom. On a
+notebook's page a stroke at rest is drawn from its own outline at the
+screen's pixels, the pen, the even line (`fine`) and the highlighter alike,
+so its edge is as crisp as the screen can make it however far you zoom; a
+`fountain` or `pencil` stroke keeps the grain the Pencil gave it. The paper
+and its lines lie on the screen's own pixels at every zoom. On a PDF's
+page the writing is drawn finer than the screen and shown at its size. The
+pen starts as `fine`, a line of one even width; `pen`, thinner where the
+Pencil is light, `fountain` and `pencil` are in its settings.
+
+The Mac and a phone show what you wrote as a picture over the page, drawn
+the same way and as fine as their screen at the size the page is drawn. Nothing is written into the PDF: the strokes are kept in the
 collection with the book they are on, whichever chapter shows that page.
 An export, the mirror and the dated exports write them as
 `.ilmi/ink/<the PDF's fingerprint>/<page>.pkdrawing`, and an import takes them

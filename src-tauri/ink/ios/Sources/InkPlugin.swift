@@ -772,16 +772,18 @@ class InkPlugin: Plugin, PenEars {
 
   override func load(webview: WKWebView) {
     web = webview
-    // the page fills the window: it is given its size when it is made, and a window that settles a little
-    // larger after that left a band of nothing along the foot
+    // the page fills the window. The web view does, but it lays the page out short by the status bar and the home
+    // bar (its scroll view keeps clear of them), and what is left along the foot is nothing, black; the page keeps
+    // clear of both by itself (`env(safe-area-inset-*)`), so the scroll view is told to keep clear of neither
+    webview.scrollView.contentInsetAdjustmentBehavior = .never
     let fill = { [weak webview] in
       guard let w = webview, let over = w.superview else { return }
-      if let window = over.window, over === window.rootViewController?.view, over.frame != window.bounds { over.frame = window.bounds }
       if w.frame != over.bounds { w.frame = over.bounds }
       w.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      if w.scrollView.contentInsetAdjustmentBehavior != .never { w.scrollView.contentInsetAdjustmentBehavior = .never }
+      w.setNeedsLayout()
     }
     DispatchQueue.main.async(execute: fill)
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: fill)
     NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in fill() }
     NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in self?.wentAway() }
     history.levelsOfUndo = 200

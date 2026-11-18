@@ -18,6 +18,7 @@
 // which asking brought which element, and which are not asked after all.
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { learntToday, markLearnt } from './learnt.js';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
 import type { CardSchedule, Doc } from '../format/index.js';
@@ -386,7 +387,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
         : (
           <div className="grades" data-revealed={revealed ? '1' : '0'}>
             {GRADES.map((g) => (
-              <button key={g} type="button" data-given={given?.g === g ? '1' : '0'} onClick={() => grade(g)}>
+              <button key={g} type="button" data-grade={g} data-given={given?.g === g ? '1' : '0'} onClick={() => grade(g)}>
                 <span className="label">{GRADE_WORD[g]}<kbd>{g}</kbd></span>
                 <span className="gap">{gaps[g]}</span>
               </button>
@@ -689,6 +690,8 @@ export function Session({ active, onOpen }: Props) {
     if (!learnt.has(k)) {
       // where it was learnt: ‹ back there shows it to learn again, its test still the one at the end
       learnt.set(k, key);
+      // kept past this session: left before its end and come back to, the card is tested, not shown to learn again
+      markLearnt(k);
       useApp.setState((s) => (s.session && s.session.seq === seq ? { session: { ...s.session, items: [...s.session.items, shown] } } : {}));
     }
     advance();
@@ -836,7 +839,7 @@ export function Session({ active, onOpen }: Props) {
   // a card learnt and then tested is in the walk twice: one element
   const distinct = new Set(items.map((i) => (i.kind === 'card' ? learnKey(i) : `${i.kind}#${i.path}#${i.kind === 'section' ? `${i.block}#${i.passage ? `${i.passage.hash}#${i.passage.boxes}` : i.heading}` : ''}`))).size;
   // the tests still to come of cards that will be learnt first: counted from the start, so the total does not grow underfoot
-  const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && neverTested(c.sched) && !learnt.has(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
+  const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && neverTested(c.sched) && !learnt.has(learnKey(c)) && !learntToday(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
   // a card that comes back is one more when its grade brings it: that cannot be told from the start
   const shownTotal = asked + ahead;
 
@@ -869,7 +872,7 @@ export function Session({ active, onOpen }: Props) {
           <span className="ms-arrow">↗</span>
         </button>
       </div>
-      <CardElement key={key} item={el} active={active} given={given.get(key)} locked={given.has(`${seq}:${returns.get(key)}`)} onGrade={(g, line) => onGrade(el, g, line)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key} onLearnt={() => onLearnt(el)} onSuspend={onSuspend} />
+      <CardElement key={key} item={el} active={active} given={given.get(key)} locked={given.has(`${seq}:${returns.get(key)}`)} onGrade={(g, line) => onGrade(el, g, line)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key && (learnt.has(learnKey(el)) || !learntToday(learnKey(el)))} onLearnt={() => onLearnt(el)} onSuspend={onSuspend} />
     </div>
   );
 }

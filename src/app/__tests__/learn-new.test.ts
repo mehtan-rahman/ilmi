@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { forgetLearnt } from '../learnt.js';
 import { docItems, type CardItem } from '../../schedule/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
@@ -52,7 +53,7 @@ async function mount() {
   root = createRoot(host);
   await act(async () => { root.render(createElement(Session, { active: true, onOpen: () => {} })); });
 }
-afterEach(() => { act(() => root.unmount()); host.remove(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); forgetLearnt(); });
 const press = (key: string) => act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); });
 /** Until the file at `path` is no longer `was`: what it is then. */
 const changed = async (path: string, was: string) => {
@@ -140,5 +141,23 @@ describe('a card reviewed before', () => {
     await mount();
     expect(card().dataset.revealed).toBe('0');
     expect(learnBar()).toBeNull();
+  });
+
+  it('learnt, the session left before its end and another begun: it is tested, not shown to learn a second time', async () => {
+    const fresh = items.filter((i) => neverTested(i.sched) && i.dir !== 'r');
+    const c = fresh[fresh.length - 1]!;
+    useApp.setState({ learnNew: true, session: { seq: 40, items: [c] } });
+    await mount();
+    expect(learnBar()).not.toBeNull();
+    await press(' ');
+    // left here: nothing of it is written, and the next session's walk holds it again as it was
+    act(() => root.unmount());
+    host.remove();
+    useApp.setState({ session: { seq: 41, items: [c] } });
+    await mount();
+    expect(learnBar()).toBeNull();
+    expect(host.querySelector('.cm-learn')).toBeNull();
+    expect(card().dataset.revealed).toBe('0');
+    expect(count()).toBe('1 / 1');
   });
 });

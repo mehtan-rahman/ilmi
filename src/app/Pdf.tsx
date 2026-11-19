@@ -527,6 +527,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   /** Its sheets' size, as its page setup has it (85). */
   const { w: sheetW, h: sheetH } = sheetSize(written);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone' | 'unreadable'>(written ? 'ok' : 'loading');
+  /** Whether the collection has said what it holds: a document it has not spoken of yet is not one that has gone. */
+  const docsKnown = useApp((s) => s.docsKnown);
   /** Why the file did not open, for the page to say; and how often it has been tried again. */
   const [fail, setFail] = useState<PdfFail | null>(null);
   const [tries, setTries] = useState(0);
@@ -3121,7 +3123,25 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       </div>
     );
   }
-  if (status === 'gone' || status === 'unreadable' || (status === 'ok' && !info)) {
+  if (!info && !docsKnown) {
+    // drawn before the collection has said what it holds (a tab kept from last time): it is opening, not gone
+    return <div className="reader-wrap"><div className="reader"><div className="empty" data-why="opening">opening</div></div></div>;
+  }
+  if (!info && isPdfPath(id)) {
+    // a PDF the collection does not hold: gone, or still on its way from the device it was added on. It opens by
+    // itself when it lands (the collection then knows it, and this is drawn again as its pages)
+    return (
+      <div className="reader-wrap">
+        <div className="reader">
+          <div className="empty pdf-fail" data-why="absent" role="status">
+            <span className="pf-said">this pdf is not in the collection</span>
+            <span className="pf-detail">if it was added on another device it may still be arriving · it opens by itself when it lands</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (status === 'gone' || status === 'unreadable' || !info) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
   }
 

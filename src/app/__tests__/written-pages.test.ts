@@ -1469,6 +1469,27 @@ describe('a written notebook in the lens', () => {
     await vault.update(TYPED, (d) => { d.blocks.splice(1); });
   });
 
+  it('a pdf the collection has not spoken of yet is opening; one it does not hold says it may still be arriving, and opens when it lands', async () => {
+    const AWAY = 'library/still-coming.pdf';
+    // a tab kept from last time, drawn before the collection has said what it holds
+    useApp.setState({ docs: docsWith([1, 2]), mobile: false, phone: false, panes: openTab(emptyPanes(), AWAY), notice: null, bookZooms: {}, docsKnown: false });
+    host = document.body.appendChild(document.createElement('div'));
+    root = createRoot(host);
+    await act(async () => { root!.render(createElement(Pdf, { id: AWAY })); });
+    await wait(40);
+    expect(q('.empty')?.textContent).toBe('opening');
+    expect(host.textContent).not.toContain('no longer in the collection');
+    // it has spoken, and has no such file
+    await act(async () => { useApp.setState({ docsKnown: true }); });
+    expect([q<HTMLElement>('.pdf-fail')?.dataset.why, q('.pf-said')?.textContent]).toEqual(['absent', 'this pdf is not in the collection']);
+    expect(q('.pf-detail')?.textContent).toContain('still be arriving');
+    // the file lands: the collection knows it, and it is its pages with nothing pressed
+    await act(async () => { useApp.setState((st) => ({ docs: { ...st.docs, [AWAY]: { type: 'source', frozen: false, cards: 0, due: 0, pdf: AWAY } } })); });
+    await wait(60);
+    expect(q('.pdf-fail')).toBeNull();
+    expect(qa('.pdf-page').length).toBe(2);
+  });
+
   it('a pdf marked as opening when the page was taken down is not opened by itself again; `try again` opens it', async () => {
     // (the first the page asks the app in this file: it went down, with this file half open)
     pageFell = true;

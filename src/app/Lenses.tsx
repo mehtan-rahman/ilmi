@@ -1,6 +1,7 @@
 // Lenses: what a tab renders for a folder or a document, or the intake.
 // Folders and decks are lists; notes, sources, extracts, and drafts open in the reader.
 
+import { isPdfPath } from '../vault/index.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { childrenAt, ordered, type TreeNode } from '../vault/index.js';
 import { geometry, type FlatRow } from './dnd.js';
@@ -63,7 +64,9 @@ function PageLens({ id, active, onOpen }: LensProps) {
   if (kind === 'deck') return <DeckLens id={id} active={active} />;
   // a source whose pages exist opens as pages; a PDF on its own is its pages (milestone 70), and a written notebook
   // its sheets (milestone 82: its `pdf` is its own path)
-  if (docs[id]?.pdf) return <Pdf key={id} id={id} active={active} />;
+  // (a PDF on its own is its pages whatever is known of it yet: a tab kept from last time is drawn before the
+  // collection has said what it holds, and the reader would say of a PDF that it is no longer in the collection)
+  if (docs[id]?.pdf || isPdfPath(id)) return <Pdf key={id} id={id} active={active} />;
   return <Reader key={id} id={id} active={active} />;
 }
 

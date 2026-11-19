@@ -366,6 +366,8 @@ export interface AppState {
   bookFocus: BookFocus | null;
   /** Where the intake places its next source: the folder it was opened from. */
   intakeDir: string;
+  /** The open collection has said what it holds (`docs` is published): until then a document with no info is one not known yet, not one that has gone. Not saved. */
+  docsKnown: boolean;
   /** Every element over the vault, sorted, as of `queueAt`; the saved queries filter it. */
   queue: QueueItem[];
   queueAt: Date;
@@ -529,6 +531,8 @@ export const useApp = create<AppState>((set, get) => ({
   mirror: '',
   storage: { on: false, kind: 'folder', folder: '', endpoint: '', bucket: '', key: '', secret: '', address: '', user: '', password: '', appKey: '', clientId: '', clientSecret: '', place: '', account: '', dev: '', keep: null },
   away: [],
+  // (true until a collection is being opened: with none open there is nothing still to be said)
+  docsKnown: true,
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); showTheme(theme); persist(get()); },

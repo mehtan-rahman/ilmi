@@ -56,6 +56,16 @@ The user wants scheduling algorithms other than FSRS to live in plugins, a neura
 **Not seen.** No window was opened: the `scheduler` row in tweaks and the buttons in a session were not looked at, and the cache's commands were not called through the app (their Rust is tested, the renderer's side is mocked). Nothing was run on a device or a simulator.
 
 ---
+## 2026-11-19, after the cause was known — a document not known yet is opening, not gone; a note says when its pdf has not landed; the opening mark asks the app
+
+The iPad's white screen was React's own error, not memory: a hook under the reader's early return (`status === 'gone' || (status === 'ok' && !info)`), fixed on main. That return is taken by any document drawn before the collection has said what it holds, which a tab kept from last time is at every start; a PDF on its own had no `docs[id].pdf` yet and so was the reader's to draw, where it read `no longer in the collection`.
+
+- **A PDF path is its pages whatever is known of it** (`PageLens`), and both lenses say `opening` for a document the collection has not spoken of yet (`docsKnown`, false from a collection's opening until its documents are published). A PDF the collection then does not hold says `this pdf is not in the collection`, that it may still be arriving, and is its pages by itself when it lands.
+- **A note that names a PDF which has not landed** is its own text meanwhile, with `its pdf is not here yet` among its words, and its pages by itself when the file comes. Watched through a pull on the Air (`pdfink`, `"part": "bigpull"`, `window:` lines, `h2-bigpull`, `h3-bigpull`): the note known without its pdf at 3.2 s, drawn by the reader; the pdf known at 4.8 s, the tab `opening` as pages, drawn at 5.3 s, nothing pressed. With the file crossing the page (before the entry below) that window was the whole of the file's taking in.
+- **The opening mark** (`ilmi.pdf.opening`) holds a file back only when the app says the page's process was taken from under it in this run (`page_fell`, set by the hook that loads the page again): an app closed while a file was opening left the same mark, and a check that ended that way held the next one's PDF back (`v1-written`). It is also taken off when the page is hidden.
+- **Hooks under a return.** eslint's `react-hooks/rules-of-hooks` run once over `src/app` and `src/plugins` from a scratch folder (no dependency added): one hit, the reader's, before main's fix; none after. `book-view.test.ts` draws the reader for a document that goes and one that never was, and fails on the reader as it was (`Rendered fewer hooks than expected`).
+
+What the entry below says of memory is what was measured on a simulator, and stays as hardening; it was not the fault.
 
 ## 2026-11-19 — a large PDF on a device: why it did not open, said; its bytes kept out of the page; the page loaded again when its process is taken
 

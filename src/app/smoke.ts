@@ -12002,7 +12002,7 @@ export async function smokePhone(): Promise<void> {
     for (; n < 400; n++) {
       // the last element's buttons are gone and the next one's drawn before any is read
       await sleep(350);
-      await poll(() => q('.session-end') || q('.reveal-all') || q('.grades') || q('.doc-session .sb-actions'), 'the next element is up', 30000);
+      await poll(() => q('.session-end') || q('.reveal-all') || q('.grades') || q('.pane[data-active="1"] .sb-actions'), 'the next element is up', 30000);
       if (q('.session-end')) break;
       const was = counter();
       const el = useApp.getState().sessionEl?.item;
@@ -12067,7 +12067,7 @@ export async function smokePhone(): Promise<void> {
         feel(`grade ${g + 1}`, GRADE_HAPTIC[(g + 1) as 1 | 2 | 3 | 4], hapticsAsked());
       } else {
         // between two elements (the last card's grades just gone, the next not drawn yet): looked at again
-        const bar2 = q<HTMLElement>('.doc-session .sb-actions');
+        const bar2 = q<HTMLElement>('.pane[data-active="1"] .sb-actions');
         if (!bar2 || !q('[data-act="postpone"]', bar2)) { await sleep(150); continue; }
         topics.push(el!.path);
         await tap(q('[data-act="postpone"]', bar2)!, () => q('.session-end') || counter() !== was, `later: ${el!.path}`);
@@ -12102,8 +12102,8 @@ export async function smokePhone(): Promise<void> {
     const tRow = await poll(() => q<HTMLElement>('.qlist li[data-el="read"] .topic-acts, .qlist li[data-el="section"] .topic-acts')?.closest('li'), 'a topic on the day');
     tRow.scrollIntoView({ block: 'center' });
     await sleep(500);
-    await tap(q('.body', tRow)!, () => at() === SESSION && q('.doc-session .sb-actions'), 'a tap on its row opens it in the session');
-    must(tall('.doc-session .sb-actions button', 50) && !qa('.sb-actions kbd').some((k) => (k as HTMLElement).offsetParent !== null), 'its page, and its three as buttons, no keys named');
+    await tap(q('.body', tRow)!, () => at() === SESSION && q('.pane[data-active="1"] .sb-actions'), 'a tap on its row opens it in the session');
+    must(tall('.pane[data-active="1"] .sb-actions button', 50) && !qa('.sb-actions kbd').some((k) => (k as HTMLElement).offsetParent !== null), 'its page, and its three as buttons, no keys named');
     must(!q('.phone-bar') && q('.session-bar')!.getBoundingClientRect().bottom >= window.innerHeight - 1, `across the foot of the whole screen (the bar ${q('.phone-bar') ? 'still there' : 'gone'}; the session's ends at ${q('.session-bar')!.getBoundingClientRect().bottom.toFixed(1)} of ${window.innerHeight}, its pane at ${q('.session-bar')!.closest('.pane')!.getBoundingClientRect().bottom.toFixed(1)})`);
     await sleep(1500);
     await shot('phone-session-topic');
@@ -17114,7 +17114,7 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
 
     // ── a PDF's page under the same row ──
     openNode(PAGEINK_BOOK);
-    const pb = await poll(() => { const x = book(); return x?.dataset.path === PAGEINK_BOOK && q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
+    const pb = await poll(() => { const x = book(); return x?.dataset.path === PAGEINK_BOOK && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
     const pbar = await poll(() => q<HTMLElement>('.meta > .inkbar', pb), 'the same row over a PDF\'s pages', 8000);
     rowIs(pbar, 'over a PDF');
     must(q('[data-ink-tool="pen"]', pbar)?.getAttribute('aria-pressed') === 'true' && q<HTMLElement>('[data-ink-swatch="wheel"]', pbar)?.dataset.color === WHEEL && !!q('.meta [data-tool="search"]', pb), 'holding what the notebook\'s held, over the PDF\'s own bar');
@@ -20842,6 +20842,14 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       const bytes = new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/big.pdf` }));
       await importPdfNode('library', { title: 'big', bytes, text: '' });
       await poll(() => useApp.getState().docs[B], 'the large PDF is in the first collection', 120000);
+      // a note on the PDF, named so that a pull takes it in before the PDF it names (`a…` before `big.pdf`)
+      const N = 'library/a study of big.md';
+      {
+        const v = currentVault()!;
+        await v.fs.writeText(v.abs(N), ['---', 'type: source', 'pdf: big.pdf', '---', '', 'Notes on the big book.', ''].join('\n'));
+        await v.changed([N]);
+        await poll(() => useApp.getState().docs[N]?.pdf === B, 'and a note that names it, which opens as its pages here', 20000);
+      }
       await sync.syncNow();
       await poll(() => useApp.getState().sync.toPush === 0 && !useApp.getState().sync.busy, 'and pushed', 300000);
       log(`bigpull: ${bytes.length} bytes brought in and pushed in ${Date.now() - t} ms`);
@@ -20852,8 +20860,24 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       await poll(() => currentVault()?.root === rootB && useApp.getState().sync.on, 'the second collection is open, with its remote', 60000);
       phase('the pull');
       t = Date.now();
+      // while it pulls: what the collection knows of the note and of the PDF, and what the note's tab draws, each
+      // time either changes (`window:` lines): is the note ever there without its pages, and does it come right
+      const seenStates: string[] = [];
+      let opened = false;
+      const watchPull = setInterval(() => {
+        const d = useApp.getState().docs;
+        if (d[N] && !opened) { opened = true; openNode(N); }
+        const pane = q<HTMLElement>('.pane[data-active="1"]');
+        const lens = !opened ? 'not open' : pane && q('.book', pane) ? (q('.pdf-fail', pane) ? `pages: "${q('.pf-said', pane)?.textContent}"` : q('.pdf-page', pane) ? 'pages' : `pages: "${q('.empty', pane)?.textContent ?? 'opening'}"`) : pane && q('.reader-wrap', pane) ? (q('.empty', pane) ? `reader: "${q('.empty', pane)?.textContent}"` : `reader: the note's text${q('.pdf-coming', pane) ? `, saying "${q('.pdf-coming', pane)?.textContent}"` : ''}`) : 'nothing';
+        const now = `note ${d[N] ? (d[N]!.pdf ? 'with its pdf' : 'without its pdf') : 'unknown'}, pdf ${d[B] ? 'known' : 'unknown'}, drawn as ${lens}`;
+        if (seenStates[seenStates.length - 1]?.split(' :: ')[1] !== now) seenStates.push(`${Date.now() - t} ms :: ${now}`);
+      }, 40);
       await sync.syncNow();
       const arrived = await poll(() => useApp.getState().docs[B] ?? (errs.length ? true : null), 'the pull brings the PDF, or says why not', 600000);
+      await poll(() => useApp.getState().docs[N]?.pdf === B && !!q('.pane[data-active="1"] .book .pdf-page'), 'and the note that names it is drawn as its pages, with nothing pressed', 120000).catch((e: unknown) => { log(`bigpull: ${e instanceof Error ? e.message : String(e)}`); });
+      await sleep(500);
+      clearInterval(watchPull);
+      for (const line of seenStates) log(`window: ${line}`);
       const st = await currentVault()!.fs.stat(currentVault()!.abs(B));
       log(`bigpull: the pull took ${Date.now() - t} ms; the PDF ${arrived === true ? 'did not come' : 'is in the second collection'}, ${st?.size ?? 'no'} bytes there; errors: ${errs.join(' | ') || 'none'}`);
       errs.length = 0;

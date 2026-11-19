@@ -179,3 +179,55 @@ describe('the chip\'s words', () => {
     expect(chipWhen({ made: '2026-10-20', boxes: '41:0.000:0.000:1.000:1.000' }, now)).toBe('dismissed');
   });
 });
+
+describe('a reader whose document goes, or was never known', () => {
+  // (React's own word for a component that ran fewer or more hooks than the time before is a thrown error: a hook
+  // put under the reader's early return for a document that is gone took the whole page down on a device)
+  const hookFaults = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map((c: unknown[]) => String(c[0])).filter((m: string) => /hooks|Hooks/.test(m));
+
+  it('drawn, then its info gone, then back: the same hooks each time, and it says so meanwhile', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await mount(createElement(Reader, { id: CH3, notes: true }));
+      expect(host.querySelector('.draft-doc')).not.toBeNull();
+      const was = useApp.getState().docs;
+      // the collection no longer knows it (a sync took it, or its info is not published yet)
+      await act(async () => { const { [CH3]: _gone, ...rest } = was; useApp.setState({ docs: rest }); });
+      await settle();
+      expect(host.querySelector('.empty')?.textContent).toBe('no longer in the collection');
+      // and knows it again
+      await act(async () => { useApp.setState({ docs: was }); });
+      await settle();
+      expect(host.querySelector('.reader-wrap')).not.toBeNull();
+      expect(hookFaults(spy)).toEqual([]);
+      unmount();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a document that was never there: said, with nothing thrown as it is found to be gone', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await mount(createElement(Reader, { id: 'library/never-there.md' }));
+      await settle();
+      expect(host.querySelector('.empty')?.textContent).toBe('no longer in the collection');
+      expect(hookFaults(spy)).toEqual([]);
+      unmount();
+      // and a file that is there with no info of it, opened before the collection has said what it holds (a tab
+      // kept from last time): it is opening, not gone, and is itself once the collection has spoken
+      const was = useApp.getState().docs;
+      await act(async () => { useApp.setState({ docs: {}, docsKnown: false }); });
+      await mount(createElement(Reader, { id: CH3 }));
+      await settle();
+      expect(host.querySelector('.empty')?.textContent).toBe('opening');
+      await act(async () => { useApp.setState({ docs: was, docsKnown: true }); });
+      await settle();
+      expect(host.querySelector('.empty')).toBeNull();
+      expect(hookFaults(spy)).toEqual([]);
+      unmount();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

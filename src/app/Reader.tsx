@@ -1485,6 +1485,10 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const info = docs[id];
   const reveal = useApp((s) => s.reveal);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone'>('loading');
+  /** Whether the collection has said what it holds: a document it has not spoken of yet is not one that has gone. */
+  const docsKnown = useApp((s) => s.docsKnown);
+  /** The PDF the document's own `pdf` field names, as last read: while the collection has no such file the document is drawn here, and says so. */
+  const [namedPdf, setNamedPdf] = useState<string | null>(null);
   const [rule, setRule] = useState<Rule | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
   /** The note holds ink areas (an iPad): the writing tools stand under its header. */
@@ -1714,6 +1718,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     const build = (loaded: Loaded, how: Heard = 'theirs') => {
       writer.saw(loaded);
       const m = meta(loaded.doc);
+      setNamedPdf(m.pdf ?? null);
       const pos = m.type === 'note' || notes ? null : m.read?.pos ?? null;
       // the folds the page had when it was last seen (view state, never the file's)
       const folds = useApp.getState().folds[id] ?? [];
@@ -2429,7 +2434,9 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   });
   // (every hook is above this line: a document that goes, or has not come, is drawn by the same component)
   if (status === 'gone' || (status === 'ok' && !info)) {
-    return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
+    // (a document read before the collection has said what it holds is still opening; one the collection does not
+    // have may be one still on its way from another device, and it opens by itself when it lands)
+    return <div className="reader-wrap"><div className="reader"><div className="empty" data-why={status === 'ok' && !docsKnown ? 'opening' : 'gone'}>{status === 'ok' && !docsKnown ? 'opening' : 'no longer in the collection'}</div></div></div>;
   }
 
   // the marker is a source's or an extract's; a revisited note is read from the top or a heading; a book's notes have none (its pages keep the read point)
@@ -2534,6 +2541,8 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
           <StudyButton path={id} />
           <ExamTag path={id} />
           {onPages && <button type="button" className="frozen-tag text-toggle" data-on="1" title="read the pages" onClick={onPages}>text</button>}
+          {/* it names a PDF the collection does not hold (yet): on its way from the device it was added on, most often. It is its pages by itself once the file lands */}
+          {namedPdf && !notes && !info?.pdf && info?.of === undefined && !info?.written && <span className="frozen-tag pdf-coming" role="status" title="it opens as its pages when the file lands">its pdf is not here yet</span>}
           {info && canExtract && !enrolled && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>{isNote ? 'revisit' : 'start reading'} <span className="kbd">r</span></button>
           )}

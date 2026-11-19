@@ -587,7 +587,7 @@ async function publishDocs(vault: Vault): Promise<void> {
     if (doc) docs[path] = infoOf(path, doc, derivedOf(path, now).items, now, await pagesFor(vault, path, nodes.get(path)));
   }
   if (current !== vault) return;
-  useApp.setState(publishQueue(docs, now));
+  useApp.setState({ ...publishQueue(docs, now), docsKnown: true });
   dayStarted();
 }
 
@@ -838,6 +838,7 @@ async function openVaultNow(path: string): Promise<Vault> {
   derived.clear();
   forgetInherited();
   indexed = null;
+  useApp.setState({ docsKnown: false });
   lastDay = typeof state.lastDay === 'string' ? state.lastDay : null;
   ({ reviews, readings, lines: logLines } = await vault.loadLog().catch((e: unknown) => { console.error('reviews', e); return { reviews: [], readings: [], lines: 0 }; }));
   loggedHere = [];
@@ -928,6 +929,7 @@ export function closeVault(): void {
   derived.clear();
   forgetInherited();
   indexed = null;
+  useApp.setState({ docsKnown: false });
   lastDay = null;
   reviews = [];
   readings = [];

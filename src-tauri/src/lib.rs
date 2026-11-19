@@ -83,12 +83,24 @@ fn allow_hidden(app: tauri::AppHandle, path: String) -> Result<(), String> {
     scope.allow_file(p).map_err(|e| e.to_string())
 }
 
+/// A picked or dropped file's place as the system gave it: a path, or (an
+/// iPad's and an iPhone's picker) a `file://` address with its name
+/// percent-encoded, which no path is ("No such file or directory").
+fn local_path(given: &str) -> std::path::PathBuf {
+    if given.starts_with("file://") {
+        if let Some(p) = tauri::Url::parse(given).ok().and_then(|u| u.to_file_path().ok()) {
+            return p;
+        }
+    }
+    std::path::PathBuf::from(given)
+}
+
 /// A file dropped on the window, read as text. The fs scope covers only the
 /// vault; a drop is a gesture on one file, so that file is read here by
 /// path and nothing is added to the scope.
 #[tauri::command]
 fn read_dropped(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    std::fs::read_to_string(local_path(&path)).map_err(|e| e.to_string())
 }
 
 /// The same for a PDF: its bytes, raw over the IPC, for pdf.js on the
@@ -96,7 +108,7 @@ fn read_dropped(path: String) -> Result<String, String> {
 /// document it becomes.
 #[tauri::command]
 fn read_dropped_bytes(path: String) -> Result<tauri::ipc::Response, String> {
-    std::fs::read(&path)
+    std::fs::read(local_path(&path))
         .map(tauri::ipc::Response::new)
         .map_err(|e| e.to_string())
 }
@@ -105,7 +117,7 @@ fn read_dropped_bytes(path: String) -> Result<tauri::ipc::Response, String> {
 /// renderer maps it to deck files. Read by path, as a drop, outside the scope.
 #[tauri::command]
 fn read_anki_package(path: String) -> Result<anki::AnkiPackage, String> {
-    anki::read_package(std::path::Path::new(&path))
+    anki::read_package(&local_path(&path))
 }
 
 /// A dropped or picked book in EPUB, read as plain data (`epub.rs`): its
@@ -113,7 +125,7 @@ fn read_anki_package(path: String) -> Result<anki::AnkiPackage, String> {
 /// a folder of sources. Read by path, as a drop, outside the scope.
 #[tauri::command]
 fn read_epub(path: String) -> Result<epub::Epub, String> {
-    epub::read_book(std::path::Path::new(&path))
+    epub::read_book(&local_path(&path))
 }
 
 /// A dropped or picked plugin package (`plugin.rs`): the files of a `.zip`
@@ -121,7 +133,7 @@ fn read_epub(path: String) -> Result<epub::Epub, String> {
 /// Read by path, as a drop, outside the scope.
 #[tauri::command]
 fn read_plugin_zip(path: String) -> Result<plugin::PluginZip, String> {
-    plugin::read_zip(std::path::Path::new(&path))
+    plugin::read_zip(&local_path(&path))
 }
 
 /// Where the app runs, for the renderer: `mobile` (iOS: the welcome is

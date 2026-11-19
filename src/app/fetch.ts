@@ -32,9 +32,16 @@ export interface FetchedPdf extends Fetched {
   chapters?: { title: string; first: number; last: number; text: string }[];
 }
 
+/** A picked or dropped file's name: of a path, or of the `file://` address an iPad's picker gives, its name percent-encoded. */
+export function fileName(path: string): string {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  if (!path.startsWith('file://')) return name;
+  try { return decodeURIComponent(name); } catch { return name; }
+}
+
 /** A dropped or picked PDF: its bytes, and its text and page count through pdf.js; the title from its metadata, else its name. */
 export async function readDroppedPdf(path: string): Promise<FetchedPdf> {
-  const name = path.slice(path.lastIndexOf('/') + 1);
+  const name = fileName(path);
   if (!PDF_EXT.test(name)) throw new Error('not a pdf');
   return pdfOf(new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path })), name);
 }
@@ -87,7 +94,7 @@ export const fetchImage: ImageGet = async (url) => {
 
 /** A dropped file: `.txt` / `.md` as they are, `.html` as its readable text. Others are refused. */
 export async function readDropped(path: string): Promise<Fetched> {
-  const name = path.slice(path.lastIndexOf('/') + 1);
+  const name = fileName(path);
   if (!TEXT_EXT.test(name) && !HTML_EXT.test(name)) throw new Error('not a text file');
   const body = await invoke<string>('read_dropped', { path });
   if (HTML_EXT.test(name)) {

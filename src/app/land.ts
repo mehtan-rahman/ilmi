@@ -24,7 +24,7 @@ import { open as pickFile } from '@tauri-apps/plugin-dialog';
 import { HTML_EXT, TEXT_EXT, deriveTitle, detect, isUrl, mapBook, mapPackage, stats, type Chapter, type ClipImage, type Mapped, type MappedBook, type MappedDeck } from '../import/index.js';
 import { NEW_NAMES, dirOf, isDoc, within, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type TreeNode } from '../vault/index.js';
 import { importClipNode } from './clipping.js';
-import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, readDroppedPdf, readEpub, type Fetched, type FetchedPdf } from './fetch.js';
+import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, fileName, readAnkiPackage, readDropped, readDroppedPdf, readEpub, type Fetched, type FetchedPdf } from './fetch.js';
 import { folderPaths } from './names.js';
 import { pageDropAt } from './pageImages.js';
 import { activeTab } from './panes.js';
@@ -37,7 +37,7 @@ export type FileKind = 'pdf' | 'epub' | 'apkg' | 'text' | 'html' | 'other';
 
 /** What a file is, by its name. */
 export function fileKind(path: string): FileKind {
-  const name = path.slice(path.lastIndexOf('/') + 1);
+  const name = fileName(path);
   if (PDF_EXT.test(name)) return 'pdf';
   if (EPUB_EXT.test(name)) return 'epub';
   if (APKG_EXT.test(name)) return 'apkg';
@@ -287,7 +287,7 @@ export async function landFiles(paths: string[], dir: string, fx: LandFx = realF
   const out: Landed[] = [];
   const asks: string[] = [];
   for (const p of paths) {
-    const name = p.slice(p.lastIndexOf('/') + 1);
+    const name = fileName(p);
     try {
       const r = await landFile(p, dir, fx);
       if (r.kind === 'ask') asks.push(r.path);

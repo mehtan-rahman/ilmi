@@ -896,6 +896,19 @@ class InkPlugin: Plugin, PenEars {
     if bare == nil, let made = objc_allocateClassPair(was, bareName, 0) {
       let none: @convention(block) (AnyObject) -> UIView? = { _ in nil }
       class_addMethod(made, #selector(getter: UIResponder.inputAccessoryView), imp_implementationWithBlock(none), "@@:")
+      // an iPad's keyboard carries the same two (previous field, next field) at the right of its own top row: that
+      // row is left with what the system puts there (undo, redo, paste) and nothing of a form's
+      let items = #selector(getter: UIResponder.inputAssistantItem)
+      if let theirs = class_getInstanceMethod(was, items) {
+        typealias Items = @convention(c) (AnyObject, Selector) -> UITextInputAssistantItem
+        let ask = unsafeBitCast(method_getImplementation(theirs), to: Items.self)
+        let plain: @convention(block) (AnyObject) -> UITextInputAssistantItem = { me in
+          let item = ask(me, items)
+          item.trailingBarButtonGroups = []
+          return item
+        }
+        class_addMethod(made, items, imp_implementationWithBlock(plain), method_getTypeEncoding(theirs))
+      }
       objc_registerClassPair(made)
       bare = made
     }

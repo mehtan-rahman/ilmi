@@ -327,6 +327,8 @@ html[data-shape="phone"] .tree .row .away { font-size: var(--t-xs); }
   border-top: 1px solid var(--line-1);
   background: var(--bg);
 }
+/* with the keyboard up (a row being renamed) the foot is not there: it stood on the keyboard, over the rows */
+html[data-keyboard] .side-foot { display: none; }
 .side-find {
   appearance: none;
   width: 100%;

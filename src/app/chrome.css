@@ -645,6 +645,26 @@ html[data-mobile="1"] .canvas[data-solo="1"] .pane[data-active="0"] { display: n
 html[data-mobile="1"]:not([data-shape="phone"]) .tabbar { height: 36px; }
 html[data-mobile="1"]:not([data-shape="phone"]) .canvas:has(.pane + .pane) .pane[data-active="1"] .tabbar { box-shadow: inset 0 2px 0 var(--accent); }
 [data-theme="eink"][data-mobile="1"] .canvas:has(.pane + .pane) .pane[data-active="1"] .tabbar { box-shadow: inset 0 2px 0 var(--fg); }
+/* what comes up at a selection or the caret, under a finger (the audit after the cloze row): the cue's letters and
+   its `card` and `extract` a finger's size, the cue no wider than the glass (it scrolls along if it must); the `/`
+   menu's rows, a table's `···` and `+`, a task's box and the find bar's buttons pressed from a finger's size */
+html[data-mobile="1"] .sel-cue { max-width: calc(100vw - 12px); overflow-x: auto; gap: 4px; padding: 3px 4px; }
+html[data-mobile="1"] .sel-cue .cue-fmt { min-width: 40px; height: 40px; font-size: 17px; line-height: 1; flex-shrink: 0; }
+html[data-mobile="1"] .sel-cue .cue-fmt:is([data-fmt='code'], [data-fmt='link']) { font-size: 13px; }
+html[data-mobile="1"] .sel-cue .cue-act { height: 40px; padding: 0 14px; flex-shrink: 0; font-size: 15px; }
+html[data-mobile="1"] .sm-row { min-height: 44px; align-items: center; }
+html[data-mobile="1"] .link-pop .field { font-size: 16px; min-height: 36px; }
+html[data-mobile="1"] :is(.draft-doc .tb-more, .draft-doc .tb-add, .draft-doc .li-task, .find-bar .fb-b, .draft-doc .fold-chev) { overflow: visible; }
+html[data-mobile="1"] :is(.draft-doc .tb-more, .draft-doc .tb-add, .draft-doc .li-task, .find-bar .fb-b, .draft-doc .fold-chev)::after { content: ""; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); }
+html[data-mobile="1"] :is(.draft-doc .li-task, .find-bar .fb-b) { position: relative; }
+html[data-mobile="1"] .draft-doc[contenteditable="true"] .dd-table .tb-add { opacity: 0.55; }
+/* a heading's and a list's fold: there is no pointer to bring it out, so it is there, quietly */
+html[data-mobile="1"] .draft-doc .fold-chev { opacity: 0.5; font-size: var(--t-sm); }
+html[data-mobile="1"] .draft-doc .fold-chev[data-folded="1"] { opacity: 1; }
+/* an iPad's tree: a row's fold pressed from a finger's size (a phone's is that size itself) */
+html[data-mobile="1"]:not([data-shape="phone"]) .tree .row .chev::after { content: ""; position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; transform: translate(-50%, -50%); }
+/* an iPad's settings with the keyboard up are what the keyboard leaves, and scroll in it: a field low in them is reached */
+html[data-mobile="1"][data-keyboard]:not([data-shape="phone"]) .tweaks { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 38px); max-height: calc(var(--shell-h, 100dvh) - env(safe-area-inset-top, 0px) - 46px); }
 /* under a finger the chrome is not text: nothing in it is selected by a press, and no callout comes up over it.
    What is read and written (a document, a card, a field) is still text */
 html[data-mobile="1"] :is(button, h6, .top, .phone-bar, .tabbar, .tab-rail, .queue header, .qlist li, .fv-row, .palette-row, .tweaks, .notice, .inkbar, .recall-meta, .session-bar, .grades, .pdf-bar, .welcome-row) {

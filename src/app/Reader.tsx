@@ -9,6 +9,7 @@ import katex from 'katex';
 import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Selection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import { EditorView, type Decoration, type NodeView } from 'prosemirror-view';
+import { keepInView, visibleBottom } from './viewport.js';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PRI_DEFAULT, blanksIn, cardFields, clozeSegments, formatBody, formatBox, mathSpanEnd, meta, parse, parseClip, serialize, setField, type Blank, type CardSeg, type Block, type Card, type Doc, type MathSeg, type SectionSchedule } from '../format/index.js';
 import {
@@ -1049,8 +1050,11 @@ export function handleClickOn(view: EditorView, _pos: number, node: PMNode, node
 }
 
 /** ⌘-click on a link opens it; a plain click puts the caret, as anywhere. */
-export function handleClick(_view: EditorView, _pos: number, event: MouseEvent): boolean {
-  if (!event.metaKey && !event.ctrlKey) return false;
+export function handleClick(view: EditorView, _pos: number, event: MouseEvent): boolean {
+  // under a finger there is no ⌘: a tap on a link opens it while the note is only being read (no caret in it, no
+  // keyboard up); while it is being typed in a tap puts the caret, and the link's field has `open`
+  const tapped = useApp.getState().mobile && !view.hasFocus() && !document.documentElement.hasAttribute('data-keyboard');
+  if (!event.metaKey && !event.ctrlKey && !tapped) return false;
   const href = (event.target as HTMLElement | null)?.closest<HTMLElement>('.md-link')?.dataset.href;
   if (!href) return false;
   event.preventDefault();
@@ -2363,6 +2367,12 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const frozen = !notes && (info?.frozen ?? false);
   // the selection's cue: above it when there is room, below under a finger (`CUE_TOUCH_GAP`)
   const touch = useApp.getState().mobile;
+  // what is placed at the selection or the caret (the cue, the link's field, the `/` menu, the card's composer) lies in
+  // what can be seen: not past the right edge of a narrow page, not under the keyboard. After every draw, since each
+  // is placed anew by where the text is
+  useLayoutEffect(() => {
+    for (const el of wrapRef.current?.querySelectorAll<HTMLElement>(':scope > .sel-cue, :scope > .link-pop, :scope > .slash-menu, :scope > .card-pop') ?? []) keepInView(el);
+  });
   const phone = useApp.getState().phone;
   const cueBelow = sel !== null && (touch || sel.rect.top < CUE_ROOM);
   const cards = info?.cards ?? 0;
@@ -2462,6 +2472,8 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
               {headings.map((h) => <option key={h.index} value={h.index}>{'\u2002'.repeat(Math.max(0, h.level - 1))}{plainMath(h.text)}</option>)}
             </select>
           )}
+          {/* find in the note: ⌘F's, for a hand with no ⌘ and for whoever looks for the word */}
+          <button type="button" className="frozen-tag find-word" title="find ⌘F" onClick={() => openFind(false)}>find</button>
           {right && <span className="right" title={rightTip}>{right}</span>}
         </div>
         )}
@@ -2520,14 +2532,16 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
                 onBlur={() => setLinkField(null)}
               />
               <span className="kbd">⏎</span>
+              {/* the address followed from here: under a finger a link in text being typed has no other way to it */}
+              {/^[a-z][a-z0-9+.-]*:|^\//i.test(link.value.trim()) && <button type="button" className="lp-open" data-act="open" onMouseDown={(e) => { e.preventDefault(); openLink(link.value.trim()); }}>open</button>}
             </div>
           )}
           {slash && slash.items.length > 0 && (
             <div
               className="slash-menu"
               role="listbox"
-              data-place={slash.at.bottom + SLASH_ROOM > window.innerHeight && slash.at.top > SLASH_ROOM ? 'above' : 'below'}
-              style={slash.at.bottom + SLASH_ROOM > window.innerHeight && slash.at.top > SLASH_ROOM ? { top: slash.at.top - 4, left: slash.at.left } : { top: slash.at.bottom + 4, left: slash.at.left }}
+              data-place={slash.at.bottom + SLASH_ROOM > visibleBottom() && slash.at.top > SLASH_ROOM ? 'above' : 'below'}
+              style={slash.at.bottom + SLASH_ROOM > visibleBottom() && slash.at.top > SLASH_ROOM ? { top: slash.at.top - 4, left: slash.at.left } : { top: slash.at.bottom + 4, left: slash.at.left }}
             >
               {slash.items.map((it, i) => (
                 <div
@@ -2549,7 +2563,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
           {composer && (
             <div
               className="card-pop"
-              style={composer.rect ? { top: Math.min(composer.rect.bottom + 8, window.innerHeight - 280), left: Math.min(composer.rect.left, window.innerWidth - 440) } : undefined}
+              style={composer.rect ? { top: composer.rect.bottom + 8, left: composer.rect.left } : undefined}
             >
               <Composer seed={composer.seed} pri={info?.pri ?? PRI_DEFAULT} onSave={saveCard} onClose={() => setComposer(null)} />
             </div>

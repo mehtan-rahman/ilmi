@@ -14,6 +14,7 @@
 // typed in when the menu opens over it (a row's rename) keeps the focus and
 // its keys, and Escape ends both.
 
+import { visibleBottom } from './viewport.js';
 import { useApp } from './store.js';
 
 export interface PopItem {
@@ -312,7 +313,9 @@ export function popMenu(at: { left: number; bottom: number; top: number }, items
   document.body.append(el);
   // inside the window: above the button when there is no room below, never past the right edge
   const r = el.getBoundingClientRect();
-  if (r.bottom > window.innerHeight - 4 && at.top - r.height - 4 > 0) el.style.top = `${Math.round(at.top - r.height - 4)}px`;
+  // (the foot of what can be seen: the keyboard's top when it is up)
+  if (r.bottom > visibleBottom() - 4 && at.top - r.height - 4 > 0) el.style.top = `${Math.round(at.top - r.height - 4)}px`;
+  else if (r.bottom > visibleBottom() - 4) el.style.top = `${Math.max(4, Math.round(visibleBottom() - r.height - 4))}px`;
   if (r.right > window.innerWidth - 4) el.style.left = `${Math.max(4, Math.round(window.innerWidth - r.width - 4))}px`;
   const outside = (e: MouseEvent) => { if (!el.contains(e.target as Node)) close(); };
   function close() {

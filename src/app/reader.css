@@ -641,6 +641,9 @@
 .cue-fmt[data-fmt='strong'] { font-weight: 700; }
 .cue-fmt[data-fmt='em'] { font-style: italic; }
 .cue-fmt[data-fmt='code'], .cue-fmt[data-fmt='link'] { font-family: var(--mono); font-size: 11px; }
+/* the link's field: `open` beside it follows the address */
+.link-pop .lp-open { appearance: none; margin: 0; padding: 0 8px; min-height: 24px; border: 1px solid var(--line-1); border-radius: var(--radius); background: none; color: var(--fg-1); font-family: var(--sans); font-size: var(--t-sm); }
+html[data-mobile="1"] .link-pop .lp-open { min-height: 36px; padding: 0 12px; }
 .cue-sep { align-self: stretch; width: 1px; margin: 2px 2px; background: var(--line-1); }
 /* the link field, under the text it links */
 .link-pop {

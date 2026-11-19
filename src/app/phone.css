@@ -446,6 +446,11 @@ html[data-shape="phone"] .deck-row .dr-when { font-size: var(--t-xs); }
 .quick .composer > textarea { flex: 1; min-height: 0; }
 .quick .composer .qa-fields { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .quick .composer .qa-fields .composer-face.side { flex: 1; min-height: 0; overflow: auto; }
+/* a card made from a selection in a note: on a phone the composer is a sheet over the page, from under the clock to
+   the keyboard (placed at the selection it lay off the left edge: it is wider than the page) */
+html[data-shape="phone"] .card-pop { top: calc(var(--safe-t) + 6px) !important; left: 6px !important; right: 6px; width: auto; max-height: calc(var(--shell-h, 100dvh) - var(--safe-t) - 12px); overflow-y: auto; z-index: 60; }
+html[data-shape="phone"] .card-pop .composer textarea, html[data-shape="phone"] .card-pop .composer input { font-size: 16px; }
+html[data-shape="phone"] .card-pop .composer .ft button { min-height: var(--finger); }
 /* a cloze's blanks under a finger (`BlankRow`, `FaceField.tsx`): a row of plain buttons that is the field's while it has
    the caret. It stands on the keyboard (the foot of what the keyboard leaves of the glass, or the foot of the glass
    with a keyboard attached); in a phone's new card it is in place under the passage, whose own buttons are on the keyboard */

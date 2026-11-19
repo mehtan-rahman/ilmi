@@ -97,6 +97,7 @@
 // pages as well; with none (the Mac) a notebook says `written on an ipad`
 // there.
 
+import { visibleBottom } from './viewport.js';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { boxesAt, boxesEnd, formatClip, meta, pagesLabel, parseBoxes, sectionDismissed, setField, type Box, type Doc, type SectionSchedule } from '../format/index.js';
@@ -3258,7 +3259,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
           {peek && (
             <div
               className="pdf-peek"
-              style={{ top: Math.max(60, Math.min(peek.rect.bottom + 8, window.innerHeight - (/^fig/i.test(peek.text.trim()) ? PEEK_FIG_H + 70 : 220))), left: Math.max(8, Math.min(peek.rect.left, window.innerWidth - PEEK_W - 40)) }}
+              style={{ top: Math.max(60, Math.min(peek.rect.bottom + 8, visibleBottom() - (/^fig/i.test(peek.text.trim()) ? PEEK_FIG_H + 70 : 220))), left: Math.max(8, Math.min(peek.rect.left, window.innerWidth - PEEK_W - 40)) }}
               data-page={peek.page}
               onClick={followPeek}
             >

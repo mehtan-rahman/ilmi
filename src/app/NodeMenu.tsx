@@ -22,6 +22,7 @@
 // space runs, → opens `move to…` and ← or Escape leaves it; ⇧F10 or the Menu
 // key on a row opens it there (`menuAtRow`).
 
+import { visibleBottom } from './viewport.js';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
 import { NEW_NAMES, childDirOf, dirOf, isDoc, isPdfPath } from '../vault/index.js';
@@ -50,7 +51,7 @@ export function placeMenu(el: HTMLElement | null): void {
   const r = el.getBoundingClientRect();
   // (on a device the foot of the glass is the home bar's: the menu ends above it)
   const foot = document.documentElement.dataset.mobile === '1' ? 26 : 6;
-  if (r.bottom > window.innerHeight - foot + 6) el.style.top = `${Math.max(0, window.innerHeight - r.height - foot)}px`;
+  if (r.bottom > visibleBottom() - foot + 6) el.style.top = `${Math.max(0, visibleBottom() - r.height - foot)}px`;
 }
 
 /** An open menu: the node it is for (`''` the root), where, whether `move to…` is showing, and whether it is the `+` menu. */

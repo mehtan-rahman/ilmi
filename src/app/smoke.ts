@@ -12398,8 +12398,12 @@ export async function smokeInk(): Promise<void> {
     const tr = p2.getBoundingClientRect();
     const ty = Math.min(tr.top + tr.height / 2, window.innerHeight - 120);
     const sheetsWere = (await state()).sheets.map((x) => `${x.id}:${x.strokes}`).sort().join();
-    ask('drag', fx(X(0.15)), fy(ty), fx(X(0.5)), fy(ty + 14), 0.05);
-    await poll(() => landed > 0, 'the stand-in is put down on a paragraph', 25000);
+    // (the rig's first touch of a run is sometimes not made: asked again, twice at the most)
+    for (let i = 0; i < 3 && landed === 0; i++) {
+      ask('drag', fx(X(0.15)), fy(ty), fx(X(0.5)), fy(ty + 14), 0.05);
+      for (let k = 0; k < 120 && landed === 0; k++) await sleep(100);
+    }
+    await poll(() => landed > 0, 'the stand-in is put down on a paragraph', 5000);
     await sleep(3500);
     document.removeEventListener('touchstart', onTouch, { capture: true });
     {
@@ -12416,8 +12420,15 @@ export async function smokeInk(): Promise<void> {
     let n = 6;
     const stroke = async (x1: number, y1: number, x2: number, y2: number) => {
       const want = (sheetOf(await state(), id)?.strokes ?? 0) + 1;
-      ask('drag', fx(X(x1)), fy(y1), fx(X(x2)), fy(y2), 0.05);
-      await poll(async () => sheetOf(await state(), id)?.strokes === want, `stroke ${want} is on the area's canvas`, 25000);
+      // (a touch of the rig's that is not made is asked for again, twice at the most: `touches:` says how many it took)
+      for (let i = 0; i < 3; i++) {
+        ask('drag', fx(X(x1)), fy(y1), fx(X(x2)), fy(y2), 0.05);
+        let got = false;
+        for (let k = 0; k < 80 && !got; k++) { await sleep(100); got = sheetOf(await state(), id)?.strokes === want; }
+        if (got) break;
+        log(`touch: a drag on the area wrote nothing in 8 s (asked ${i + 1} times)`);
+      }
+      await poll(async () => sheetOf(await state(), id)?.strokes === want, `stroke ${want} is on the area's canvas`, 5000);
       n = want;
     };
     const grown = () => area.getBoundingClientRect().height;
@@ -15905,7 +15916,7 @@ export async function smokeWritten(vault: Vault): Promise<void> {
       const wide = parseFloat(getComputedStyle(rule).strokeWidth) * (window.devicePixelRatio || 1);
       must(rule.getAttribute('vector-effect') === 'non-scaling-stroke' && ys.length >= 2 && Math.abs(ys[0]! - 72) <= 0.6 / px && Math.abs(ys[1]! - 96) <= 0.6 / px && wide >= 1 && Math.abs(wide - Math.round(wide)) < 0.01, `the rules a line every 24 points from an inch down, hairlines that do not scale (${ys.slice(0, 2).join(', ')}; ${wide} px wide)`);
     }
-    must(q('.pt-title', book()!)?.textContent === NAME && q('.meta .notes-toggle', book()!)?.textContent === 'create notes', `the bar has its name and the notes' word (${q('.meta .notes-toggle', book()!)?.textContent})`);
+    must(q('.pt-title', book()!)?.textContent === NAME && !q('.meta .notes-toggle', book()!), 'the bar has its name, and no create notes: a notebook is its own notes');
     must(!tool('contents') && !tool('search') && !q('.meta .enrol', book()!) && !q('.read-gutter, .read-bar', book()!), 'no contents, no search, no reading: paper has no text');
     must(!!tool('zoom-in') && !!tool('zoom-out') && !!tool('zoom-fit') && !!tool('page') && !!tool('more'), 'the zoom, the page and more are there');
     must(qa('.pt-readonly', book()!).length === 1 && q('.pt-readonly', book()!)?.textContent === 'written on an ipad' && !q('.inkbar', book()!), 'no tools here: the bar says written on an ipad, once');

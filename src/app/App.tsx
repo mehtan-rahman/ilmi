@@ -86,7 +86,6 @@ export function App() {
   const setPanes = useApp((s) => s.setPanes);
   const inspForced = useApp((s) => s.inspForced);
   const bookInsp = useApp((s) => s.bookInsp);
-  const bookSide = useApp((s) => s.bookSide);
   const sessionEl = useApp((s) => s.sessionEl);
   const docs = useApp((s) => s.docs);
   const railFolded = useApp((s) => s.railFolded);
@@ -335,7 +334,7 @@ export function App() {
   }
 
   // the sidebar is a column beside the page, or in portrait a sheet over it that takes no room
-  const sideOn = sheet ? sideSheet : sidebarShown({ sidebar, bookSide, sessionEl, panes, docs });
+  const sideOn = sheet ? sideSheet : sidebarShown({ sidebar });
   const sideW = sideOn && !sheet ? sidebar.width : 0;
   const inspOn = !phone && inspectorShown({ sidebar: sheet ? { ...sidebar, hidden: true } : sidebar, inspector, inspForced, bookInsp, sessionEl, panes, docs, railFolded, railWidth }, win);
   const inspW = inspOn ? inspector.width : 0;

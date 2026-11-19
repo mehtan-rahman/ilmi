@@ -49,8 +49,8 @@ vi.mock('../bookPdf.js', () => ({
 }));
 vi.mock('../pdfjs.js', () => ({ TextLayer: class { render() { return Promise.resolve(); } }, pageBits: async () => [{ str: 'text' }] }));
 const { Pdf } = await import('../Pdf.js');
-const { toggleInspector } = await import('../vault.js');
-const { inspectorShown } = await import('../layout.js');
+const { toggleInspector, toggleSidebar } = await import('../vault.js');
+const { inspectorShown, sidebarShown } = await import('../layout.js');
 const { attachCancelled, attachNote, notesOpen, openNotes } = await import('../book.js');
 const { putPassage } = await import('../passages.js');
 const { undoNotice } = await import('../land.js');
@@ -256,6 +256,22 @@ describe('a book as it opens', () => {
     await act(async () => { toggleInspector(); });
     expect(useApp.getState().inspector.open).toBe(false);
     expect(useApp.getState().bookInsp).toBe(false);
+  });
+});
+
+describe('the sidebar over a book', () => {
+  it('is as it was left: a book opening does not close the tree, and its toggle there is the one toggle', async () => {
+    await act(async () => { useApp.setState({ sidebar: { width: 232, hidden: false } }); });
+    expect(sidebarShown(useApp.getState())).toBe(true);
+    // hidden by its toggle over the book: hidden in the saved state, and still hidden on a note
+    await act(async () => { toggleSidebar(); });
+    expect([sidebarShown(useApp.getState()), useApp.getState().sidebar.hidden]).toEqual([false, true]);
+    await act(async () => { useApp.setState({ panes: openTab(emptyPanes(), NOTE) }); });
+    expect(sidebarShown(useApp.getState())).toBe(false);
+    // brought back on the note: there over the book too
+    await act(async () => { toggleSidebar(); });
+    await act(async () => { useApp.setState({ panes: openTab(emptyPanes(), CH3) }); });
+    expect([sidebarShown(useApp.getState()), useApp.getState().sidebar.hidden]).toEqual([true, false]);
   });
 });
 

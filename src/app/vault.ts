@@ -1387,8 +1387,6 @@ export function setSidebar(patch: Partial<Sidebar>): void {
 export function toggleSidebar(): void {
   const s = useApp.getState();
   if (s.phone || (s.mobile && window.innerWidth <= window.innerHeight)) useApp.setState({ sideSheet: !s.sideSheet });
-  // over a book the tree is shown and hidden for the book only: the saved state is the other documents'
-  else if (bookShown(s)) useApp.setState({ bookSide: !s.bookSide });
   else setSidebar({ hidden: !s.sidebar.hidden });
 }
 

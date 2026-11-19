@@ -8163,7 +8163,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     const reading = JSON.parse(await text('.ilmi/reading.json')) as Record<string, { read?: string }>;
     must(reading[ALONE]?.read === `due=${DAY} ivl=2 reps=0 pos=0`, `its line is in .ilmi/reading.json (${JSON.stringify(reading[ALONE])})`);
     // a book has the window: the tree is asked for over it (the top strip's toggle), to look at its row
-    useApp.setState({ bookSide: true });
+    setSidebar({ hidden: false });
     await poll(() => q(`.trow[data-path="${CSS.escape(ALONE)}"]`), 'a row in the tree', 8000);
     // the session went on to the next element, which may have opened its note beside: closed, as its pane
     await closeNotesPane();
@@ -8259,7 +8259,8 @@ export async function smokeBook(vault: Vault): Promise<void> {
     must(!q('.dd-h', notesPane()!) && !q('.book-chip', notesPane()!) && !q('.crop', notesPane()!) && (q('.draft-doc', notesPane()!)?.textContent ?? '').trim() === '', 'nothing in it: no heading, no chip, no crop, no words');
     must(word().textContent === 'hide notes', `the bar says hide notes while it is beside (${word().textContent})`);
     // a row in the tree, in the folder chosen
-    useApp.setState((st) => ({ bookSide: true, open: { ...st.open, fleeting: true } }));
+    setSidebar({ hidden: false });
+    useApp.setState((st) => ({ open: { ...st.open, fleeting: true } }));
     const trow = await poll(() => q<HTMLElement>(`.trow[data-path="${CSS.escape(NEWNOTE)}"]`), 'the note is a row in the tree', 8000);
     must(q('.name', trow)?.textContent === 'notes on the ruler', `named as typed ("${trow.textContent}")`);
     await shot('alone-notes');
@@ -8321,10 +8322,11 @@ export async function smokeBook(vault: Vault): Promise<void> {
     await poll(() => notesIn() && activeTab(useApp.getState().panes)?.id === ALONE && besideTabs()?.ids.join('|') === `${NEWNOTE}|${SECOND}` && besideTabs()?.front === SECOND, 'both are tabs of the pane beside the pages, the new one in front, the pages kept active', 10000);
     must(qa('.pane').length === 2 && qa('.tab', notesPane()!).map((t) => q('.title', t)?.textContent).join('|') === 'notes on the ruler|ruler questions', `the pane's ordinary tab strip names them (${qa('.tab', notesPane()!).map((t) => q('.title', t)?.textContent).join('|')})`);
     must(word().textContent === 'hide notes' && !!plus(), 'the bar says hide notes, the + still there');
-    useApp.setState((st) => ({ bookSide: true, open: { ...st.open, fleeting: true } }));
+    setSidebar({ hidden: false });
+    useApp.setState((st) => ({ open: { ...st.open, fleeting: true } }));
     await poll(() => q(`.trow[data-path="${CSS.escape(SECOND)}"]`) && q(`.trow[data-path="${CSS.escape(NEWNOTE)}"]`), 'both are rows in the tree', 8000);
     await shot('alone-two-notes');
-    useApp.setState({ bookSide: false });
+    setSidebar({ hidden: true });
     // `m` clips into the note in front beside the pages
     await drag(2, 0.1, 0.3, 0.6, 0.06);
     key('m');

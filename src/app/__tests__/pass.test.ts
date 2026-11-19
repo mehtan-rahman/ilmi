@@ -20,7 +20,7 @@ import { Vault, type TreeNode } from '../../vault/index.js';
 import { bodyRepeatsTitle, breakdown, countWords, countsUnder, foldTitle, groupOf, hasMath, inlineMathHTML, pathParts, plainMath, shortTitle } from '../chromeText.js';
 import { keptCrumbs } from '../Crumbs.js';
 import { FORM_LABEL, dayLabel, dueWhen, kindTag } from '../items.js';
-import { MEASURE_MIN, bookShown, inspectorFits, inspectorShown, railsOf } from '../layout.js';
+import { MEASURE_MIN, bookShown, inspectorFits, inspectorShown, railsOf, sidebarShown } from '../layout.js';
 import { emptyPanes, openTab } from '../panes.js';
 import { SESSION, kindOf, noteOf, notesId, notesTabOf, pagesOf, queueId, tabKindOf, titleOf } from '../names.js';
 import { attach } from '../vault.js';
@@ -299,6 +299,9 @@ describe('the room rule', () => {
     // another kind of document is as it was, asked for over a book or not
     expect(inspectorShown({ ...base, panes: openTab(emptyPanes(), note) }, 1600)).toBe(true);
     expect(inspectorShown({ ...base, panes: openTab(emptyPanes(), note), bookInsp: true, inspector: { width: 280, open: false } }, 1600)).toBe(false);
+    // the sidebar is as it was left, over a book as over anything: opening a book does not close the tree
+    expect(sidebarShown({ ...base })).toBe(true);
+    expect(sidebarShown({ ...base, sidebar: { width: 232, hidden: true } })).toBe(false);
     // a session over a book reads the same way; over anything else it is as it was
     const session = openTab(emptyPanes(), SESSION);
     expect(inspectorShown({ ...base, panes: session, sessionEl: { item: { path: chapter, kind: 'read' } } }, 1600)).toBe(false);

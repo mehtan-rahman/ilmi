@@ -172,10 +172,14 @@ be shared again.
 A PDF dropped on the intake lands on its own: the file, in the tree by its
 name, read in place through pdf.js and never written, in the reading queue
 from that day. It opens as a PDF reader would show it: its pages across
-the window, sheets on a grey desk, the sidebar and the inspector folded
-away (each comes back by its toggle at the two ends of the top strip, the
-sidebar's also ⌃⌘S, and both are as you left them once you are on a note
-again). A bar over the pages has the contents, the book's name, its
+its pane, sheets on a grey desk. The sidebar stays as you left it: opening
+a PDF does not close the tree. Close it for more room by its toggle at the
+left end of the top strip (or ⌃⌘S) and the pages fit what is left; it stays
+closed until you open it again, on a PDF or on a note. (On an iPad held
+upright and on an iPhone the sidebar is a sheet over the page, which goes
+once something is opened from it.) The inspector is folded away over a PDF
+and comes back by its toggle at the right end of the strip; it is as you
+left it once you are on a note again. A bar over the pages has the contents, the book's name, its
 notes, the zoom between `−` and `+` (a press on the number fits the pages
 to the window again), the page (a press goes to a page) and search. Your
 notes on it are a note attached to it, made when you ask: the bar says

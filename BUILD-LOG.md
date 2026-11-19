@@ -88,6 +88,12 @@ The user: "it'd be nice if i can go to a pdf and press share and have ilmi pop u
 
 ---
 
+## 2026-11-19 — later and dismiss for whatever is being read, outside the session too; a book no longer closes the tree
+
+**Dismissing a PDF's reading.** Looked at first: the session on a PDF, a source, a chapter already had the three under its pages, each on the glass on an iPad and a phone (`e1-sess-99FD`, `e1-sess-B9CB`: `done for today`, `later`, `dismiss`), and a phone's row had them. What had none was everything outside the session on a Mac and an iPad: a queue's row had no action at all there, and a PDF being read had `study` before it was enrolled and nothing after. Now, with one function for all of them (`actWithNotice`: written as the session writes it, said in a notice that takes it back): a row of the queue has `next`, `later`, `dismiss` in its menu on every device (a right-click; a long press), a row of the tree whose document is being read has `later` and `dismiss`, and a book's `⋯` has them first while it is being read. `dismiss` is what it was: the document's `read` line goes (FORMAT.md §3: no line, not enrolled); nothing new is written. `pdfink`'s `"part": "sess"` checks the session's three, dismisses from the book's `⋯`, takes it back from the notice, and opens the row's menu.
+
+**The tree stays.** A book opening no longer folds the sidebar away (`sidebarShown` is the saved state alone; `bookSide` is gone; the toggle is one toggle everywhere), on a Mac and an iPad on its side: the pages fit the pane they are given. An upright iPad's and a phone's sheet still goes once something is opened from it. The inspector is as it was (not drawn over a book until its toggle asks, `bookInsp`): it was never open there to be closed, the whole of milestone 70's rule for it and a dozen checks hang on that, and nobody asked; `inspectorShown`'s first line is all it would take.
+
 ## 2026-11-19 — what was fixed blind, seen under real touches; a pane's bars stay under a pull; picking a deck's cards and going back in a book by touch
 
 The round before fixed ten touch faults without seeing four of them. This one drove them on the simulators with the touch rig (a note written for it: a link, two tasks, a table, twenty paragraphs), light and dark, and fixed what did not hold.

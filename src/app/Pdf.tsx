@@ -435,8 +435,8 @@ export function Pdf({ id, active = true, session = false, readOn = false, onLast
   const mobile = useApp((s) => s.mobile);
   const [head, setHead] = useState<HTMLElement | null>(null);
   // a book open is its pages (milestone 70): the inspector closed until its toggle asks for it over this book
-  // and the sidebar the same: the pages have the window (the top strip's toggle, or ⌃⌘S, brings the tree back over this book)
-  useLayoutEffect(() => { useApp.setState({ bookInsp: false, bookSide: false }); }, [id]);
+  // (the sidebar is left as it was: opening a book does not close the tree)
+  useLayoutEffect(() => { useApp.setState({ bookInsp: false }); }, [id]);
   // ⌘\ opens the note beside the pages and closes it, ahead of the app's split (it checks `defaultPrevented`)
   useEffect(() => {
     if (!active) return;

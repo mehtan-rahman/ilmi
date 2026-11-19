@@ -11,6 +11,7 @@ import '@fontsource-variable/literata';
 import './fonts.css';
 import './tokens.css';
 import { App } from './App.js';
+import { Fell } from './Fell.js';
 import { exposeConsole } from './store.js';
 import { installComposing } from './compose.js';
 
@@ -35,6 +36,8 @@ window.addEventListener('unhandledrejection', (e) => {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <Fell>
+      <App />
+    </Fell>
   </StrictMode>,
 );

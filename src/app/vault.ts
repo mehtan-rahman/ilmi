@@ -797,10 +797,13 @@ export async function openVault(path: string): Promise<Vault> {
   const kept = (state as { panes?: { panes?: { tabs?: unknown[] }[] } }).panes;
   const keptIds = new Set<string>();
   for (const p of Array.isArray(kept?.panes) ? kept.panes : []) for (const id of Array.isArray(p?.tabs) ? p.tabs : []) if (typeof id === 'string' && !keptIds.has(id) && (await there(id).catch(() => false))) keptIds.add(id);
-  const back = isPhone() ? null : restorePanes(kept, (id) => keptIds.has(id));
+  // after a fall (`Fell.tsx`: something on the page threw and took the app with it), `close tabs and reload` asks
+  // for one start with the day alone, so that what fell is not opened again by itself
+  const bare = takeBareStart();
+  const back = isPhone() || bare ? null : restorePanes(kept, (id) => keptIds.has(id));
   if (back) {
     panes = back;
-  } else if (!isPhone() && tab !== undefined && (await there(tab))) {
+  } else if (!isPhone() && !bare && tab !== undefined && (await there(tab))) {
     panes = openTab(panes, tab);
   } else {
     panes = openTab(panes, queueId('today'));
@@ -1711,4 +1714,14 @@ export async function enrolReading(path: string): Promise<void> {
 /** Where a new sibling of `path` goes: a folder itself, else its directory. */
 export function containerOf(path: string): string {
   return isDoc(path) || isPdfPath(path) ? dirOf(path) : childDirOf(path);
+}
+
+const BARE_KEY = 'ilmi.start.bare';
+/** One start with no kept tab, asked for by `Fell.tsx` (which writes the key). */
+function takeBareStart(): boolean {
+  try {
+    const on = localStorage.getItem(BARE_KEY) === '1';
+    if (on) localStorage.removeItem(BARE_KEY);
+    return on;
+  } catch { return false; }
 }

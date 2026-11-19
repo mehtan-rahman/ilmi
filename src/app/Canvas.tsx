@@ -2,14 +2,15 @@
 // active tab. Pane state lives in the store as a `Panes` value; the pure
 // operations are in panes.ts.
 
-import { memo, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
 import { Lens } from './Lenses.js';
 import { backBusy, isPopping } from './edge.js';
 import { quiet } from './motion.js';
 import { EL_GLYPH } from './items.js';
-import { GLYPH, INTAKE, SESSION, WRITTEN_GLYPH, queueId, tabKindOf } from './names.js';
+import { GLYPH, INTAKE, SESSION, WRITTEN_GLYPH, notesPair, queueId, tabKindOf } from './names.js';
 import { UNDER } from './gesture.js';
-import { activatePane, activeTab, closePane, closeTab, selectTab, splitPane, type OpenOpts, type Pane, type Tab } from './panes.js';
+import { activatePane, activeTab, closePane, closeTab, selectTab, splitPane, type OpenOpts, type Pane, type Tab, moveBeside } from './panes.js';
+import { popMenu, type PopItem } from './popMenu.js';
 import { useApp } from './store.js';
 import { notebookOf, tabLabel } from './tabs.js';
 import { closeTabs, openNode, rememberTab } from './vault.js';
@@ -39,12 +40,28 @@ interface TabBarProps {
   canClosePane: boolean;
 }
 
+/**
+ * A tab's menu (a right-click; under a finger a long press, `touch.ts`): `move beside` puts it in the pane beside
+ * this one, a pane made when there is one; `close` and `close others` as they say.
+ */
+function tabMenu(e: MouseEvent, pane: number, index: number): void {
+  e.preventDefault();
+  const s = useApp.getState();
+  const tabs = s.panes.panes[pane]?.tabs ?? [];
+  const alone = s.panes.panes.length === 1 && tabs.length === 1;
+  const items: PopItem[] = [];
+  if (!s.phone && !alone) items.push({ label: 'move beside', glyph: '⊟', act: 'beside', run: () => { useApp.getState().setPanes((p) => moveBeside(p, pane, index)); rememberTab(); } });
+  items.push({ label: 'close', glyph: '×', act: 'close', run: () => closeTabs((p) => closeTab(p, pane, index)) });
+  if (tabs.length > 1) items.push({ label: 'close others', act: 'close-others', run: () => closeTabs((p) => { const key = p.panes[pane]?.tabs[index]?.key; let out = p; for (let i = (out.panes[pane]?.tabs.length ?? 0) - 1; i >= 0; i--) if (out.panes[pane]?.tabs[i]?.key !== key) out = closeTab(out, pane, i); return out; }) });
+  popMenu({ left: e.clientX, top: e.clientY, bottom: e.clientY }, items);
+}
+
 function TabBar({ pane, index, canClosePane }: TabBarProps) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const sessionEl = useApp((s) => s.sessionEl);
   const setPanes = useApp((s) => s.setPanes);
-  // an iPad is one pane, but for a PDF's pages and its note (`notesPair`): no split to ask for
+  // an iPad's second pane is asked for from a row's menu or a tab's (`open beside`, `move beside`): no button to split an empty one
   const mobile = useApp((s) => s.mobile);
   const after = () => rememberTab();
   return (
@@ -64,6 +81,7 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
             data-t={kind}
             data-nb={nb && nb !== tab.id ? '1' : undefined}
             onClick={() => { setPanes((s) => selectTab(s, index, ti)); after(); }}
+            onContextMenu={(e) => tabMenu(e, index, ti)}
             onAuxClick={(e) => { if (e.button === 1) closeTabs((s) => closeTab(s, index, ti)); }}
           >
             <span className="glyph" data-t={kind} data-el={session?.kind}><Glyph g={glyph} /></span>
@@ -269,8 +287,12 @@ function Panes() {
   const menuOpen = useApp((s) => s.menuOpen);
   const mobile = useApp((s) => s.mobile);
   const onOpen = (path: string, opts: OpenOpts) => openNode(path, opts);
+  // on a device a session is the whole canvas, as it was when there was one pane: the pane beside it is not drawn
+  // while the session is in front (but the note beside a topic's pages, which is the session's own, `notesPair`)
+  const solo = useApp((s) => s.mobile && s.panes.panes.length > 1 && activeTab(s.panes)?.id === SESSION && !notesPair(s.panes, s.docs, s.sessionEl?.item.path));
+  const front = (pi: number) => { if (pi !== useApp.getState().panes.active) { setPanes((s) => activatePane(s, pi)); rememberTab(); } };
   return (
-    <div className="canvas">
+    <div className="canvas" data-solo={solo ? '1' : undefined}>
       {panes.panes.map((pane, pi) => {
         const tab = pane.tabs[pane.active];
         return (
@@ -280,7 +302,8 @@ function Panes() {
             key={tab ? `t${tab.key}` : `e${pi}`}
             className="pane"
             data-active={pi === panes.active ? '1' : '0'}
-            onMouseDown={() => { if (pi !== panes.active) { setPanes((s) => activatePane(s, pi)); rememberTab(); } }}
+            onMouseDown={() => front(pi)}
+            onTouchStart={() => front(pi)}
           >
             <TabBar pane={pane} index={pi} canClosePane={panes.panes.length > 1} />
             {/* the intake is not covered by a menu: uncovered again it takes the focus for its text, from the row a menu's rename has just begun; the menu has every key meanwhile */}

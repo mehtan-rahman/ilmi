@@ -85,10 +85,10 @@ function mount(el: React.ReactElement, cls = 'side') {
 }
 
 const flush = async () => { await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); };
-const entries = () => Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).map((e) => e.textContent?.replace(/^./, '').replace(/F2$|▸$/, '') ?? '');
+const entries = () => Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).map((e) => e.textContent?.replace(/^./, '').replace(/F2$|▸$|⇧?⌘ click$/, '') ?? '');
 const fire = (el: Element, type: string, init: MouseEventInit = {}) => { act(() => { el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })); }); };
 const click = (label: string) => fire(Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).find((e) => e.textContent?.includes(label))!, 'click');
-const ROW = ['new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source'];
+const ROW = ['open in new tab', 'open beside', 'new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source'];
 const FOLDER = ['new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link'];
 
 beforeEach(() => {
@@ -124,7 +124,7 @@ describe('one menu, in the tree and the folder lens', () => {
     act(() => { host.querySelector('.folder-view')!.dispatchEvent(ev); });
     expect(ev.defaultPrevented).toBe(true);
     // the menu the folder's own row has in the tree
-    expect(entries()).toEqual([...FOLDER, 'rename', 'duplicate', 'move to…', 'delete folder']);
+    expect(entries()).toEqual(['open in new tab', 'open beside', ...FOLDER, 'rename', 'duplicate', 'move to…', 'delete folder']);
     click('new deck');
     await flush();
     expect(calls).toEqual(['create papers|deck']);
@@ -160,7 +160,7 @@ describe('one menu, in the tree and the folder lens', () => {
     mount(createElement(Lens, { id: 'papers', active: true, onOpen: () => {} }), 'pane-body');
     const open = () => fire(host.querySelector('.fv-row[data-path="papers/old"]')!, 'contextmenu', { clientX: 300, clientY: 160 });
     open();
-    expect(entries()).toEqual([...FOLDER, 'rename', 'duplicate', 'move to…', 'delete folder']);
+    expect(entries()).toEqual(['open in new tab', 'open beside', ...FOLDER, 'rename', 'duplicate', 'move to…', 'delete folder']);
     click('import a file…');
     open();
     click('add from text or a link');
@@ -192,7 +192,7 @@ describe('written notes', () => {
   it('`new written notes` sits under `new note`, makes a notebook where a note would go, and its row is renamed and has its own icon', async () => {
     mount(createElement(Tree, { activeId: undefined, onOpen: () => {} }));
     fire(host.querySelector('.trow[data-path="papers"]')!, 'contextmenu', { clientX: 40, clientY: 60 });
-    expect(entries().slice(0, 2)).toEqual(['new note', 'new written notes']);
+    expect(entries().slice(0, 4)).toEqual(['open in new tab', 'open beside', 'new note', 'new written notes']);
     expect(document.querySelector('.ctx-menu .ci[data-act="new-written"] .ic-written')).not.toBeNull();
     click('new written notes');
     await flush();
@@ -267,7 +267,7 @@ describe('inside a document', () => {
     expect(host.querySelector('.folder-view .crumb')?.textContent).toBe('under Wozniak 1990');
     expect(Array.from(host.querySelectorAll<HTMLElement>('.fv-row')).map((r) => r.dataset.path)).toEqual(['papers/wozniak-1990/woz-ex1.md', 'papers/wozniak-1990/figures']);
     fire(host.querySelector('.folder-view')!, 'contextmenu', { clientX: 300, clientY: 500 });
-    expect(entries()).toEqual(['new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source']);
+    expect(entries()).toEqual(['open in new tab', 'open beside', 'new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source']);
     click('new draft');
     await flush();
     expect(calls).toEqual(['create papers/wozniak-1990|draft']);

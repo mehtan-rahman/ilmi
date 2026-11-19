@@ -266,7 +266,7 @@ describe('a row\'s menu from the keys', () => {
   it('⇧F10 on the selected row opens its menu, the first item lit; Escape closes it and the tree has the keys again', () => {
     open('notes.md');
     expect(menu()).not.toBeNull();
-    expect(lit()).toBe('new note');
+    expect(lit()).toBe('open in new tab');
     expect(useApp.getState().menuOpen).toBe(true);
     // the menu's keys are not the tree's: the selection stays, nothing is deleted or renamed
     key('ArrowDown'); key('ArrowDown');
@@ -275,8 +275,8 @@ describe('a row\'s menu from the keys', () => {
     expect(selected()).toEqual(['notes.md']);
     expect(calls).toEqual([]);
     expect(host.querySelector('input.rename')).toBeNull();
-    // two down from `new note`: past `new written notes` (milestone 82)
-    expect(lit()).toBe('new source');
+    // two down from `open in new tab`: past `open beside`
+    expect(lit()).toBe('new note');
     key('Escape');
     expect(menu()).toBeNull();
     expect(document.activeElement).toBe(box());
@@ -365,7 +365,7 @@ describe('the folder lens', () => {
     li.focus();
     key('F10', { shiftKey: true });
     expect(menu()).not.toBeNull();
-    expect(lit()).toBe('new note');
+    expect(lit()).toBe('open in new tab');
     key('Escape');
     expect(menu()).toBeNull();
     expect(document.activeElement).toBe(li);
@@ -386,7 +386,7 @@ describe('the tab rail', () => {
     rail.focus();
     key('F10', { shiftKey: true });
     expect(menu()).not.toBeNull();
-    expect(lit()).toBe('new note');
+    expect(lit()).toBe('open in new tab');
     key('ArrowDown');
     expect(host.querySelector('.rail-row[data-selected="1"]')?.getAttribute('data-path')).toBe('course/week 1.md');
     key('Escape');

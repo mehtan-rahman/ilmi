@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptyPanes, openTab, splitPane } from '../panes.js';
-import { DESKTOP, NEVER, collectionRows, collectionsHome, documentsDir, isMobile, nameFromRemote, onePane, press, setCollectionsHome, setPlatform, shapeOf, vaultKey } from '../platform.js';
+import { DESKTOP, NEVER, collectionRows, collectionsHome, documentsDir, isMobile, nameFromRemote, onePane, press, twoPanes, setCollectionsHome, setPlatform, shapeOf, vaultKey } from '../platform.js';
+import { moveBeside, closeTab as shutTab, openBeside as beside } from '../panes.js';
 import type { Recent } from '../recents.js';
 
 const DOCS = '/var/mobile/Containers/Data/Application/AAAA-1111/Documents';
@@ -133,5 +134,55 @@ describe('a press under a finger or a mouse', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('an iPad\'s two panes', () => {
+  const ids = (p: ReturnType<typeof emptyPanes>) => p.panes.map((x) => x.tabs.map((t) => t.id).join(','));
+  it('keeps two as they are, and folds a third into the second with the tab in front still in front', () => {
+    let p = openTab(emptyPanes(), 'a.md');
+    p = beside(p, 'b.md');
+    expect(ids(p)).toEqual(['a.md', 'b.md']);
+    expect(twoPanes(p)).toBe(p);
+    p = splitPane(p, 1);
+    p = openTab(p, 'c.md');
+    expect(p.panes).toHaveLength(3);
+    const two = twoPanes(p);
+    expect(ids(two)).toEqual(['a.md', 'b.md,c.md']);
+    expect(two.active).toBe(1);
+    expect(two.panes[1]!.tabs[two.panes[1]!.active]!.id).toBe('c.md');
+    // the first pane in front: it stays in front, and the second keeps its own tab on top
+    const first = twoPanes({ ...p, active: 0 });
+    expect(first.active).toBe(0);
+    expect(first.panes[1]!.tabs[first.panes[1]!.active]!.id).toBe('b.md');
+  });
+  it('open beside: any two documents, the second pane made once and used again', () => {
+    let p = openTab(emptyPanes(), 'a.md');
+    p = beside(p, 'b.md');
+    p = beside(p, 'c.md');
+    expect(ids(p)).toEqual(['a.md', 'b.md,c.md']);
+    expect(p.active).toBe(0);
+  });
+  it('a tab moved beside: out of its pane, into the other, in front there; a pane left empty closes', () => {
+    let p = openTab(emptyPanes(), 'a.md');
+    p = openTab(p, 'b.md', { newTab: true });
+    // the only tab of the only pane has nowhere to go
+    expect(moveBeside(openTab(emptyPanes(), 'a.md'), 0, 0).panes).toHaveLength(1);
+    p = moveBeside(p, 0, 1);
+    expect(ids(p)).toEqual(['a.md', 'b.md']);
+    expect(p.active).toBe(1);
+    // back again: the second pane is left empty and closes
+    p = moveBeside(p, 1, 0);
+    expect(ids(p)).toEqual(['a.md,b.md']);
+    expect(p.active).toBe(0);
+    expect(p.panes[0]!.tabs[p.panes[0]!.active]!.id).toBe('b.md');
+    expect(moveBeside(p, 0, 9)).toBe(p);
+  });
+  it('a pane closes with its last tab', () => {
+    let p = openTab(emptyPanes(), 'a.md');
+    p = beside(p, 'b.md');
+    p = shutTab(p, 1, 0);
+    expect(ids(p)).toEqual(['a.md']);
+    expect(p.active).toBe(0);
   });
 });

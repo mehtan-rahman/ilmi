@@ -4,9 +4,8 @@ import type { QueueItem } from '../schedule/index.js';
 import type { Focus } from './items.js';
 import type { Order, TreeNode } from '../vault/index.js';
 import type { DeckView } from './deck.js';
-import { notesPair } from './names.js';
 import { emptyPanes, type Panes } from './panes.js';
-import { onePane } from './platform.js';
+import { onePane, twoPanes } from './platform.js';
 import { cleanRecents, type Recent } from './recents.js';
 import { NUDGE_SERVER } from './nudge.js';
 import type { SyncSettings, SyncState } from './sync.js';
@@ -559,10 +558,12 @@ export const useApp = create<AppState>((set, get) => ({
   setPanes: (next) => set({ panes: typeof next === 'function' ? next(get().panes) : next }),
 }));
 
-// an iPad shows one pane: whatever asks for a second (a split, ⌘⇧-click) is folded back into the first;
-// but for a PDF's pages and the note on them, which are the split `notes` asks for (milestone 70, `book.ts`)
+// a phone shows one pane: whatever asks for a second is folded back into the first. An iPad holds two, for any two
+// documents (side by side on its side, one above the other upright): a third is folded into the second
 useApp.subscribe((s) => {
-  if (s.mobile && s.panes.panes.length > 1 && (s.phone || !notesPair(s.panes, s.docs, s.sessionEl?.item.path))) useApp.setState({ panes: onePane(s.panes) });
+  if (!s.mobile || s.panes.panes.length <= 1) return;
+  const panes = s.phone ? onePane(s.panes) : twoPanes(s.panes);
+  if (panes !== s.panes) useApp.setState({ panes });
 });
 
 const persist = (s: AppState) => saveTweaks({ accentHex: s.accentHex, theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog, focusBudget: s.focusBudget, learnNew: s.learnNew, haptics: s.haptics });

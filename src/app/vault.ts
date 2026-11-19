@@ -20,7 +20,7 @@ import { cleanViews, type DeckView } from './deck.js';
 import { cleanBudget, cleanFocus, sessionItems, walkOf, type Focus } from './items.js';
 import { INTAKE, SESSION, cardsId, cardsPath, notesPath, queueId, queueScope } from './names.js';
 import { bookShown, inspectorShown } from './layout.js';
-import { activeTab, closedBy, dropTabs, emptyPanes, openTab, restorePanes, retarget, savedPanes, tabNode, type OpenOpts, type Panes } from './panes.js';
+import { activeTab, closedBy, dropTabs, emptyPanes, openTab, restorePanes, retarget, savedPanes, tabNode, type OpenOpts, type Panes, openBeside } from './panes.js';
 import { loadHaptics } from './haptics.js';
 import { NEVER, collectionRows, collectionsHome, isMobile, isPhone, loadPlatform, setCollectionsHome } from './platform.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
@@ -1158,6 +1158,19 @@ export function openNode(path: string, opts: OpenOpts = {}): void {
   const s = useApp.getState();
   const nb = notebookOf(path, s.docs);
   const panes = openTab(s.panes, path, opts, nb ? (id) => notebookOf(id, s.docs) === nb : undefined);
+  useApp.setState({ panes });
+  queueSave(viewOf(panes));
+}
+
+/**
+ * Open `path` in the pane beside the one in front (a pane made when there is one), and that pane the one in front:
+ * what a row's `open beside` does. A third pane where there is room for one (the Mac) is ⌘⇧-click's, as before.
+ */
+export function openNodeBeside(path: string): void {
+  const s = useApp.getState();
+  let panes = openBeside(s.panes, path);
+  const at = panes.panes.findIndex((p, i) => i !== panes.active && p.tabs[p.active]?.id === path);
+  if (at >= 0) panes = { ...panes, active: at };
   useApp.setState({ panes });
   queueSave(viewOf(panes));
 }

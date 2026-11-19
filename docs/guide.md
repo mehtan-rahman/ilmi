@@ -933,9 +933,19 @@ Files app no longer shows it; the remote is its copy). The collections there
 are the rows under it. From there sync is the
 Mac's: a card graded on the iPad is on the Mac after its next pull.
 
-Held sideways the iPad is a narrow Mac window: one pane, the sidebar and
-the inspector hidden until the toggles at the two ends of the top strip are
-tapped. Upright, the sidebar comes over the page from the left edge (its
+Held sideways the iPad is a narrow Mac window: the sidebar and the
+inspector hidden until the toggles at the two ends of the top strip are
+tapped. It holds two panes, for any two documents: side by side held
+sideways, one above the other upright. Hold a row in the sidebar (or in a
+folder, or among a notebook's tabs) and its menu begins with `open in new
+tab` and `open beside`; hold a tab and `move beside` puts it in the other
+pane, with `close` and `close others` under it. Each pane has its own tabs
+and a `×` at the end of them that closes the pane; a pane also closes with
+its last tab. A row tapped opens in the pane you touched last, the one
+whose tabs carry a rule in the accent. A third pane asked for joins the
+second, and a session takes the whole window while it is in front. (On the
+Mac the same entries are in the right-click menus, beside ⌘-click and
+⇧⌘-click, and there are three panes.) Upright, the sidebar comes over the page from the left edge (its
 toggle, or a swipe in from the edge) and goes once something is opened. A
 tap opens; the queue, the session, and its grades are buttons; a passage
 selected brings `card` and `extract` under it. No keys are named there: the

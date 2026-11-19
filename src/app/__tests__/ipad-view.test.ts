@@ -241,18 +241,26 @@ describe("the iPad's shell", () => {
     expect(qa('.top .insp-toggle:not(.set-toggle)')).toHaveLength(2);
   });
 
-  it('is one pane: no split in the tab bar, and a split asked for folds back', async () => {
+  it('holds two panes and no more: no split button in the tab bar, a third asked for joins the second', async () => {
     useApp.setState({ vault: `${DOCS}/double-major`, panes: openTab(emptyPanes(), ':queue:today') });
     await draw(createElement(Canvas));
     expect(qa('.pane')).toHaveLength(1);
     expect(q('.tabbar .ctl')).toBeNull();
     await act(async () => { useApp.getState().setPanes((p) => openTab(splitPane(p, 0), ':queue:upcoming')); });
+    expect(useApp.getState().panes.panes.map((p) => p.tabs.map((t) => t.id))).toEqual([[':queue:today'], [':queue:upcoming']]);
+    expect(qa('.pane')).toHaveLength(2);
+    // the pane last touched is the one in front, and each has a way to close it
+    expect(qa('.pane').map((p) => p.getAttribute('data-active'))).toEqual(['0', '1']);
+    expect(qa('.tabbar .ctl[aria-label="close pane"]')).toHaveLength(2);
+    await act(async () => { useApp.getState().setPanes((p) => openTab(splitPane(p, 1), ':queue:reading')); });
+    expect(useApp.getState().panes.panes.map((p) => p.tabs.map((t) => t.id))).toEqual([[':queue:today'], [':queue:upcoming', ':queue:reading']]);
+    // a phone still folds to one
+    await act(async () => { useApp.setState({ phone: true }); useApp.getState().setPanes((p) => ({ ...p })); });
     expect(useApp.getState().panes.panes).toHaveLength(1);
-    expect(useApp.getState().panes.panes[0]!.tabs).toHaveLength(2);
-    expect(qa('.pane')).toHaveLength(1);
+    await act(async () => { useApp.setState({ phone: false }); });
   });
 
-  it('keeps a second pane for a PDF\'s pages and the note on them, and for nothing else (milestone 70)', async () => {
+  it('keeps a second pane for any two documents, a PDF\'s pages and the note on them among them', async () => {
     const CH = 'library/ch-3.md';
     const P = 'library/alone.pdf';
     const N = 'fleeting/on-alone.md';
@@ -264,23 +272,13 @@ describe("the iPad's shell", () => {
       await act(async () => { useApp.setState({ docs, panes }); });
       return useApp.getState().panes.panes.length;
     };
-    // a document with pages and its `:notes/` tab; a PDF on its own and its note, either way round
     expect(await held(two(CH, notesId(CH)))).toBe(2);
     expect(await held(two(P, N))).toBe(2);
-    expect(await held(two(N, P))).toBe(2);
-    // a session on the pages counts as them
-    await act(async () => { useApp.setState({ sessionEl: { kind: 'section', label: '', item: { path: N, kind: 'section' } as never } }); });
-    expect(await held(two(SESSION, N))).toBe(2);
-    await act(async () => { useApp.setState({ sessionEl: null }); });
-    expect(useApp.getState().panes.panes).toHaveLength(1);
-    // anything else folds, and the pair folds when the pages' tab moves on; the note is then a tab, which `notes` moves beside again
-    expect(await held(two(CH, OTHER))).toBe(1);
-    expect(await held(two(P, notesId(CH)))).toBe(1);
+    expect(await held(two(CH, OTHER))).toBe(2);
+    expect(await held(two(OTHER, N))).toBe(2);
+    // the pages' tab moves on: the note stays beside
     await held(two(P, N));
     await act(async () => { useApp.getState().setPanes((s) => openTab(s, OTHER)); });
-    expect(useApp.getState().panes.panes).toHaveLength(1);
-    expect(useApp.getState().panes.panes[0]!.tabs.map((t) => t.id)).toEqual([OTHER, N]);
-    await act(async () => { useApp.getState().setPanes((s) => openBeside(openTab(s, P), N)); });
-    expect(useApp.getState().panes.panes.map((p) => p.tabs.map((t) => t.id))).toEqual([[P], [N]]);
+    expect(useApp.getState().panes.panes.map((p) => p.tabs.map((t) => t.id))).toEqual([[OTHER], [N]]);
   });
 });

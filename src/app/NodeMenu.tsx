@@ -27,7 +27,7 @@ import { GLYPH, WRITTEN_GLYPH, descendants, findNode, glyphOf, kindOf, moveTarge
 import { createWritten } from './written.js';
 import { useApp } from './store.js';
 import { deleteNode } from './remove.js';
-import { createNode, duplicateNode, enrolReading, moveNode, openDir, openIntake, setTabs, sortByName } from './vault.js';
+import { createNode, duplicateNode, enrolReading, moveNode, openDir, openIntake, openNode, openNodeBeside, setTabs, sortByName } from './vault.js';
 import { Glyph } from './icons.js';
 import { menuKeys } from './popMenu.js';
 import { createPortal } from 'react-dom';
@@ -194,6 +194,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   }, [set]);
 
   // the menu stays inside the window at the bottom edge, with the list open or not
+  const phone = useApp((s) => s.phone);
   useLayoutEffect(() => { placeMenu(ref.current); }, [at]);
 
   const found = at.id === '' ? undefined : findNode(tree, at.id);
@@ -221,6 +222,20 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
     set(null);
   };
 
+  // a row opened in a tab of its own, or in the pane beside (a pane made when there is one): what ⌘-click and
+  // ⌘⇧-click do, for a hand with no ⌘. Not on a phone, which shows one thing
+  const opens = node && !phone ? (
+    <>
+      <div className="ci" data-act="open-tab" onClick={act(() => openNode(at.id, { newTab: true }))}>
+        <span className="cg"><Glyph g="+" /></span>open in new tab<span className="ck">⌘ click</span>
+      </div>
+      <div className="ci" data-act="open-beside" onClick={act(() => openNodeBeside(at.id))}>
+        <span className="cg"><Glyph g="⊟" /></span>open beside<span className="ck">⇧⌘ click</span>
+      </div>
+      <div className="cd" />
+    </>
+  ) : null;
+
   const menu = (
     <div
       className="ctx-menu"
@@ -231,6 +246,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
     >
       {!at.sub && at.tab ? (
         <>
+          {opens}
           {onSubtab && (
             <div className="ci" data-act="subtab" onClick={act(() => onSubtab(at.id))}>
               <span className="cg"><Glyph g="+" /></span>add subtab
@@ -257,6 +273,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
         </>
       ) : !at.sub ? (
         <>
+          {opens}
           {/* a PDF on its own holds nothing (milestone 70): nothing is made under it */}
           {!pdfAlone && NEW_KINDS.map(([k, label]) => (
             <Fragment key={k}>

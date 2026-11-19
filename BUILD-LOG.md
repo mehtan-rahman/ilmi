@@ -6,6 +6,17 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-19 — two panes on an iPad, and a way to ask for them by touch
+
+An iPad had tabs but no touch way to a second one, and folded every second pane but a PDF's with its note.
+
+- `store.ts` folds to one pane on a phone only; an iPad keeps two for any two documents (`twoPanes`, `platform.ts`: a third joins the second). They lie as the notes pair did: side by side on its side, one above the other upright.
+- A row's menu (`NodeMenu`: the tree, a folder's rows, a notebook's tab rail) begins with `open in new tab` and `open beside` (`openNodeBeside`, `vault.ts`), on the Mac too, not on a phone. A tab's menu is new (`Canvas.tsx`, `tabMenu`): `move beside` (`moveBeside`, `panes.ts`), `close`, `close others`; a long press brings it (`touch.ts`, `MENUS`).
+- A pane touched is the one in front (`onTouchStart` beside the mouse's press); it is said by the Mac's tab-bar ground and a rule in the accent over its tabs. A session on a device is the whole canvas while it is in front (`data-solo`), but for the note beside a topic's pages.
+- A menu's keys (`F2`, `⌘ click`) are not drawn on a device with no keyboard attached.
+
+Seen on an iPad Air 11 simulator, walked from inside the page (stills under the scratchpad's `native/runs/p-land`, `p-up`): the row's menu, a row opened beside, two notes, a tab's menu, a PDF beside a note, a notebook beside a PDF, two notebooks, a pane closed, a session alone. Not seen: any of it under a real finger (the menus were opened by the event a long press makes, not by a press), and writing with the Pencil in two notebooks side by side (both show their paper and their tools; whether both take strokes was not tried). The Mac has no divider to drag between panes, so none was added.
+
 ## 2026-11-19 — a phone's notebook ink as paths; the pages' layer never the bar's; a tap's late mouse press; the pen's slip in the dark
 
 Four reports after the entry below. Runs are under `/private/tmp/claude-501/-Users-mehtan-foundry-projects-ilmi/50979f6b-ceb6-4416-b123-70b6777ef705/scratchpad/gaps/runs/`.

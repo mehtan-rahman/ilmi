@@ -115,6 +115,25 @@ export function collectionRows(collections: string, names: readonly string[], re
     .sort((a, b) => Date.parse(b.opened) - Date.parse(a.opened) || a.name.localeCompare(b.name));
 }
 
+/** How many panes an iPad holds: two, side by side on its side and one above the other upright. */
+export const PAD_PANES = 2;
+
+/**
+ * At most two panes (an iPad's): the tabs of any pane past the second join the second, the pane that was active
+ * still the active one, its tab on top. Unchanged with two or fewer.
+ */
+export function twoPanes(s: Panes): Panes {
+  if (s.panes.length <= PAD_PANES) return s;
+  const keep = s.panes.slice(0, PAD_PANES - 1);
+  const rest = s.panes.slice(PAD_PANES - 1);
+  const tabs = rest.flatMap((p) => p.tabs);
+  // the tab on top of the folded pane: the active pane's when it is one of those folded, else the second pane's own
+  const from = s.active >= PAD_PANES - 1 ? s.panes[s.active]! : rest[0]!;
+  const cur = from.tabs[from.active];
+  const active = Math.max(0, cur ? tabs.indexOf(cur) : 0);
+  return { panes: [...keep, { tabs, active }], active: Math.min(s.active, PAD_PANES - 1) };
+}
+
 /** One pane: every tab in the first, the active pane's tab on top. Unchanged when there is one already. */
 export function onePane(s: Panes): Panes {
   if (s.panes.length <= 1) return s;

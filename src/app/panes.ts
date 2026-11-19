@@ -231,6 +231,33 @@ export function closeTab(s: Panes, pane: number, index: number): Panes {
   return next;
 }
 
+/**
+ * The tab at `index` of `pane` taken out of it and put in the pane beside (the one to its right, to its left from
+ * the last; a pane made when there is one), shown there, and that pane the active one. A pane left with no tab
+ * closes. Nothing when the tab is the only one there is.
+ */
+export function moveBeside(s: Panes, pane: number, index: number): Panes {
+  const from = s.panes[pane];
+  if (!from || index < 0 || index >= from.tabs.length) return s;
+  if (s.panes.length === 1 && from.tabs.length === 1) return s;
+  const next = clone(s);
+  const own = next.panes[pane]!;
+  const moved = own.tabs.splice(index, 1)[0]!;
+  if (own.active >= own.tabs.length) own.active = Math.max(0, own.tabs.length - 1);
+  else if (own.active > index) own.active -= 1;
+  if (next.panes.length === 1) next.panes.push({ tabs: [], active: 0 });
+  let target = pane + 1 < next.panes.length ? pane + 1 : pane - 1;
+  const to = next.panes[target]!;
+  to.tabs.push(moved);
+  to.active = to.tabs.length - 1;
+  if (own.tabs.length === 0) {
+    next.panes.splice(pane, 1);
+    if (target > pane) target -= 1;
+  }
+  next.active = target;
+  return next;
+}
+
 /** A new empty pane to the right of `pane`, up to three. */
 export function splitPane(s: Panes, pane: number): Panes {
   if (s.panes.length >= MAX_PANES) return s;

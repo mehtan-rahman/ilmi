@@ -1465,6 +1465,43 @@ describe('a written notebook in the lens', () => {
     await vault.update(TYPED, (d) => { d.blocks.splice(1); });
   });
 
+  it('a pdf marked as opening when the page was taken down is not opened by itself again; `try again` opens it', async () => {
+    // (the first the page asks the app in this file: it went down, with this file half open)
+    pageFell = true;
+    localStorage.setItem('ilmi.pdf.opening', PDF);
+    try {
+      const before = acquired;
+      await mount(PDF);
+      await wait(40);
+      expect(acquired).toBe(before);
+      expect([q<HTMLElement>('.pdf-fail')?.dataset.why, q('.pf-said')?.textContent]).toEqual(['fell', 'this pdf closed the page the last time it was opened']);
+      await act(async () => { q<HTMLButtonElement>('.pf-again')!.click(); });
+      await wait(60);
+      expect(acquired).toBe(before + 1);
+      expect(q('.pdf-fail')).toBeNull();
+      expect(qa('.pdf-page').length).toBe(2);
+    } finally {
+      pageFell = false;
+      localStorage.removeItem('ilmi.pdf.opening');
+    }
+  });
+
+  it('a pdf being read has `later` and `dismiss` in its `more`; one that is not, neither', async () => {
+    await mount(PDF);
+    await click(more());
+    expect(menuRow('more-pages')).not.toBeNull();
+    expect([menuRow('more-later'), menuRow('more-dismiss')]).toEqual([null, null]);
+    await act(async () => { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); });
+    act(() => root?.unmount());
+    host.remove();
+    // enrolled to be read: the two are the first of its menu, in the session's words
+    await mount(PDF);
+    await act(async () => { useApp.setState((st) => ({ docs: { ...st.docs, [PDF]: { ...st.docs[PDF]!, read: { due: '2026-01-01', ivl: 2, reps: 1, pos: 1 } } } })); });
+    await click(more());
+    expect(menuRows().slice(0, 2).map((r) => [r.dataset.act, r.textContent])).toEqual([['more-later', 'later'], ['more-dismiss', 'dismiss']]);
+    await act(async () => { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); });
+  });
+
   it('a pdf that does not open says why, offers `try again`, and is tried again by itself when its bytes arrive', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {

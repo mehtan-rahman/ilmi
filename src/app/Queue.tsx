@@ -22,7 +22,7 @@ import { clozeHTML, faceDir, richHTML } from './Reader.js';
 import { dirAttr } from '../reader/index.js';
 import { useApp } from './store.js';
 import { currentVault, openCard, openNode, openSession, postponeRest, refreshQueue, setFocus, startSession, unlogReading } from './vault.js';
-import { actOnDoc, actionWords, atEndOf, docLine, putBackDoc, twoLines, type DocAction } from './Session.js';
+import { actWithNotice, actionWords, atEndOf, putBackDoc, twoLines, type DocAction } from './Session.js';
 import { failed, notify } from './land.js';
 import { passageOf, putPassage } from './passages.js';
 import type { ReadItem, SectionItem, WriteItem } from '../schedule/index.js';
@@ -93,8 +93,9 @@ export function QueuePath({ item, docs, by }: { item: QueueItem; docs: Record<st
 }
 
 /**
- * A topic's row held under a finger (`touch.ts` makes the long press a right-click): `later` and `dismiss` as a menu
- * where the finger is, so neither is reached only by a swipe. They are the row's own two, pressed for it.
+ * A topic's row held under a finger (`touch.ts` makes the long press a right-click), or right-clicked: `later` and
+ * `dismiss` as a menu where the finger is, so neither is reached only by a swipe, nor only in a session; on a Mac and an
+ * iPad, whose rows have no button, `next` too. They are the row's own, pressed for it.
  */
 function rowMenu(e: MouseEvent<HTMLLIElement>): void {
   const li = e.currentTarget;
@@ -103,43 +104,35 @@ function rowMenu(e: MouseEvent<HTMLLIElement>): void {
   const done = pick('done');
   if (!later || !done) return;
   e.preventDefault();
+  // (where the row has no button of its own for it, a Mac's and an iPad's, `next` is in the menu too)
+  const on = pick('on');
   popMenu({ left: e.clientX, top: e.clientY, bottom: e.clientY }, [
+    ...(on && on.textContent !== done.textContent ? [{ label: on.textContent ?? 'next', act: 'on', run: () => on.click() }] : []),
     { label: later.textContent ?? 'later', act: 'postpone', run: () => later.click() },
     { label: done.textContent ?? 'dismiss', act: 'done', run: () => done.click() },
   ]);
 }
 
 /** A topic's row on a phone (milestone 56): ⏎ `p` `d` as buttons, acting from the row. What was written can be undone from the notice. */
-function TopicActs({ item, now }: { item: ReadItem | WriteItem | SectionItem; now: Date }) {
+function TopicActs({ item, now, quiet = false }: { item: ReadItem | WriteItem | SectionItem; now: Date; /** Not a phone: the row shows none of them, and has them for its menu (a right-click, a long press). */ quiet?: boolean }) {
   const pages = useApp((s) => !!s.docs[item.path]?.pdf);
   const atEnd = atEndOf(item, pages, null);
   const words = actionWords(item, now, atEnd);
   const act = (e: MouseEvent, action: DocAction) => {
     e.stopPropagation();
-    const vault = currentVault();
-    if (!vault) return;
-    const line = docLine(item, action, now);
-    // a passage is in no document: what puts its line back is handed over
-    if (item.kind === 'section' && item.passage) {
-      let putBack = null as (() => Promise<void>) | null;
-      void actOnDoc(item, action, undefined, undefined, undefined, (undo) => { putBack = undo; })
-        .then(() => notify(line, null, putBack ? async () => { await putBack!(); unlogReading(item.path, item.heading); } : undefined))
-        .catch(failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss'));
-      return;
-    }
-    void vault.read(item.path).then(({ doc }) => {
-      const before = structuredClone(doc);
-      return actOnDoc(item, action).then(() => notify(line, null, () => putBackDoc(item, before).then(() => unlogReading(item.path, item.kind === 'section' ? item.heading : undefined))));
-    }).catch(failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss'));
+    actWithNotice(item, action);
   };
   return (
     <>
       {/* the one a row is usually for; `later` and `dismiss` are a swipe left (below) and the row's menu, a long press (`rowMenu`) */}
-      <span className="topic-acts">
-        <button type="button" data-act="on" onClick={(e) => act(e, atEnd ? 'done' : 'on')}>{twoLines(words.on)}</button>
-      </span>
+      {!quiet && (
+        <span className="topic-acts">
+          <button type="button" data-act="on" onClick={(e) => act(e, atEnd ? 'done' : 'on')}>{twoLines(words.on)}</button>
+        </span>
+      )}
       {/* the same two again past the row's right end, where a swipe left finds them (`rowSwipe.ts`); `later` the outer one, which a swipe right across is */}
-      <span className="swipe-acts" aria-hidden="true">
+      <span className="swipe-acts" aria-hidden="true" hidden={quiet}>
+        {quiet && <button type="button" tabIndex={-1} data-act="on" onClick={(e) => act(e, atEnd ? 'done' : 'on')}>{words.on}</button>}
         <button type="button" tabIndex={-1} data-act="done" onClick={(e) => act(e, 'done')}>{words.done}</button>
         <button type="button" tabIndex={-1} data-act="postpone" onClick={(e) => act(e, 'postpone')}>{words.postpone}</button>
       </span>
@@ -304,7 +297,7 @@ export function Queue({ scope, active }: Props) {
             data-fresh={isFresh(item) ? '1' : '0'}
             data-below={i >= foldAt ? '1' : '0'}
             data-swipe={phone && item.kind !== 'card' ? '1' : undefined}
-            onContextMenu={phone && item.kind !== 'card' ? rowMenu : undefined}
+            onContextMenu={item.kind !== 'card' ? rowMenu : undefined}
             onMouseEnter={phone ? undefined : () => setCursor(i)}
             onClick={(e) => open(item, clickOpts(e))}
           >
@@ -321,7 +314,7 @@ export function Queue({ scope, active }: Props) {
             </span>
             <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
             <span className="due" title={ivl ? `interval ${ivl}` : undefined} data-st={dueTone(item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now))}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now)}</span>
-            {phone && item.kind !== 'card' && <TopicActs item={item} now={now} />}
+            {item.kind !== 'card' && <TopicActs item={item} now={now} quiet={!phone} />}
           </li>
         );
         if (i !== foldAt) return row;

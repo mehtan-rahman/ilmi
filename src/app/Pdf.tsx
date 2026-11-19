@@ -2618,7 +2618,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     const r = el.getBoundingClientRect();
     if (written) { paperMenu({ left: r.left, top: r.bottom + 4, bottom: r.bottom + 4 }); return; }
     const from = portalPending();
+    // its reading, while it is enrolled: put off, or ended, as the session's `later` and `dismiss` do (the notice takes either back)
+    const topic = info?.read ? (action: 'postpone' | 'done') => void import('./Session.js').then((m) => { const it = m.readingOf(id); if (it) m.actWithNotice(it, action); }).catch(console.error) : null;
     const items: PopItem[] = [
+      ...(topic ? [{ label: 'later', act: 'more-later', run: () => topic('postpone') }, { label: 'dismiss', act: 'more-dismiss', run: () => topic('done') }, { label: '-' }] : []),
       { label: 'all pages', act: 'more-pages', run: () => setGrid(true) },
       ...(hash ? [{ label: mobile ? 'share as pdf' : 'export as pdf', act: 'more-share', run: () => sharePdf({ left: r.left, top: r.bottom + 4 }) }] : []),
       { label: '-' },

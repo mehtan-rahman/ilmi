@@ -368,6 +368,16 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved, sele
               <span className="cg"><Glyph g={GLYPH.intake} /></span>add from text or a link
             </div>
           )}
+          {node && docs[at.id]?.read && (
+            <>
+              <div className="ci" data-act="read-later" onClick={act(() => { void import('./Session.js').then((m) => { const it = m.readingOf(at.id); if (it) m.actWithNotice(it, 'postpone'); }).catch(fail); })}>
+                <span className="cg"><Glyph g="▤" /></span>later
+              </div>
+              <div className="ci" data-act="read-dismiss" onClick={act(() => { void import('./Session.js').then((m) => { const it = m.readingOf(at.id); if (it) m.actWithNotice(it, 'done'); }).catch(fail); })}>
+                <span className="cg"><Glyph g="▤" /></span>dismiss
+              </div>
+            </>
+          )}
           {node && kind === 'note' && !docs[at.id]?.read && (
             <div className="ci" data-act="revisit" onClick={act(() => { enrolReading(at.id).catch(fail); })}>
               <span className="cg"><Glyph g="▤" /></span>revisit

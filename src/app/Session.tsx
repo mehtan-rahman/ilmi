@@ -555,6 +555,36 @@ export function putBackDoc(item: ReadItem | WriteItem | SectionItem, before: Doc
   });
 }
 
+/**
+ * One of the three on a topic from outside the session (a row of the queue, a row of the tree, a book's `more`):
+ * written as the session writes it, and said in a notice that takes it back: the document as it was (a passage's
+ * line among its PDF's marks), and what the day's log noted of it.
+ */
+export function actWithNotice(item: ReadItem | WriteItem | SectionItem, action: DocAction): void {
+  const vault = currentVault();
+  if (!vault) return;
+  const line = docLine(item, action, appNow());
+  const fail = failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss');
+  // a passage is in no document: what puts its line back is handed over
+  if (item.kind === 'section' && item.passage) {
+    let putBack = null as (() => Promise<void>) | null;
+    void actOnDoc(item, action, undefined, undefined, undefined, (undo) => { putBack = undo; })
+      .then(() => notify(line, null, putBack ? async () => { await putBack!(); unlogReading(item.path, item.heading); } : undefined))
+      .catch(fail);
+    return;
+  }
+  void vault.read(item.path).then(({ doc }) => {
+    const before = structuredClone(doc);
+    return actOnDoc(item, action).then(() => notify(line, null, () => putBackDoc(item, before).then(() => unlogReading(item.path, item.kind === 'section' ? item.heading : undefined))));
+  }).catch(fail);
+}
+
+/** A document's own reading as the queue holds it (every enrolled document is there, due or not): what `later` and `dismiss` act on. Null when it is not enrolled. */
+export function readingOf(path: string): ReadItem | null {
+  const it = useApp.getState().queue.find((i) => i.kind === 'read' && i.path === path);
+  return it && it.kind === 'read' ? it : null;
+}
+
 function DocSession({ item, active, onAct, done, onPass, ...nav }: DocProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const under = usePaneSlot(barRef, 'under');

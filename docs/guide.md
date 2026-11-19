@@ -613,6 +613,17 @@ never growing); once its marker is at its last block or page, ⏎ reads
 elapsed since the pass before, so sixty days late on three lands past
 ninety, not at five. The tree's due counts include sections.
 
+`later` and `dismiss` are not the session's alone. A row of the queue has
+them in its menu on any device (right-click it; under a finger, hold it),
+with `next`; a document being read has them in its row's menu in the tree;
+and a PDF or a book's chapter being read has them first in the `⋯` of the
+bar over its pages. They do what the session's do, for a PDF, a source, a
+chapter or an extract as for a note: `later` puts it off without counting a
+pass, and `dismiss` ends its reading: it is no longer enrolled (its `read`
+line goes, as the format has it) and does not come back; its notes, its
+passages and its cards stay, and `r` on its page (`revisit` in the tree,
+for a note) enrolls it again from today. The notice takes either back.
+
 ## Writing
 
 ### The editor

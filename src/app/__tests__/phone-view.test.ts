@@ -199,10 +199,29 @@ describe('a topic on the day', () => {
     expect(activeTab(useApp.getState().panes)?.id).toBe(queueId('today'));
   });
 
-  it('on the Mac and the iPad stays a row', async () => {
+  it('on the Mac and the iPad stays a row, with the three in its menu: next, later, dismiss; a card has no such menu', async () => {
     useApp.setState({ queue: items(), phone: false });
     await draw(createElement(Queue, { scope: 'today', active: true }));
     expect(q('.topic-acts')).toBeNull();
+    const row = q('.qlist li[data-el="read"]')!;
+    // nothing of them is drawn on the row
+    expect((row.querySelector('.swipe-acts') as HTMLElement).hidden).toBe(true);
+    // right-clicked (a long press, under a finger): the row's menu
+    await act(async () => { row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 200 })); });
+    const rows = qa('.pop-menu .ci').map((i) => [(i as HTMLElement).dataset.act, i.textContent]);
+    expect(rows.map((r) => r[0])).toEqual(['on', 'postpone', 'done']);
+    expect(rows.slice(1).map((r) => r[1])).toEqual(['later', 'dismiss']);
+    // dismiss from it: written, nothing opened, and the notice can take it back
+    await act(async () => { (qa('.pop-menu .ci').find((i) => (i as HTMLElement).dataset.act === 'done') as HTMLElement).click(); await Promise.resolve(); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(calls).toEqual([`write ${NOTE}`]);
+    expect(useApp.getState().notice?.undo).toBe(true);
+    expect(useApp.getState().notice?.line).toContain('dismissed');
+    expect(activeTab(useApp.getState().panes)?.id).toBe(queueId('today'));
+    // a card's row has none
+    const before = qa('.pop-menu').length;
+    await act(async () => { q('.qlist li[data-el="card"]')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 300 })); });
+    expect(qa('.pop-menu .ci').some((i) => (i as HTMLElement).dataset.act === 'done') && qa('.pop-menu').length > before).toBe(false);
   });
 });
 

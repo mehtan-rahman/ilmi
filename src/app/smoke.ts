@@ -20787,6 +20787,33 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       const seen = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight + 0.5 && r.left >= 0 && r.right <= window.innerWidth + 0.5; };
       log(`sess: the bar ${Math.round(bar.getBoundingClientRect().top)} to ${Math.round(bar.getBoundingClientRect().bottom)} of ${window.innerHeight}; its buttons: ${qa<HTMLElement>('button[data-act]', bar).map((x) => `${x.dataset.act} "${x.textContent}" ${seen(x) ? 'on the glass' : 'NOT on the glass'} ${Math.round(x.getBoundingClientRect().width)}x${Math.round(x.getBoundingClientRect().height)}`).join('; ')}`);
       await shot('sess-pdf');
+      must(qa<HTMLElement>('button[data-act]', bar).map((x) => x.dataset.act).join() === 'on,postpone,done' && qa<HTMLElement>('button[data-act]', bar).every(seen), 'the session on a PDF offers the three, each on the glass: done for today, later, dismiss');
+      // ── and outside the session: the book's own `more`, and its row in the queue ──
+      const reading = () => useApp.getState().docs[PAGEINK_BOOK]?.read;
+      openNode(PAGEINK_BOOK);
+      const bk = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK && !k.closest('.doc-session')); return x && x.getClientRects().length && q('.meta [data-tool="more"]', x) ? x : null; }, 'the chapter open on its own', 30000);
+      q<HTMLElement>('.meta [data-tool="more"]', bk)!.click();
+      const dm = await poll(() => q<HTMLElement>('.ctx-menu .ci[data-act="more-dismiss"]') ?? q<HTMLElement>('.pop-menu .ci[data-act="more-dismiss"]'), 'its more has dismiss', 8000);
+      must((q('.ci[data-act="more-later"]')?.textContent ?? '') === 'later' && dm.textContent === 'dismiss', 'and later, in the session\'s words');
+      await shot('sess-more');
+      dm.click();
+      await poll(() => !reading() && /dismissed/.test(useApp.getState().notice?.line ?? '') && useApp.getState().notice?.undo === true, 'dismiss from the book: its reading ends, and the notice says so and can take it back', 15000);
+      must(!useApp.getState().queue.some((i) => i.kind === 'read' && i.path === PAGEINK_BOOK), 'it is out of the queue');
+      const { undoNotice } = await import('./land.js');
+      await undoNotice();
+      await poll(() => !!reading() && useApp.getState().queue.some((i) => i.kind === 'read' && i.path === PAGEINK_BOOK), 'taken back: it is being read again, in the queue', 15000);
+      // the queue's row: its menu has the three on any device (a right-click, or a long press)
+      openNode(queueId('reading'));
+      const qrow = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .qlist li[data-el="read"]').find((li) => (li.textContent ?? '').includes('canonical ensemble')) ?? null, 'the chapter has its row in the queue', 20000).catch(() => null);
+      if (qrow) {
+        qrow.scrollIntoView({ block: 'center' });
+        const rr = qrow.getBoundingClientRect();
+        qrow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rr.left + 60, clientY: rr.top + rr.height / 2 }));
+        const acts = await poll(() => { const m = qa<HTMLElement>('.pop-menu .ci, .ctx-menu .ci').map((x) => x.dataset.act ?? ''); return m.includes('done') ? m : null; }, 'its row\'s menu opens', 8000);
+        must(acts.includes('postpone') && acts.includes('done'), `the row's menu has later and dismiss (${acts.join(', ')})`);
+        await shot('sess-row-menu');
+        document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      } else log('sess: the chapter has no row in the reading queue here: its row\'s menu was not looked at');
       phase('done');
       finished = true;
       log('done');

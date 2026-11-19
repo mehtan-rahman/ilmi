@@ -11807,6 +11807,8 @@ export async function smokePhone(): Promise<void> {
         if (buttons.length !== 4) { await sleep(150); continue; }
         if (!shots++) {
           must(buttons.length === 4 && tall('.grades button', 44), 'the four grades as buttons');
+          // the way into the card's text is said, under a finger: `edit` at the end of the card's line (its blanks are edited there, `BlankRow`)
+          must(q('.recall-wrap .card-meta .cm-edit')?.textContent === 'edit', 'the card\'s line ends with edit once the answer is up');
           const r = buttons.map((b) => b.getBoundingClientRect());
           const gaps = [1, 2, 3].map((i) => r[i]!.left - r[i - 1]!.right);
           // (the row's hairline is the first key's left edge and the last one's right: those two are a pixel wider than the two between)

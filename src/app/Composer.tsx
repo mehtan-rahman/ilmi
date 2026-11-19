@@ -115,11 +115,10 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
       {form === 'cloze' && (
         <>
           <div className="composer-face" dir="auto" ref={faceRef} onMouseDown={pressIntoFace}>
-            <FaceField key={gen} value={text} placeholder="passage" autoFocus blanks onChange={setText} />
+            <FaceField key={gen} value={text} placeholder="passage" autoFocus blanks blankRow={quick !== undefined ? 'inline' : undefined} onChange={setText} />
           </div>
-          {quick === undefined
-            ? (hasBlank ? null : <div className="preview">{preview}</div>)
-            : <button type="button" className="quick-blank" onMouseDown={(e) => e.preventDefault()} onClick={wrapBlank}>blank</button>}
+          {/* (a phone's new card has the row of blanks under its passage, drawn by the field: `blank`, `with N`, `remove blank`) */}
+          {quick === undefined && (hasBlank ? null : <div className="preview">{preview}</div>)}
         </>
       )}
       {form !== 'cloze' && (

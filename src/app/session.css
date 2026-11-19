@@ -154,6 +154,9 @@
 .recall-wrap .card .bidir-b { color: var(--fg-1); }
 
 /* a quiet schedule strip under the card */
+/* `edit`, under a finger: a word at the line's end, a finger's height about it */
+.recall-wrap .card-meta .cm-edit { appearance: none; position: relative; margin: 0 0 0 auto; padding: 0; border: 0; background: none; color: var(--fg-2); font: inherit; text-decoration: underline; text-decoration-color: var(--line-1); text-underline-offset: 3px; }
+.recall-wrap .card-meta .cm-edit::after { content: ""; position: absolute; left: -12px; right: -12px; top: 50%; height: 44px; transform: translateY(-50%); }
 .recall-wrap .card-meta {
   display: flex;
   flex-wrap: wrap;

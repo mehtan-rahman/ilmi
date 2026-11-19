@@ -6,6 +6,16 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-19 — a cloze's blanks edited under a finger; a blank grown to take a missed word
+
+A cloze made on an iPad or a phone could not have its blanks changed there: `blank`, `blank · with N`, `move to group` and `remove blank` are the editor's right-click menu (`editorMenu`, `Reader.tsx`), and a long press in text being typed brings the system's bubble, never that menu. Only a phone's new card had a `blank` button.
+
+- `makeBlank(n)` (`reader/blanksDeco.ts`) with a group there is: a blank of that group the selection lies beside (nothing but spaces between, on one line), overlaps or holds grows to cover the selection, one blank after. It made a blank inside the blank, or two neighbours. A selection wholly inside a blank of the group makes nothing. The Mac's menu is the same menu; only this changed there. The group keeps its number, so `planEdit` drops no `sr cN` line (tested).
+- `BlankRow` (`FaceField.tsx`): on a device, while a cloze's field has the caret, a row of buttons at the foot of what the keyboard leaves (`--shell-h`): `blank`, `with N` for each group the selection can join, `remove blank` with the caret in one. A press keeps the caret and the selection. A phone's new card draws it in place under the passage (its own buttons are on the keyboard); its one `blank` button is gone.
+- A session's card says `edit` at the end of its line once the answer is up, on a device (a press on the face did it already, with nothing to say so).
+
+Seen with the rig's touches on an iPhone 17 simulator and an iPad Air 11 (stills under the scratchpad's `native/stills-cloze`): `edit` pressed, a word double tapped, the row standing on the keyboard (498–546 of 546 visible on the phone, 795–843 of 843 on the iPad), `with 1` pressed and `is from {{c1::1925}}` become `is {{c1::from 1925}}` with the caret kept, `blank` on another word a group of its own, `remove blank` taking it away; the new card's row under its passage. The first run found that a press on the row, which is drawn on the page and not in the editor, was the editor's "press outside": it saved and closed. `CardFaces` and the deck's editor now count the row as their own. Not pressed: a deck row's `edit` by a long press, the selection's drag handles, a cloze of several groups (`with 2`).
+
 ## 2026-11-19 — two panes on an iPad, and a way to ask for them by touch
 
 An iPad had tabs but no touch way to a second one, and folded every second pane but a PDF's with its note.

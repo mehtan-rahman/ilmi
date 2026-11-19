@@ -618,6 +618,22 @@ group` moves the blank you pressed in, `remove blank` takes it away. So does
 backspace at a blank's start: the blank goes, its words stay. Typed braces
 still work, and become a blank as they close.
 
+A word missed when a blank was made is added to it the same way: select the
+word (with the blank or without it) and choose `blank · with N`, N the
+blank's own group. Where the selection lies next to a blank of that group,
+overlaps it or holds it, the blank grows to cover the selection; it is one
+blank after, not a blank inside a blank nor two beside each other. The
+group keeps its number, so the card keeps its schedule.
+
+On an iPad and a phone a long press in text you are typing brings the
+system's own bubble, not this menu, so the same choices are a row of buttons
+that stands on the keyboard while a cloze's text has the caret: `blank`,
+`with 1`, `with 2` … for the groups there are, and `remove blank` when the
+caret is in one. Double tap a word (or drag the handles) and press one. To
+get at a card's text there: in a session, once the answer is up, `edit` at
+the end of the line under the card, or a tap on the card; in a deck, a long
+press on the card's row and `edit`.
+
 A card of several lines is one text: a blank can start on one line and end
 on another, and ⌘A then ⌘B blanks all of it.
 

@@ -127,7 +127,7 @@ export function CardFaces({ card, onSave, onDone, autoFocus, handle, children, k
     const onDown = (e: MouseEvent) => {
       if (root.current?.contains(e.target as Node)) return;
       // a menu of a face's own (a table's, the text's) is not outside
-      if ((e.target as HTMLElement | null)?.closest?.('.pop-menu')) return;
+      if ((e.target as HTMLElement | null)?.closest?.('.pop-menu, .blank-row')) return;
       const st = latest.current;
       if (st.asking !== null || !st.dirty) return;
       if (st.flush(false)) onDone?.();

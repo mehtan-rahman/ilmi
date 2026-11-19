@@ -218,6 +218,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
   const [edited, setEdited] = useState<string | undefined>(undefined);
   const plugins = usePlugins();
   const phone = useApp((s) => s.phone);
+  const mobile = useApp((s) => s.mobile);
   const cardRef = useRef<HTMLDivElement>(null);
   const now = appNow();
   const card = liveCard(loaded?.doc.blocks, item, edited);
@@ -363,6 +364,8 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
       <div className="card-meta">
         <span className="cm-type" data-form={f?.form}>{f ? FORM_LABEL[f.form] : 'card'}</span>
         {schedule}
+        {/* under a finger the way into editing is said (a press on a face does it too; the Mac has `e`): once the answer is up */}
+        {mobile && revealed && card && <button type="button" className="cm-edit" data-act="edit" onClick={() => setEditing(true)}>edit</button>}
       </div>
       </>)}
       {suspended ? (

@@ -6,11 +6,15 @@
 // typed, an untouched table as it was read, a changed one as the normalized
 // pipe table. A cloze's face holds no table: its text stays one paragraph.
 
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import type { Block } from '../format/index.js';
-import { makeBlank, makeState, nodeToRaw, schema, textOf } from '../reader/index.js';
+import { blankAround, groupsHere, makeBlank, makeState, nodeToRaw, removeBlank, schema, textOf } from '../reader/index.js';
+import { createPortal } from 'react-dom';
+import { hapticTick } from './haptics.js';
+import { useApp } from './store.js';
+import type { Command, EditorState } from 'prosemirror-state';
 import { caretToPress, editorMenu, handleClickOn, nodeViews } from './Reader.js';
 
 const pipe = (line: string): boolean => /^ {0,3}\|/.test(line);
@@ -49,6 +53,38 @@ export function faceFieldText(doc: PMNode): string {
   return lines.join('\n').replace(/\n{2,}/g, '\n').replace(/^\n+|\n+$/g, '');
 }
 
+/** What a cloze's row of buttons offers for the selection as it is: a blank of its own, the groups it can join or grow, and taking the blank at the caret away. */
+export interface BlankChoices { blank: boolean; withGroups: number[]; remove: boolean }
+export function blankChoices(state: EditorState): BlankChoices {
+  return {
+    blank: makeBlank()(state),
+    withGroups: groupsHere(state).slice(0, 9).filter((g) => makeBlank(g)(state)),
+    remove: blankAround(state) !== null,
+  };
+}
+
+/**
+ * A cloze's blanks under a finger: a row of plain buttons that belongs to the field while it has the caret. A long
+ * press in text being typed brings the system's own bubble, never the editor's menu, so on an iPad and a phone the
+ * menu's `blank`, `blank · with N` and `remove blank` had no way to be reached. `with N` puts the selection in the
+ * group N, and grows a blank of that group it touches (`makeBlank`): the word that was missed. A press on a button
+ * leaves the caret and the selection where they are. The row sits on the keyboard (the foot of what is left of the
+ * glass), or in place where its host draws it (`inline`: a phone's new card, whose own buttons are on the keyboard).
+ */
+export function BlankRow({ view, inline }: { view: EditorView; inline?: boolean; /** Changes with the selection: the row is drawn again for it. */ tick?: number }) {
+  const c = blankChoices(view.state);
+  const run = (cmd: Command) => () => { if (cmd(view.state, view.dispatch.bind(view))) hapticTick(); view.focus(); };
+  const keep = (e: { preventDefault(): void }) => e.preventDefault();
+  const row = (
+    <div className="blank-row" data-inline={inline ? '1' : undefined} role="toolbar" aria-label="blanks" onMouseDown={keep} onTouchStart={keep} onPointerDown={keep}>
+      <button type="button" data-act="blank" disabled={!c.blank} onClick={run(makeBlank())}>blank</button>
+      {c.withGroups.map((g) => <button key={g} type="button" data-act={`blank-${g}`} onClick={run(makeBlank(g))}>with {g}</button>)}
+      {c.remove && <button type="button" data-act="unblank" onClick={run(removeBlank)}>remove blank</button>}
+    </div>
+  );
+  return inline ? row : createPortal(row, document.body);
+}
+
 /** Each face's editor by its `.face-host`: for a test or a smoke to type into. */
 export const faceViews = new WeakMap<Element, EditorView>();
 
@@ -80,10 +116,15 @@ interface FaceProps {
   /** ⌘B makes a blank of the selection (a cloze's face); such a face holds no table. */
   blanks?: boolean;
   onChange(text: string): void;
+  /** A cloze's row of blank buttons under a finger: on the keyboard (the default), in place under the field, or not drawn. */
+  blankRow?: 'inline' | 'none' | undefined;
 }
 
 /** A face as the reader edits text: inline Markdown and math chips, a table as a table. */
-export function FaceField({ value, placeholder, autoFocus, blanks, onChange }: FaceProps) {
+export function FaceField({ value, placeholder, autoFocus, blanks, blankRow, onChange }: FaceProps) {
+  const mobile = useApp((s) => s.mobile);
+  const [focused, setFocused] = useState(false);
+  const [tick, setTick] = useState(0);
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const change = useRef(onChange);
@@ -112,11 +153,15 @@ export function FaceField({ value, placeholder, autoFocus, blanks, onChange }: F
       handleDOMEvents: {
         // a cell's menu, or cut, copy, paste and `insert table` (not in a cloze)
         contextmenu: (ev, e) => editorMenu(ev, e, { table: !blanks, blanks: !!blanks }),
+        focus: () => { setFocused(true); return false; },
+        blur: () => { setFocused(false); return false; },
       },
       dispatchTransaction(tr) {
         const next = v.state.apply(tr);
         v.updateState(next);
         if (tr.docChanged) change.current(faceFieldText(next.doc));
+        // the row of blanks is for the selection as it is now
+        if (blanks) setTick((t) => t + 1);
       },
     });
     view.current = v;
@@ -134,5 +179,12 @@ export function FaceField({ value, placeholder, autoFocus, blanks, onChange }: F
     // the selection (or the word at the caret) a blank of a group of its own
     makeBlank()(v.state, v.dispatch.bind(v));
   };
-  return <div className="face-host" ref={host} onKeyDown={onKeyDown} />;
+  // under a finger a cloze's blanks are a row of buttons, there while the field has the caret (`BlankRow`)
+  const row = blanks && mobile && focused && view.current && blankRow !== 'none';
+  return (
+    <>
+      <div className="face-host" ref={host} onKeyDown={onKeyDown} />
+      {row && <BlankRow tick={tick} view={view.current!} inline={blankRow === 'inline'} />}
+    </>
+  );
 }

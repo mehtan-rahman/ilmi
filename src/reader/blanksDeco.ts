@@ -139,11 +139,40 @@ export function makeBlank(n?: number): Command {
       if (cuts(from) || (from >= s.inner && from <= s.close && to > s.close)) from = Math.min(from, s.from);
       if (cuts(to) || (to >= s.inner && to <= s.close && from < s.inner)) to = Math.max(to, s.to);
     }
+    // into a group there is: a blank of that group the selection lies in, overlaps, holds or adjoins (nothing but
+    // spaces between them, on one line) grows to cover the selection. One blank, not a blank in a blank nor two
+    // neighbours asked together: a word missed when the blank was made is added to it. The group keeps its number,
+    // so its schedule (`sr cN`) is the same card's
+    const joined: BlankSpan[] = [];
+    if (n !== undefined) {
+      const same = blanksOf(state).filter((s) => s.n === n);
+      const gap = (a: number, b: number) => a <= b && /^[ \t\u00a0]*$/.test(state.doc.textBetween(a, b, '\n', '\n'));
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const s of same) {
+          if (joined.includes(s)) continue;
+          const meets = (s.from <= to && s.to >= from) || (s.to <= from && gap(s.to, from)) || (s.from >= to && gap(to, s.from));
+          if (!meets) continue;
+          joined.push(s);
+          from = Math.min(from, s.from);
+          to = Math.max(to, s.to);
+          grew = true;
+        }
+      }
+      // all of it in one blank of the group already: nothing to make
+      if (joined.length === 1 && joined[0]!.inner <= sel.from && sel.to <= joined[0]!.close && !state.selection.empty) return false;
+      if (joined.length === 1 && state.selection.empty && joined[0]!.inner <= sel.from && sel.to <= joined[0]!.close) return false;
+    }
     if (!dispatch) return true;
     const group = n ?? nextGroup(faceText(state.doc).text);
     const open = `{{c${group}::`;
-    const tr = state.tr.insertText('}}', to).insertText(open, from);
-    tr.setSelection(TextSelection.create(tr.doc, to + open.length));
+    const tr = state.tr;
+    // the blanks joined lose their own braces (last first, so the places before them stand), then one pair goes round the whole
+    for (const s of [...joined].sort((x, y) => y.from - x.from)) unwrap(tr, s);
+    const a = tr.mapping.map(from, -1);
+    const z = tr.mapping.map(to, 1);
+    tr.insertText('}}', z).insertText(open, a);
+    tr.setSelection(TextSelection.create(tr.doc, z + open.length));
     dispatch(tr.scrollIntoView());
     return true;
   };

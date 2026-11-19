@@ -290,6 +290,16 @@ function opening(rel: string | null): void {
 function fellOpening(rel: string): boolean {
   try { return localStorage.getItem(OPENING_KEY) === rel && openingHere !== rel; } catch { return false; }
 }
+/** A mark left by a page before this one, taken off: that page was closed, not taken down. */
+function forgetOpening(rel: string): void {
+  try { if (localStorage.getItem(OPENING_KEY) === rel && openingHere !== rel) localStorage.removeItem(OPENING_KEY); } catch { /* no storage */ }
+}
+/** Whether the page's own process was taken from under it in this run of the app: asked of the app once (it loaded the page again then). False where there is no app to ask. */
+let fellAsked: Promise<boolean> | null = null;
+function pageFell(): Promise<boolean> {
+  fellAsked ??= import('@tauri-apps/api/core').then((m) => m.invoke<boolean>('page_fell', {})).then((v) => v === true, () => false);
+  return fellAsked;
+}
 /** Whether this page holds the file to be opening still. */
 function openingStill(rel: string): boolean {
   try { return localStorage.getItem(OPENING_KEY) === rel; } catch { return false; }
@@ -874,9 +884,20 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   useEffect(() => {
     if (!rel) return;
     if (fellOpening(rel) && tries === 0) {
-      setFail({ kind: 'fell', said: 'this pdf closed the page the last time it was opened', detail: 'it may be too large for this device · it is not opened again by itself' });
-      setStatus('unreadable');
-      return;
+      // marked by a page before this one: held back only if that page's process was taken from under it (the app
+      // says so, `page_fell`). An app closed while a file was opening left the same mark and took nothing down
+      let asking = true;
+      void pageFell().then((fell) => {
+        if (!asking) return;
+        if (fell) {
+          setFail({ kind: 'fell', said: 'this pdf closed the page the last time it was opened', detail: 'it may be too large for this device · it is not opened again by itself' });
+          setStatus('unreadable');
+        } else {
+          forgetOpening(rel);
+          setTries((n) => n + 1);
+        }
+      });
+      return () => { asking = false; };
     }
     let live = true;
     opening(rel);

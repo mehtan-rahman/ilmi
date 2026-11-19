@@ -68,6 +68,8 @@ vi.mock('@tauri-apps/api/core', () => ({
     if (cmd === 'ink_surface') { told.push(args.surface as SurfaceSpec); return null; }
     if (cmd === 'ink_surface_do') { asks.push({ cmd, args }); return null; }
     if (cmd === 'ink_fill') { asks.push({ cmd, args }); return { took: true }; }
+    // (whether the page's process was taken from under it in this run of the app: the app's to say)
+    if (cmd === 'page_fell') return pageFell;
     // (a stroke as the page draws it: an outline of its own, named by the store)
     if (cmd === 'ink_shapes') return JSON.stringify((args.strokes as string[]).map((_, i) => ({ n: `shape${i}`, k: 'p', d: 'M0 0L1 1L1 0z', c: '#1c1c1e' })));
     if (cmd === 'ink_take') { const d = drawn; drawn = null; return { strokes: d?.length ?? 0, drawing: d ? b64(memDrawing(d)) : null }; }
@@ -83,6 +85,8 @@ vi.mock('../crdt.js', () => ({ crdtWrote: () => {} }));
 /** How often a PDF was asked for; and what asking for one fails with, when it is to fail. */
 let acquired = 0;
 let failWith: Error | null = null;
+/** What the app says of the page's process having been taken from under it. */
+let pageFell = false;
 const pdfPage = { getViewport: ({ scale }: { scale: number }) => ({ width: W * scale, height: H * scale }), render: () => ({ promise: Promise.resolve() }), streamTextContent: () => null };
 vi.mock('../bookPdf.js', () => ({
   fillCrops: () => {},

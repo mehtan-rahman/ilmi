@@ -11057,7 +11057,7 @@ export async function smokeTouch(): Promise<void> {
     await poll(() => activeTab(useApp.getState().panes)?.id === BOOK, 'a tap on the chapter\'s row opens it', 20000);
     await poll(() => !q('.side'), 'and the sheet goes');
     const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens as a book', 15000);
-    await poll(() => q('.pdf-page[data-page="23"] canvas', book), 'its book is fetched on opening and the first page drawn', 60000);
+    await poll(() => q('.pdf-page[data-page="23"] canvas', book) ?? (q('.pdf-page[data-page="23"]', book)?.scrollIntoView({ block: 'start' }), null), 'its book is fetched on opening and the first page drawn', 60000);
     await filesSettled();
     must(!useApp.getState().away.includes(pdfOf()) && useApp.getState().away.length === 3, 'the book opened is here now, the others still away');
     const sc = q<HTMLElement>('.book-pages', book)!;
@@ -12231,7 +12231,7 @@ export async function smokePhone(): Promise<void> {
     await sleep(300);
     await tap(q('.name', chRow)!, () => at() === CH && !q('.side'), 'the chapter opens');
     const book = await poll(() => q<HTMLElement>('.book'), 'as its pages', 15000);
-    await poll(() => q('.pdf-page[data-page="23"] canvas', book), 'its book fetched and the first page drawn', 60000);
+    await poll(() => q('.pdf-page[data-page="23"] canvas', book) ?? (q('.pdf-page[data-page="23"]', book)?.scrollIntoView({ block: 'start' }), null), 'its book fetched and the first page drawn', 60000);
     await filesSettled();
     const pageRect = q<HTMLElement>('.pdf-page[data-page="23"]', book)!.getBoundingClientRect();
     must(pageRect.left >= 0 && pageRect.right <= window.innerWidth + 1, `the page fits the screen (${Math.round(pageRect.width)} of ${window.innerWidth})`);
@@ -20937,22 +20937,18 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         await shot('big-not-a-pdf');
       }
       {
-        // a file whose opening took the page down the last time (as the page keeps it, `ilmi.pdf.opening`) is not
-        // opened by itself again: it says so, and `try again` opens it
+        // a file marked as opening (`ilmi.pdf.opening`) by an app that was then closed opens as ever: only a page whose
+        // process was taken from under it (the app says so, `page_fell`) holds such a file back, and none was here
         const T = 'library/turned.pdf';
         const tbytes = new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/turned.pdf` }).catch(() => new ArrayBuffer(0)));
         if (tbytes.length) {
           if (!useApp.getState().docs[T]) await importPdfNode('library', { title: 'turned', bytes: tbytes, text: '' });
           await poll(() => useApp.getState().docs[T], 'a small paper is in the collection', 30000);
+          must((await invoke<boolean>('page_fell', {})) === false, 'the page has not gone down in this run of the app');
           localStorage.setItem('ilmi.pdf.opening', T);
           openNode(T);
-          const fell = await poll(() => q<HTMLElement>('.pane[data-active="1"] .pdf-fail[data-why="fell"]'), 'a file that took the page down is not opened by itself', 30000);
-          must(fell.dataset.why === 'fell' && !q('.pane[data-active="1"] .pdf-page canvas') && fell.textContent === fell.textContent?.toLowerCase(), `it says so in plain words ("${q('.pf-said', fell)?.textContent}")`);
-          await shot('big-fell');
-          q<HTMLButtonElement>('.pf-again', fell)!.click();
-          await poll(() => q('.pane[data-active="1"] .pdf-page canvas'), 'try again opens it', 60000);
-          must(localStorage.getItem('ilmi.pdf.opening') === T, 'while its pages are being drawn it is still held to be opening');
-          await poll(() => localStorage.getItem('ilmi.pdf.opening') === null, 'and a few seconds after they are, no longer', 15000);
+          await poll(() => q('.pane[data-active="1"] .book .pdf-page canvas') && !q('.pane[data-active="1"] .pdf-fail'), 'marked as opening by an app that was closed: it opens as ever', 60000);
+          await poll(() => localStorage.getItem('ilmi.pdf.opening') === null, 'and a few seconds after its pages are drawn it is no longer held to be opening', 15000);
         }
       }
       phase('done');

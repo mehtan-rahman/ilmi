@@ -1,6 +1,8 @@
 // Generated from src/plugins/api.ts by `npm run plugins`; edit that file.
-// The plugin API, version 2 (1, and the scheduler slot and the cache; a
-// plugin written for 1 runs as it did): what `activate(ilmi)` is handed. Types only;
+// The plugin API, version 3 (1; 2 added the scheduler slot and the cache; 3
+// a settings row that does something, a picked file's bytes, the review log
+// for a plugin that is not scheduling, and a cache for the device; a plugin
+// written for 1 or 2 runs as it did): what `activate(ilmi)` is handed. Types only;
 // this file is copied verbatim to `plugins/ilmi.d.ts` by `npm run plugins`,
 // so a plugin's TypeScript sees the same names the app does. Everything a
 // plugin can do through this handle, the app does through the same
@@ -8,8 +10,8 @@
 // disposer when the plugin is turned off, the vault closes, or its files
 // change on disk.
 
-/** The API version this file describes. A plugin's manifest names the one it was written for: this one, or 1 (2 only adds to it). */
-export type ApiVersion = 2;
+/** The API version this file describes. A plugin's manifest names the one it was written for: this one, or one before it (each only added to the last). */
+export type ApiVersion = 3;
 
 /** `plugin.json`. */
 export interface PluginManifest {
@@ -18,7 +20,7 @@ export interface PluginManifest {
   name: string;
   version: string;
   /** The API version the plugin was written against: the app's, or one before it that the app still runs. */
-  api: ApiVersion | 1;
+  api: ApiVersion | 1 | 2;
   description?: string;
   author?: string;
   repo?: string;
@@ -226,6 +228,18 @@ export interface Settings {
   choice(key: string, label: string, options: readonly string[]): void;
   /** One quiet line. */
   note(text: string): void;
+  /**
+   * `label`, and a button `verb` beside it that runs `run` (which may be async); the section is drawn again when
+   * it has finished, so a label that says how things stand says how they stand now. Bound to no key. Since api 3.
+   */
+  action(label: string, verb: string, run: () => void | Promise<void>): void;
+}
+
+/** A file the user picked, read whole. */
+export interface PickedFile {
+  /** Its name, without the folders it was in. */
+  name: string;
+  bytes: Uint8Array;
 }
 
 export interface UiApi {
@@ -237,6 +251,11 @@ export interface UiApi {
   modal(el: HTMLElement): Popover;
   /** Controls under the plugin's row in tweaks; `build` runs each time the section draws. */
   settings(build: (s: Settings) => void): Dispose;
+  /**
+   * The system's file picker, for one file anywhere on the device; its bytes, or null when the user chose none.
+   * `extensions` (`['bin', 'json']`, no dots) limits what can be chosen where the system can. Since api 3.
+   */
+  pickFile(opts?: { extensions?: readonly string[] }): Promise<PickedFile | null>;
 }
 
 export type StoreData = Record<string, unknown>;
@@ -358,6 +377,12 @@ export interface SchedulerSpec {
 export interface SchedulerApi {
   /** Add a scheduler to the tweaks row `scheduler`; it runs once the collection chooses it. One is in use at a time. */
   register(spec: SchedulerSpec): Dispose;
+  /**
+   * The whole review log as the app holds it now, in the order `prepare` is handed it, whichever scheduler is in
+   * use: for a plugin that measures or shows something over the reviews without being the one that schedules.
+   * Since api 3.
+   */
+  history(): readonly Review[];
 }
 
 /**
@@ -365,7 +390,15 @@ export interface SchedulerApi {
  * again and can be (a model's state over the log). 64 MB a plugin at most, over all its keys; a key is lowercase
  * letters, digits, `-`, `_` and `.`.
  */
-export interface CacheApi {
+export interface CacheApi extends CacheKeys {
+  /**
+   * The same, for the device and not for one collection: what every collection on it can share and none of them
+   * made (a model's weights, loaded once). 64 MB a plugin of its own, beside each collection's. Since api 3.
+   */
+  device: CacheKeys;
+}
+
+export interface CacheKeys {
   /** What was kept under `key`; null when nothing was. */
   get(key: string): Promise<Uint8Array | null>;
   put(key: string, bytes: Uint8Array): Promise<void>;

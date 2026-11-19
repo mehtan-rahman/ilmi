@@ -370,11 +370,11 @@ describe('a plugin\'s scheduler', () => {
     const fake = fakeBridge();
     slot = new SchedulerSlot({ notice: fake.notice, changed: () => {}, now: () => NOW, fail: (owner, e) => host.failed(owner, e) }, fast);
     bridge = Object.assign(fake, {
-      scheduler: { register: (plugin: string, spec: unknown) => slot.register(plugin, spec as Scheduler) },
+      scheduler: { register: (plugin: string, spec: unknown) => slot.register(plugin, spec as Scheduler), history: () => slot.history() },
       cache: {
-        get: async (plugin: string, key: string) => kept.get(`${plugin}/${key}`) ?? null,
-        put: async (plugin: string, key: string, bytes: Uint8Array) => { kept.set(`${plugin}/${key}`, bytes); },
-        remove: async (plugin: string, key: string) => { kept.delete(`${plugin}/${key}`); },
+        get: async (plugin: string, key: string, device?: boolean) => kept.get(`${device ? 'device:' : ''}${plugin}/${key}`) ?? null,
+        put: async (plugin: string, key: string, bytes: Uint8Array, device?: boolean) => { kept.set(`${device ? 'device:' : ''}${plugin}/${key}`, bytes); },
+        remove: async (plugin: string, key: string, device?: boolean) => { kept.delete(`${device ? 'device:' : ''}${plugin}/${key}`); },
       },
     });
     host = new PluginHost(vault, bridge);
@@ -417,7 +417,7 @@ describe('a plugin\'s scheduler', () => {
     await addPlugin(fs, 'old', 'module.exports.activate = (ilmi) => { ilmi.scheduler.register({ id: "old-dates", name: "old dates", next: () => ({ due: "2026-12-01" }) }); ilmi.ui.notice("api " + ilmi.api + " for a manifest of " + ilmi.manifest.api); };');
     await enable(fs, ['old']);
     await host.start();
-    expect(bridge.notices).toEqual(['api 2 for a manifest of 1']);
+    expect(bridge.notices).toEqual(['api 3 for a manifest of 1']);
     expect(slot.rows().map((r) => r.id)).toEqual(['old-dates']);
   });
 
@@ -459,5 +459,41 @@ describe('a plugin\'s scheduler', () => {
     expect([...kept.keys()]).toEqual(['keeper/state.bin']);
     // and it is nowhere in the collection
     expect(await fs.has(`${ROOT}/.ilmi/plugins/keeper/state.bin`)).toBe(false);
+  });
+
+  it('what a plugin keeps for the device is kept apart from what it keeps for the collection', async () => {
+    await addPlugin(fs, 'model', `module.exports.activate = async (ilmi) => {
+      await ilmi.cache.put('w', new Uint8Array([1]));
+      const none = await ilmi.cache.device.get('w');
+      await ilmi.cache.device.put('w', new Uint8Array([2, 2]));
+      const both = [await ilmi.cache.get('w'), await ilmi.cache.device.get('w')].map((b) => Array.from(b).join(','));
+      await ilmi.cache.remove('w');
+      ilmi.ui.notice(String(none) + ' then ' + both.join(' and ') + ' then ' + String(await ilmi.cache.get('w')) + ' and ' + (await ilmi.cache.device.get('w')).length);
+      try { await ilmi.cache.device.put('text', 'abc'); } catch (e) { ilmi.ui.notice(e.message); }
+      await ilmi.cache.device.put('gone', new Uint8Array([9]));
+      await ilmi.cache.device.remove('gone');
+    };`, { api: 3 });
+    await enable(fs, ['model']);
+    await host.start();
+    expect(bridge.notices).toEqual(['null then 1 and 2,2 then null and 2', 'a cache keeps bytes (a Uint8Array)']);
+    expect([...kept.keys()]).toEqual(['device:model/w']);
+  });
+
+  it('a plugin reads the review log whole without being the scheduler in use, in the order `prepare` has it', async () => {
+    await addPlugin(fs, 'reader', `module.exports.activate = (ilmi) => {
+      ilmi.commands.add({ id: 'count', name: 'reader: count', run: () => { const h = ilmi.scheduler.history(); ilmi.ui.notice(h.length + ': ' + h.map((r) => r.card + '@' + r.at.slice(8, 10)).join(' ')); } });
+    };`, { api: 3 });
+    await enable(fs, ['reader']);
+    await host.start();
+    const run = () => host.runCommand('plugin:reader:count');
+    run();
+    // the built in is in use, and no scheduler was ever chosen: the log is still handed over
+    slot.setLog([review('b', '2026-11-03T09:00:00Z'), review('a', '2026-11-03T09:00:00Z'), review('a', '2026-11-01T09:00:00Z')]);
+    run();
+    expect(bridge.notices).toEqual(['0: ', '3: a@01 a@03 b@03']);
+    expect(slot.active()).toBeNull();
+    // what it was handed is its own: changing it changes nothing here
+    (slot.history() as Review[]).pop();
+    expect(slot.history().length).toBe(3);
   });
 });

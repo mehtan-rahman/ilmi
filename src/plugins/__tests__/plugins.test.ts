@@ -227,6 +227,41 @@ describe('the handle', () => {
     expect(bridge.notices).toEqual(['from t']);
   });
 
+  it('a settings row with a button runs the plugin\'s code and the section draws again after', async () => {
+    const ilmi = globalThis.__ilmi!;
+    let loaded = false;
+    ilmi.ui.settings((s) => {
+      s.action(loaded ? 'model: loaded' : 'model: not on this device', 'load model…', async () => { await sleep(1); loaded = true; });
+      s.action('broken', 'press', () => { throw new Error('no such thing'); });
+    });
+    const [load, broken] = host.settingsOf('t');
+    expect(load).toMatchObject({ kind: 'action', label: 'model: not on this device', verb: 'load model…' });
+    let drawn = 0;
+    const off = host.subscribe(() => { drawn++; });
+    await host.runSetting('t', load as Extract<typeof load, { kind: 'action' }>);
+    expect(drawn).toBeGreaterThan(0);
+    expect(host.settingsOf('t')[0]).toMatchObject({ label: 'model: loaded' });
+    // what it runs is the plugin's: a throw there is the plugin's failure, as anywhere
+    await host.runSetting('t', broken as Extract<typeof broken, { kind: 'action' }>);
+    off();
+    expect(bridge.notices).toEqual(['t: no such thing']);
+    expect(host.rows().find((r) => r.id === 't')?.state).toBe('failed');
+    expect(host.settingsOf('t')).toEqual([]);
+  });
+
+  it('hands over a picked file\'s bytes, or null when none was picked', async () => {
+    const ilmi = globalThis.__ilmi!;
+    await expect(ilmi.ui.pickFile()).rejects.toThrow('no file picker here');
+    const asked: unknown[] = [];
+    let answer: { name: string; bytes: Uint8Array } | null = { name: 'weights.bin', bytes: new Uint8Array([1, 2, 3]) };
+    bridge.pickFile = async (opts) => { asked.push(opts); return answer; };
+    const got = await ilmi.ui.pickFile({ extensions: ['bin'] });
+    expect([got?.name, Array.from(got!.bytes)]).toEqual(['weights.bin', [1, 2, 3]]);
+    answer = null;
+    expect(await ilmi.ui.pickFile()).toBeNull();
+    expect(asked).toEqual([{ extensions: ['bin'] }, undefined]);
+  });
+
   it('refuses the cue keys and the vault edge', () => {
     const ilmi = globalThis.__ilmi!;
     expect(() => ilmi.selection.addAction({ id: 'x', name: 'x', key: 'e', run() {} })).toThrow('belongs to the cue');
@@ -291,10 +326,20 @@ describe('faults', () => {
     await addPlugin(fs, 'old', KEEP_HANDLE, { api: 0, name: 'old one' });
     await enable(fs, ['old', 'hello']);
     await open();
-    expect(bridge.notices).toEqual(['old one was written for api 0, this is api 2']);
-    expect(host.rows().find((r) => r.id === 'old')).toMatchObject({ state: 'refused', enabled: true, error: 'written for api 0, this is api 2' });
+    expect(bridge.notices).toEqual(['old one was written for api 0, this is api 3']);
+    expect(host.rows().find((r) => r.id === 'old')).toMatchObject({ state: 'refused', enabled: true, error: 'written for api 0, this is api 3' });
     expect(globalThis.__ilmi).toBeUndefined();
     expect(host.pluginCommands().length).toBe(1);
+  });
+
+  it('a plugin written for a later api than this is refused, and one for any api so far runs', async () => {
+    host.stop();
+    await addPlugin(fs, 'ahead', KEEP_HANDLE, { api: API + 1, name: 'ahead' });
+    for (let v = 1; v <= API; v++) await addPlugin(fs, `for-${v}`, `module.exports.activate = (ilmi) => { ilmi.ui.notice('for ' + ilmi.manifest.api + ' on ' + ilmi.api); };`, { api: v });
+    await enable(fs, ['ahead', ...Array.from({ length: API }, (_, i) => `for-${i + 1}`)]);
+    await open();
+    expect([...bridge.notices].sort()).toEqual([`ahead was written for api ${API + 1}, this is api ${API}`, ...Array.from({ length: API }, (_, i) => `for ${i + 1} on ${API}`)]);
+    expect(globalThis.__ilmi).toBeUndefined();
   });
 
   it('a folder without a readable manifest is a broken row, not a crash', async () => {

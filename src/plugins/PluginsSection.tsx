@@ -41,6 +41,14 @@ function TextSetting({ value, placeholder, onCommit }: { value: string; placehol
 
 function Setting({ host, id, c }: { host: PluginHost; id: string; c: SettingControl }) {
   if (c.kind === 'note') return <div className="pl-note">{c.text}</div>;
+  if (c.kind === 'action') {
+    return (
+      <span className="tw-lbl">
+        {c.label}
+        <button type="button" className="pl-link" onClick={() => void host.runSetting(id, c)}>{c.verb}</button>
+      </span>
+    );
+  }
   const set = (v: unknown) => void host.setSetting(id, c.key, v).catch(console.error);
   const val = host.settingValue(id, c.key);
   if (c.kind === 'text') {

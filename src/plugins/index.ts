@@ -9,6 +9,7 @@
 // built (`laySlot`), and a card's `back in` words for the session.
 
 import { invoke } from '@tauri-apps/api/core';
+import { open as pickPath } from '@tauri-apps/plugin-dialog';
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { appNow } from '../app/clock.js';
@@ -150,7 +151,7 @@ export function onPluginAction(fn: () => void): () => void {
 export async function startPlugins(vault: Vault): Promise<PluginHost> {
   stopPlugins();
   const s = await startSlot(vault);
-  const h = new PluginHost(vault, { ...bridge, scheduler: { register: (plugin, spec) => s.register(plugin, spec as unknown as Scheduler) }, cache: cacheOf(vault) });
+  const h = new PluginHost(vault, { ...bridge, scheduler: { register: (plugin, spec) => s.register(plugin, spec as unknown as Scheduler), history: () => s.history() }, cache: cacheOf(vault), pickFile });
   host = h;
   offHost = h.subscribe(bumpUi);
   let lastLens = lensOf()?.path;
@@ -252,19 +253,31 @@ function stopSlot(): void {
   slotVault = null;
 }
 
-/** A plugin's cache on this device (`cache.rs`): under the app's data directory, by the collection's folder name. */
+/** A plugin's cache on this device (`cache.rs`): under the app's data directory, by the collection's folder name, or (`device`) by none. */
 function cacheOf(vault: Vault): NonNullable<Bridge['cache']> {
-  const collection = vault.root;
   const enc = encodeURIComponent;
+  // no collection named is the device's own
+  const of = (device?: boolean) => (device ? null : vault.root);
   return {
-    get: async (plugin, key) => {
+    get: async (plugin, key, device) => {
       // a byte before what was kept says that something was
-      const got = new Uint8Array(await invoke<ArrayBuffer>('plugin_cache_get', { collection, plugin, key }));
+      const got = new Uint8Array(await invoke<ArrayBuffer>('plugin_cache_get', { collection: of(device), plugin, key }));
       return got.length ? got.slice(1) : null;
     },
-    put: (plugin, key, bytes) => invoke<void>('plugin_cache_put', bytes, { headers: { collection: enc(collection), plugin: enc(plugin), key: enc(key) } }),
-    remove: (plugin, key) => invoke<void>('plugin_cache_remove', { collection, plugin, key }),
+    put: (plugin, key, bytes, device) => invoke<void>('plugin_cache_put', bytes, { headers: { ...(device ? {} : { collection: enc(vault.root) }), plugin: enc(plugin), key: enc(key) } }),
+    remove: (plugin, key, device) => invoke<void>('plugin_cache_remove', { collection: of(device), plugin, key }),
   };
+}
+
+/** One file from the system's picker, read by path on the Rust side as a dropped one is. */
+async function pickFile(opts?: { extensions?: readonly string[] }): Promise<A.PickedFile | null> {
+  const ext = opts?.extensions?.map((e) => e.replace(/^\./, '')).filter(Boolean) ?? [];
+  const path = await pickPath({ directory: false, multiple: false, ...(ext.length ? { filters: [{ name: ext.join(' '), extensions: ext }] } : {}) });
+  if (typeof path !== 'string') return null;
+  const bytes = new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path }));
+  let name = path.slice(path.lastIndexOf('/') + 1);
+  try { name = decodeURIComponent(name); } catch { /* as it is */ }
+  return { name, bytes };
 }
 
 /** The slot of the open collection, or null. */

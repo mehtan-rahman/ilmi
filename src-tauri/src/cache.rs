@@ -2,10 +2,15 @@
 //! one collection, under the app's data directory and never in the
 //! collection, so they are not synced, not exported, and gone with the
 //! app's data. `plugin-cache/<collection>/<plugin>/<key>`, each a file.
+//! What it keeps for the device and no one collection (`ilmi.cache.device`)
+//! is beside them under `.device`, a name no collection has.
 
 use std::path::{Path, PathBuf};
 
-/// A plugin may keep this much on a device for a collection, over all its keys.
+/// Where what is kept for the device, and not for a collection, lives: no collection's name starts with a dot.
+const DEVICE: &str = ".device";
+
+/// A plugin may keep this much on a device for a collection, and as much again for the device, over all its keys.
 pub const CACHE_MAX: u64 = 64 * 1024 * 1024;
 
 /// A name that is one path segment of lowercase letters, digits, `-`, `_` and `.`, not starting with a dot.
@@ -14,9 +19,12 @@ fn segment(s: &str) -> Option<&str> {
     ok.then_some(s)
 }
 
-/// Where `plugin` keeps `key` for the collection named `collection`, under `home` (the app's data directory).
-pub fn cache_path(home: &Path, collection: &str, plugin: &str, key: &str) -> Result<PathBuf, String> {
-    let name = Path::new(collection).file_name().and_then(|n| n.to_str()).filter(|n| !n.is_empty() && !n.starts_with('.')).ok_or_else(|| "no collection named".to_string())?;
+/// Where `plugin` keeps `key` for the collection named `collection` (none: for the device), under `home` (the app's data directory).
+pub fn cache_path(home: &Path, collection: Option<&str>, plugin: &str, key: &str) -> Result<PathBuf, String> {
+    let name = match collection {
+        Some(c) => Path::new(c).file_name().and_then(|n| n.to_str()).filter(|n| !n.is_empty() && !n.starts_with('.')).ok_or_else(|| "no collection named".to_string())?,
+        None => DEVICE,
+    };
     let plugin = segment(plugin).ok_or_else(|| "not a plugin's id".to_string())?;
     let key = segment(key).ok_or_else(|| "a cache key is lowercase letters, digits, - _ and .".to_string())?;
     Ok(home.join("plugin-cache").join(name).join(plugin).join(key))
@@ -63,12 +71,12 @@ mod tests {
     #[test]
     fn a_cache_is_kept_by_collection_plugin_and_key_and_nowhere_else() {
         let home = std::env::temp_dir().join(format!("ilmi-cache-{}", std::process::id()));
-        let p = cache_path(&home, "/data/collections/double-major", "fsrs-7", "state.bin").unwrap();
+        let p = cache_path(&home, Some("/data/collections/double-major"), "fsrs-7", "state.bin").unwrap();
         assert_eq!(p, home.join("plugin-cache/double-major/fsrs-7/state.bin"));
-        assert!(cache_path(&home, "/data/collections/double-major", "../x", "k").is_err());
-        assert!(cache_path(&home, "/data/collections/double-major", "p", "a/b").is_err());
-        assert!(cache_path(&home, "/data/collections/double-major", "p", "..").is_err());
-        assert!(cache_path(&home, "", "p", "k").is_err());
+        assert!(cache_path(&home, Some("/data/collections/double-major"), "../x", "k").is_err());
+        assert!(cache_path(&home, Some("/data/collections/double-major"), "p", "a/b").is_err());
+        assert!(cache_path(&home, Some("/data/collections/double-major"), "p", "..").is_err());
+        assert!(cache_path(&home, Some(""), "p", "k").is_err());
         assert_eq!(cache_get(&p).unwrap(), None);
         cache_put(&p, &[1, 2, 3]).unwrap();
         assert_eq!(cache_get(&p).unwrap(), Some(vec![1, 2, 3]));
@@ -77,6 +85,24 @@ mod tests {
         cache_remove(&p).unwrap();
         cache_remove(&p).unwrap();
         assert_eq!(cache_get(&p).unwrap(), None);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn what_is_kept_for_the_device_is_no_collections_and_counted_apart() {
+        let home = std::env::temp_dir().join(format!("ilmi-cache-device-{}", std::process::id()));
+        let d = cache_path(&home, None, "model", "weights.bin").unwrap();
+        assert_eq!(d, home.join("plugin-cache/.device/model/weights.bin"));
+        // a collection cannot be named into it
+        assert!(cache_path(&home, Some("/data/collections/.device"), "model", "weights.bin").is_err());
+        let c = cache_path(&home, Some("/data/collections/double-major"), "model", "weights.bin").unwrap();
+        cache_put(&d, &[7; 16]).unwrap();
+        assert_eq!(cache_get(&c).unwrap(), None);
+        cache_put(&c, &[8; 4]).unwrap();
+        assert_eq!(cache_get(&d).unwrap(), Some(vec![7; 16]));
+        assert_eq!(cache_get(&c).unwrap(), Some(vec![8; 4]));
+        cache_remove(&c).unwrap();
+        assert_eq!(cache_get(&d).unwrap(), Some(vec![7; 16]));
         let _ = std::fs::remove_dir_all(&home);
     }
 }

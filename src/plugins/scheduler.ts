@@ -323,6 +323,11 @@ export class SchedulerSlot {
     if (reg?.spec.prepare) this.ready = this.ready.then(() => this.guard(reg, gen, this.prepareTimeout, () => reg.spec.prepare!(canonicalLog(log), this.ctx())));
   }
 
+  /** The whole log as it is held now, in the order `prepare` is handed it; whichever scheduler is in use. */
+  history(): Review[] {
+    return canonicalLog(this.log);
+  }
+
   /** Each line's reviews (`scoreKey`), for `schedCardOf`. */
   histories(): ReadonlyMap<string, readonly Review[]> {
     return this.index;

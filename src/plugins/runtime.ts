@@ -11,9 +11,9 @@ import { cardFields, meta, parse, serialize, setField, type Doc as FDoc, type Fi
 import { baseOf, dirOf, isDoc, nameOf, type Vault, type VaultEvent } from '../vault/index.js';
 import type * as A from './api.js';
 
-export const API: A.ApiVersion = 2;
-/** The versions a plugin may be written for: 2 only added to 1. */
-export const APIS: readonly number[] = [1, 2];
+export const API: A.ApiVersion = 3;
+/** The versions a plugin may be written for: each only added to the one before. */
+export const APIS: readonly number[] = [1, 2, 3];
 export const PLUGINS_DIR = '.ilmi/plugins';
 export const ENABLED_FILE = '.ilmi/plugins.json';
 export const MANIFEST = 'plugin.json';
@@ -45,13 +45,15 @@ export interface Bridge {
   /** A plugin's `style.css` on the page; the disposer takes it off. */
   addStyle(id: string, css: string): A.Dispose;
   /** The scheduler slot (`scheduler.ts`): a plugin's scheduler goes in under its id. */
-  scheduler?: { register(plugin: string, spec: A.SchedulerSpec): A.Dispose };
-  /** A plugin's bytes on this device, outside the collection. */
+  scheduler?: { register(plugin: string, spec: A.SchedulerSpec): A.Dispose; history?(): readonly A.Review[] };
+  /** A plugin's bytes on this device, outside the collection: for this collection, or (`device`) for every one. */
   cache?: {
-    get(plugin: string, key: string): Promise<Uint8Array | null>;
-    put(plugin: string, key: string, bytes: Uint8Array): Promise<void>;
-    remove(plugin: string, key: string): Promise<void>;
+    get(plugin: string, key: string, device?: boolean): Promise<Uint8Array | null>;
+    put(plugin: string, key: string, bytes: Uint8Array, device?: boolean): Promise<void>;
+    remove(plugin: string, key: string, device?: boolean): Promise<void>;
   };
+  /** The system's picker for one file, read whole; null when none was chosen. */
+  pickFile?(opts?: { extensions?: readonly string[] }): Promise<A.PickedFile | null>;
 }
 
 export type PluginState = 'on' | 'off' | 'failed' | 'refused' | 'broken';
@@ -75,7 +77,8 @@ export type SettingControl =
   | { kind: 'text'; key: string; label: string; placeholder?: string }
   | { kind: 'toggle'; key: string; label: string }
   | { kind: 'choice'; key: string; label: string; options: readonly string[] }
-  | { kind: 'note'; text: string };
+  | { kind: 'note'; text: string }
+  | { kind: 'action'; label: string; verb: string; run(): void | Promise<void> };
 
 /** A palette entry for a plugin's command. */
 export interface PluginCommand {
@@ -577,6 +580,17 @@ export class PluginHost {
     this.bump();
   }
 
+  /** A settings row's button pressed: what it runs is the plugin's own code (a throw fails the plugin), and the section draws again after. */
+  async runSetting(id: string, c: Extract<SettingControl, { kind: 'action' }>): Promise<void> {
+    if (!this.instances.has(id)) return;
+    try {
+      await c.run();
+    } catch (e) {
+      this.fail(id, e);
+    }
+    this.bump();
+  }
+
   /** The controls under a plugin's row, built now. */
   settingsOf(id: string): SettingControl[] {
     const inst = this.instances.get(id);
@@ -587,6 +601,10 @@ export class PluginHost {
       toggle: (key, label) => out.push({ kind: 'toggle', key, label }),
       choice: (key, label, options) => out.push({ kind: 'choice', key, label, options }),
       note: (text) => out.push({ kind: 'note', text }),
+      action: (label, verb, run) => {
+        if (typeof run !== 'function') throw new Error('an action needs something to run');
+        out.push({ kind: 'action', label, verb, run });
+      },
     };
     for (const build of [...inst.settingsBuilders]) {
       try {
@@ -897,6 +915,11 @@ export class PluginHost {
           this.bump();
         });
       },
+      pickFile: async (opts) => {
+        live();
+        if (!this.bridge.pickFile) throw new Error('no file picker here');
+        return this.bridge.pickFile(opts);
+      },
     };
 
     const lens: A.LensApi = {
@@ -914,6 +937,17 @@ export class PluginHost {
       today: () => this.bridge.today(),
       on: (_event, fn) => keep(this.on(id, 'queue', fn)),
     };
+
+    const cache = (device: boolean): A.CacheKeys => ({
+      get: async (key) => { live(); return (await this.bridge.cache?.get(id, key, device)) ?? null; },
+      put: async (key, bytes) => {
+        live();
+        if (!this.bridge.cache) throw new Error('no cache here');
+        if (!(bytes instanceof Uint8Array)) throw new Error('a cache keeps bytes (a Uint8Array)');
+        await this.bridge.cache.put(id, key, bytes, device);
+      },
+      remove: async (key) => { live(); await this.bridge.cache?.remove(id, key, device); },
+    });
 
     return {
       version: this.bridge.version,
@@ -962,17 +996,9 @@ export class PluginHost {
           if (!this.bridge.scheduler) throw new Error('no scheduler slot here');
           return keep(this.bridge.scheduler.register(id, spec));
         },
+        history: () => { live(); return this.bridge.scheduler?.history?.() ?? []; },
       },
-      cache: {
-        get: async (key) => { live(); return (await this.bridge.cache?.get(id, key)) ?? null; },
-        put: async (key, bytes) => {
-          live();
-          if (!this.bridge.cache) throw new Error('no cache here');
-          if (!(bytes instanceof Uint8Array)) throw new Error('a cache keeps bytes (a Uint8Array)');
-          await this.bridge.cache.put(id, key, bytes);
-        },
-        remove: async (key) => { live(); await this.bridge.cache?.remove(id, key); },
-      },
+      cache: { ...cache(false), device: cache(true) },
       format,
       onDeactivate: (fn) => keep(fn),
     };

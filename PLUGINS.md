@@ -26,9 +26,11 @@ through it, the app does through the same functions.
 to run on deactivate. Every registration returns a disposer; the runtime
 calls them all when the plugin is turned off, the vault closes, or the
 plugin's files change on disk (it is then reloaded, with a notice). The
-types are in [`plugins/ilmi.d.ts`](plugins/ilmi.d.ts); `api` is `2`. A plugin
-whose `plugin.json` says `1` runs as it did: 2 only added `scheduler` and
-`cache`.
+types are in [`plugins/ilmi.d.ts`](plugins/ilmi.d.ts); `api` is `3`. A plugin
+whose `plugin.json` says `1` or `2` runs as it did: 2 only added `scheduler`
+and `cache`, and 3 `ui.pickFile`, a settings row that does something
+(`s.action`), `scheduler.history` and `cache.device`. One that says a later
+number than the app's is refused with a notice.
 
 ```
 ilmi.version, ilmi.api, ilmi.manifest
@@ -44,11 +46,14 @@ ilmi.queue.today()  queue.on('change', fn)
 ilmi.session.current()  session.on('grade' | 'read-on' | 'worked-on', fn)
 ilmi.lens.active()  lens.open(path)  lens.on('open' | 'selection', fn)
 ilmi.ui.notice(text)  ui.popover(rect, el)  ui.modal(el)  ui.settings(fn(s))
+ilmi.ui.pickFile({ extensions? })                    one file from the system's picker: { name, bytes } or null
 ilmi.net.fetch(url, init?)                           through the app, no CORS
 ilmi.store.load() save(data) get(key) on('change', fn)   data.json
 ilmi.scheduler.register({ id, name, recall? | next?, preview?, curve?, prepare?, observe? })
                                                      a scheduler for the cards (below)
+ilmi.scheduler.history()                             the review log, whoever schedules
 ilmi.cache.get(key) put(key, bytes) remove(key)      bytes on this device, outside the collection
+ilmi.cache.device.get(key) put(key, bytes) remove(key)   the same, for every collection on the device
 ilmi.format.parse serialize cardForm cardFields setField meta
 ilmi.onDeactivate(fn)
 ```
@@ -69,6 +74,15 @@ Notes on a few of them:
   `s.text(key, label, { placeholder? })`, `s.toggle(key, label)`,
   `s.choice(key, label, options)`, `s.note(text)`. Each control is bound to
   `key` in `data.json`; read values with `ilmi.store.get(key)`.
+  `s.action(label, verb, run)` is a row bound to no key: `label`, and a
+  button `verb` that runs `run`. The section draws again when `run` has
+  finished (it may be async), so a label that says how things stand
+  (`model: not on this device`) says how they stand after.
+- `ui.pickFile` opens the system's picker for one file anywhere on the
+  device and resolves to its name and its bytes, read whole, or to null when
+  none was chosen. `extensions` (no dots) limits the choice where the system
+  can; an iPad and an iPhone only know the common ones, so leave it out for
+  a format of your own and look at the bytes.
 - `ui.popover` and `ui.modal` take an element you built and style the box
   as the palette; esc, a press outside, or `close()` ends it. The box has
   focus when it opens, so listen on the `el` that comes back
@@ -161,11 +175,19 @@ What it is handed, and when:
   throw does: one notice, the plugin off for the session, and the built in
   schedules.
 
+`ilmi.scheduler.history()` is the same log `prepare` is handed, in the same
+order, as the app holds it now, whichever scheduler is in use: for a plugin
+that measures something over the reviews (how well a model would have
+predicted them) without being the one that schedules.
+
 `ilmi.cache` keeps bytes (`Uint8Array`) for the plugin on this device, for
 this collection, under the app's data directory: not in the collection, not
 synced, not exported. It is for what is costly to make again and can be: a
 model's state over the review log, say, stamped with how much of the log it
-covers. 64 MB a plugin at most.
+covers. 64 MB a plugin at most. `ilmi.cache.device` is the same for the
+device and no one collection, with 64 MB of its own: what every collection
+shares and none of them made, a model's weights loaded once from a picked
+file.
 
 ## Writing one
 

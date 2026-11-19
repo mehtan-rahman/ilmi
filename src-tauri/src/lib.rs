@@ -200,15 +200,15 @@ fn fsrs_fit(cards: Vec<Vec<fit::FitReview>>) -> Result<fit::Fit, String> {
     fit::fit(&cards)
 }
 
-fn plugin_cache_at(app: &tauri::AppHandle, collection: &str, plugin: &str, key: &str) -> Result<std::path::PathBuf, String> {
+fn plugin_cache_at(app: &tauri::AppHandle, collection: Option<&str>, plugin: &str, key: &str) -> Result<std::path::PathBuf, String> {
     cache::cache_path(&app.path().app_data_dir().map_err(|e| e.to_string())?, collection, plugin, key)
 }
 
-/// What a plugin kept on this device under `key` for a collection (`cache.rs`); nothing when it kept nothing.
+/// What a plugin kept on this device under `key` for a collection, or with none named for the device (`cache.rs`); nothing when it kept nothing.
 #[tauri::command(async)]
-fn plugin_cache_get(app: tauri::AppHandle, collection: String, plugin: String, key: String) -> Result<tauri::ipc::Response, String> {
+fn plugin_cache_get(app: tauri::AppHandle, collection: Option<String>, plugin: String, key: String) -> Result<tauri::ipc::Response, String> {
     // one byte before what was kept says that something was: an empty body is a key never written
-    let held = cache::cache_get(&plugin_cache_at(&app, &collection, &plugin, &key)?)?;
+    let held = cache::cache_get(&plugin_cache_at(&app, collection.as_deref(), &plugin, &key)?)?;
     Ok(tauri::ipc::Response::new(match held {
         Some(bytes) => [&[1u8][..], &bytes].concat(),
         None => Vec::new(),
@@ -225,12 +225,14 @@ async fn plugin_cache_put(app: tauri::AppHandle, request: tauri::ipc::Request<'_
         let v = request.headers().get(name).and_then(|v| v.to_str().ok()).ok_or_else(|| format!("no {name} named"))?;
         Ok(percent_encoding::percent_decode_str(v).decode_utf8().map_err(|e| e.to_string())?.into_owned())
     };
-    cache::cache_put(&plugin_cache_at(&app, &head("collection")?, &head("plugin")?, &head("key")?)?, bytes)
+    // no collection in the headers: the device's own
+    let collection = if request.headers().contains_key("collection") { Some(head("collection")?) } else { None };
+    cache::cache_put(&plugin_cache_at(&app, collection.as_deref(), &head("plugin")?, &head("key")?)?, bytes)
 }
 
 #[tauri::command(async)]
-fn plugin_cache_remove(app: tauri::AppHandle, collection: String, plugin: String, key: String) -> Result<(), String> {
-    cache::cache_remove(&plugin_cache_at(&app, &collection, &plugin, &key)?)
+fn plugin_cache_remove(app: tauri::AppHandle, collection: Option<String>, plugin: String, key: String) -> Result<(), String> {
+    cache::cache_remove(&plugin_cache_at(&app, collection.as_deref(), &plugin, &key)?)
 }
 
 /// Where the app runs, for the renderer: `mobile` (iOS: the welcome is

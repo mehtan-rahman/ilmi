@@ -238,7 +238,7 @@ describe('in the app', () => {
     expect(host.actionsFor(sel('الذِّكْرُ'))).toEqual([{ id: 'dictionary:look-up', name: 'look up', key: 'd' }]);
     expect(host.actionsFor(sel('a whole passage of four words'))).toEqual([]);
     expect(document.head.querySelector('style[data-plugin="dictionary"]')?.textContent).toContain('.dict-pop');
-    expect(host.settingsOf('dictionary').map((c) => (c.kind === 'note' ? c.text : `${c.kind} ${c.key} "${c.label}"`))).toEqual([
+    expect(host.settingsOf('dictionary').map((c) => (c.kind === 'note' ? c.text : c.kind === 'action' ? `action "${c.label}"` : `${c.kind} ${c.key} "${c.label}"`))).toEqual([
       `text url "dictionary url"`, `text path "definitions at"`, `text language "language"`, `text deck "deck"`, `toggle context "context on the back"`,
     ]);
     for (let i = 0; !(await fs.has(`${ROOT}/.ilmi/plugins/dictionary/data.json`)) && i < 300; i++) await sleep(10);

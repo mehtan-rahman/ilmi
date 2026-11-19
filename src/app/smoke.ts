@@ -4252,6 +4252,213 @@ export async function smokeTree(vault: Vault): Promise<void> {
   }
 }
 
+// `ILMI_SMOKE=treesel` over a copy of `samples/double-major` (ILMI_VAULT):
+// several rows selected in the tree. ⇧-click a range and ⌘-click a row in
+// and out, nothing opening; ⇧↓, ⌘A, Esc; the menu of several and the one
+// row's menu outside them; ⌘⌫ on three notes as one notice, and its undo;
+// two rows dragged into a folder by the pointer, in order, the ghost saying
+// `2 items`; and the finger's `select` with its line (the store told it is a
+// device, on the Mac's window). Every step asserts; `shot:` lines mark the
+// screens worth a capture.
+export async function smokeTreeSel(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke treesel: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const { undoNotice } = await import('./land.js');
+  const { useDrag } = await import('./drag.js');
+  const trow = (path: string) => q<HTMLElement>(`.edit-tree .trow[data-path="${CSS.escape(path)}"]:not(.placeholder)`)!;
+  const box = () => q<HTMLElement>('.edit-tree')!;
+  const picked = () => qa<HTMLElement>('.edit-tree .trow[data-selected="1"]').map((r) => r.dataset.path ?? '');
+  const tabs = () => useApp.getState().panes.panes.reduce((n, p) => n + p.tabs.length, 0);
+  const must = (ok: boolean, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const same = (got: string[], want: string[], what: string) => must(got.join(' | ') === want.join(' | '), `${what} (${got.join(' | ')})`);
+  const click = (path: string, mods: MouseEventInit = {}) => {
+    const el = trow(path);
+    const r = el.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, button: 0, clientX: r.left + 60, clientY: r.top + r.height / 2, ...mods };
+    el.dispatchEvent(new MouseEvent('mousedown', at));
+    el.dispatchEvent(new MouseEvent('mouseup', at));
+    el.dispatchEvent(new MouseEvent('click', at));
+  };
+  const menuOn = (path: string) => {
+    const el = trow(path);
+    const r = el.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, clientX: r.left + 80, clientY: r.top + r.height / 2 };
+    el.dispatchEvent(new MouseEvent('mousedown', { ...at, button: 2 }));
+    el.dispatchEvent(new MouseEvent('contextmenu', { ...at, button: 2 }));
+  };
+  const entries = () => qa<HTMLElement>('.ctx-menu .ci').map((i) => i.dataset.act ?? i.textContent ?? '');
+  const words = () => qa<HTMLElement>('.ctx-menu .ci').map((i) => (i.textContent ?? '').trim());
+  const closeMenu = () => window.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  const key = (k: string, mods: KeyboardEventInit = {}) => { box().focus(); box().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...mods })); };
+  const F = 'fleeting';
+  const A = `${F}/2026-10-27.md`;
+  const B = `${F}/2026-10-29.md`;
+  const C = `${F}/2026-10-30.md`;
+  const IDEA = `${F}/idea-for-honors-thesis.md`;
+  try {
+    useApp.setState({ open: { '': true, [F]: true } });
+    await until(() => trow(IDEA));
+    const under = qa<HTMLElement>('.edit-tree .trow:not(.placeholder)').map((r) => r.dataset.path ?? '').filter((p) => p.startsWith(`${F}/`));
+    log(`fleeting: ${under.join(' | ')}`);
+    /** The rows shown from `a` to `b`, whichever is above. */
+    const span = (a: string, b: string) => under.slice(Math.min(under.indexOf(a), under.indexOf(b)), Math.max(under.indexOf(a), under.indexOf(b)) + 1);
+    const sorted = (list: string[]) => [...list].sort();
+
+    // a click opens and selects one
+    click(A);
+    await sleep(300);
+    same(picked(), [A], 'a click selects the one row');
+    const before = tabs();
+    const active = () => activeTab(useApp.getState().panes)?.id;
+    must(active() === A, `and opens it (${active()})`);
+
+    // ⇧-click: the range, nothing opened
+    click(C, { shiftKey: true });
+    await sleep(200);
+    same(picked(), span(A, C), '⇧-click selects the range from the anchor');
+    must(tabs() === before && active() === A, `and opens nothing (${tabs()} tabs, ${active()} in front)`);
+    // ⌘-click: in, then out; no tab made
+    click(IDEA, { metaKey: true });
+    await sleep(200);
+    must(picked().includes(IDEA) && picked().length === span(A, C).length + 1, `⌘-click adds a row (${picked().join(' | ')})`);
+    must(tabs() === before && active() === A, `and makes no tab (${tabs()} tabs)`);
+    must(box().getAttribute('aria-multiselectable') === 'true' && picked().every((p) => trow(p).getAttribute('aria-selected') === 'true'), 'the tree says it takes several, each row says it is selected');
+    await shot('several-selected');
+    click(B, { metaKey: true });
+    await sleep(200);
+    must(!picked().includes(B), `⌘-click on a selected row lets it go (${picked().join(' | ')})`);
+
+    // the menu of several, and a row outside them
+    menuOn(A);
+    await until(() => q('.ctx-menu'));
+    same(entries(), ['open-tabs', 'study', 'duplicate', 'move', 'delete'], 'the menu on a selected row is the menu of them all (one of them has cards: study)');
+    must(words().some((w) => /^.?delete \d+ items$/.test(w)), `its delete counts them (${words().join(' | ')})`);
+    await shot('menu-of-several');
+    closeMenu();
+    await sleep(200);
+    menuOn('courses');
+    await until(() => q('.ctx-menu'));
+    same(picked(), ['courses'], 'a menu on a row outside the selection selects that row alone');
+    must(entries().slice(0, 2).join(' ') === 'open-tab open-beside' && !q('.ctx-menu .ci[data-act="open-tab"] .ck') && q('.ctx-menu .ci[data-act="open-beside"] .ck')?.textContent === '⇧⌘ click', 'its open in new tab names no click, open beside names ⇧⌘ click');
+    await shot('menu-of-one');
+    closeMenu();
+    await sleep(200);
+
+    // the keys
+    click(A);
+    await sleep(200);
+    key('ArrowDown', { shiftKey: true });
+    key('ArrowDown', { shiftKey: true });
+    await sleep(200);
+    same(picked(), under.slice(under.indexOf(A), under.indexOf(A) + 3), '⇧↓ ⇧↓ grows the selection by two rows');
+    key('ArrowUp', { shiftKey: true });
+    await sleep(200);
+    same(picked(), under.slice(under.indexOf(A), under.indexOf(A) + 2), '⇧↑ gives one back');
+    key('a', { metaKey: true });
+    await sleep(200);
+    const all = qa<HTMLElement>('.edit-tree .trow:not(.placeholder)').map((r) => r.dataset.path ?? '').filter((p) => p !== '');
+    same(picked(), all, '⌘A selects every row shown but the collection\'s own');
+    await shot('all-selected');
+    key('Escape');
+    await sleep(200);
+    must(picked().length === 1, `Esc is one row again (${picked().join(' | ')})`);
+
+    // ⌘⌫ on three notes: one notice, one undo
+    click(A);
+    click(C, { shiftKey: true });
+    await sleep(200);
+    const going = picked();
+    const n = going.length;
+    must(n >= 2, `${n} rows to delete`);
+    key('Backspace', { metaKey: true });
+    await until(() => (useApp.getState().notice?.line.startsWith('deleted') ? true : null), 8000);
+    await sleep(400);
+    must(useApp.getState().notice?.line === `deleted · ${n} items` && !!useApp.getState().notice?.undo, `one notice with undo (${useApp.getState().notice?.line})`);
+    must(going.every((p) => !vault.documents().includes(p)), 'they are gone from the collection');
+    await shot('deleted-several');
+    await undoNotice();
+    await until(() => (going.every((p) => vault.documents().includes(p)) ? true : null), 8000);
+    await until(() => (going.every((p) => !!trow(p)) ? true : null), 8000);
+    const back = qa<HTMLElement>('.edit-tree .trow:not(.placeholder)').map((r) => r.dataset.path ?? '').filter((p) => p.startsWith(`${F}/`));
+    same(back, under, 'one undo puts them all back where they were');
+
+    // a drag of two, by the pointer, into a folder
+    click(A);
+    click(B, { metaKey: true });
+    await sleep(200);
+    const ptr = (target: EventTarget, type: string, x: number, y: number) =>
+      target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y }));
+    const fr = trow(B).getBoundingClientRect();
+    ptr(q('.name', trow(B)) ?? trow(B), 'pointerdown', fr.left + 60, fr.top + fr.height / 2);
+    ptr(window, 'pointermove', fr.left + 70, fr.top + fr.height / 2 + 10);
+    const to = trow('physics').getBoundingClientRect();
+    ptr(window, 'pointermove', to.left + to.width - 40, to.top + to.height / 2);
+    await sleep(200);
+    must(q('.drag-ghost')?.textContent === '2 items', `the ghost says how many (${q('.drag-ghost')?.textContent})`);
+    must(useDrag.getState().drop?.target === 'physics' && useDrag.getState().drop?.mode === 'into', `the folder takes them (${JSON.stringify(useDrag.getState().drop)})`);
+    must(trow(A).classList.contains('dragging') && trow(B).classList.contains('dragging'), 'both rows are dimmed');
+    await shot('drag-of-two', 1500);
+    // onto one of themselves: refused
+    const own = trow(A).getBoundingClientRect();
+    ptr(window, 'pointermove', own.left + own.width - 40, own.top + own.height / 2);
+    await sleep(150);
+    must(useDrag.getState().drop === null && document.documentElement.dataset.nodeDrag === 'none', 'no drop on one of themselves');
+    ptr(window, 'pointermove', to.left + to.width - 40, to.top + to.height / 2);
+    await sleep(150);
+    ptr(window, 'pointerup', to.left + to.width - 40, to.top + to.height / 2);
+    const A2 = `physics/${A.slice(F.length + 1)}`;
+    const B2 = `physics/${B.slice(F.length + 1)}`;
+    await until(() => (vault.documents().includes(A2) && vault.documents().includes(B2) ? true : null), 8000);
+    await until(() => (trow(A2) && trow(B2) ? true : null), 8000);
+    await sleep(300);
+    same(picked(), [A2, B2].sort((x, y) => (trow(x).getBoundingClientRect().top - trow(y).getBoundingClientRect().top)), 'they landed in the folder, still selected');
+    await shot('dropped-two');
+    // back where they were, through the menu's move to…
+    menuOn(A2);
+    await until(() => q('.ctx-menu'));
+    q<HTMLElement>('.ctx-menu .ci[data-act="move"]')!.click();
+    const dest = await until(() => q<HTMLElement>(`.ctx-menu .sub-scroll .ci[data-path="${F}"]`));
+    await shot('move-to', 1500);
+    dest.click();
+    await until(() => (vault.documents().includes(A) && vault.documents().includes(B) ? true : null), 8000);
+    await until(() => (trow(A) && trow(B) ? true : null), 8000);
+    await sleep(300);
+    same(sorted(picked()), sorted([A, B]), 'move to… moved both, and the selection followed');
+
+    // under a finger: select, the line, done (the store told it is a device; the window is the Mac's)
+    useApp.setState({ mobile: true });
+    await sleep(200);
+    const el = trow(IDEA);
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 80, clientY: r.top + r.height / 2 }));
+    await until(() => q('.ctx-menu'));
+    must(entries().slice(0, 3).join(' ') === 'open-tab open-beside select', `a device's menu has select after the two opens (${entries().slice(0, 3).join(' ')})`);
+    await shot('menu-select', 1500);
+    q<HTMLElement>('.ctx-menu .ci[data-act="select"]')!.click();
+    const bar = await until(() => q<HTMLElement>('.edit-tree .tree-select'));
+    trow(A).click();
+    trow(C).click();
+    await sleep(200);
+    same(sorted(picked()), sorted([A, C, IDEA]), 'a tap puts a row in');
+    must(q('.ts-n', bar)?.textContent === '3 selected' && active() !== C, `the line counts them and nothing opened (${q('.ts-n', bar)?.textContent})`);
+    const hs = qa<HTMLElement>('.ts-b', bar).map((b) => Math.round(b.getBoundingClientRect().height));
+    must(hs.every((h) => h >= 44), `its buttons are a finger tall (${hs.join(', ')})`);
+    await shot('selecting');
+    useApp.getState().setTheme('dark');
+    await shot('selecting-dark', 2000);
+    useApp.getState().setTheme('light');
+    q<HTMLElement>('.ts-b[data-act="done"]', bar)!.click();
+    await sleep(200);
+    must(!q('.edit-tree .tree-select') && picked().length === 0, 'done leaves it, nothing selected');
+    useApp.setState({ mobile: false });
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 // `ILMI_SMOKE=insert` over a copy of `samples/double-major` (ILMI_VAULT):
 // milestone 35's "done when". On `fleeting/2026-10-30.md`, below its last
 // paragraph, it types `/` and a query for every row of the slash menu

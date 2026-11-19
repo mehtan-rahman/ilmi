@@ -7,6 +7,8 @@ shows the ones that work where you are now.
 ⌘K               palette: open anything by name, or run a command
 click            open a folder or document in the active tab
 ⌘-click          open in a new tab      ⌘⇧-click   open in the next pane
+                 (on a sidebar row ⌘-click selects instead: see below; its menu
+                 has `open in new tab`)
 F2 / dbl-click   rename                 right-click  new, import, rename, move to, delete,
                                                      the same in the sidebar and the folder lens;
                                                      anywhere else there, the folder's own
@@ -14,6 +16,14 @@ F2 / dbl-click   rename                 right-click  new, import, rename, move t
 in the sidebar   ↑ ↓ → ← move and fold, ⏎ open, F2 rename, ⌘⌫ delete, a letter
                  jumps to a name (one no name starts with is the page's key); a
                  click that opens a row gives the keys back to the page
+                 ⇧-click selects the rows from the one last clicked to this one,
+                 ⌘-click puts a row in or out of the selection (ctrl-click where
+                 that is not the right-click); neither opens anything. ⇧↑ ⇧↓
+                 grow and shrink the selection, ⌘A selects every row shown, esc
+                 or an arrow goes back to one row. ⌘⌫ deletes all that is
+                 selected (asked once, one undo), a drag of one takes them all,
+                 and the menu on one of them is theirs: open in new tabs, study,
+                 duplicate, move to…, delete n items
                  ⇧F10 (or the Menu key) opens the selected row's menu at the row;
                  the same on a tab rail's row and on a folder lens's row (Tab
                  reaches one, ⏎ opens it)

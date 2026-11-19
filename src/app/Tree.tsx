@@ -1,11 +1,22 @@
 // The workspace tree: the vault rendered as rows you can open, rename, move,
 // and delete. Every edit goes to disk through src/app/vault.ts and comes
 // back through the vault's events; this component keeps only what is
-// mid-gesture (a rename in progress, the open menu, the selected row, a
+// mid-gesture (a rename in progress, the open menu, the selected rows, a
 // hoist, a delete being asked). The rows and keys are `treeModel.ts`, the
-// drag `drag.ts` / `dnd.ts` (shared with the tab rail and the folder lens).
+// selection `treeSelect.ts`, the drag `drag.ts` / `dnd.ts` (shared with the
+// tab rail and the folder lens).
 //
-//  · click            open the node as a lens; the chevron alone folds
+//  · click            open the node as a lens, and select its row alone; the chevron alone folds
+//  · ⇧-click          select the rows from the anchor (the row last clicked) to this one; nothing opens
+//  · ⌘-click          the row in or out of the selection (ctrl-click where that is not the right-click);
+//                     nothing opens: a tab of its own is the menu's `open in new tab`. ⇧⌘-click opens beside
+//  · several          are one thing: the menu on one of them is theirs (open in new tabs, study, duplicate,
+//                     move to…, delete n items), ⌘⌫ deletes them (asked once, one undo), a drag of one
+//                     takes them all; a folder and a row inside it both selected are the folder. ⇧↑ ⇧↓
+//                     grow the selection, ⌘A takes every row, Esc or an arrow goes back to one. A menu on
+//                     a row outside the selection selects that row alone first
+//  · under a finger   the row's menu has `select`: from then a tap puts a row in or out, and a line at
+//                     the tree's head says how many, with move to…, delete, and done
 //  · ⌥-click          hoist the row: the tree shows only what is under it, a crumb to go back
 //  · dbl-click / F2   inline rename; F2 only while the tree has focus (a click on a row gives it)
 //  · keys             ↑↓ → ← ⏎, ⌘⌫ delete, ⌥⌘↑↓ move among siblings, ⌥⌘← → outdent / nest,
@@ -36,15 +47,16 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEve
 import { childDirOf } from '../vault/index.js';
 import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
-import { GLYPH, SESSION, WRITTEN_GLYPH, descendants, findNode, kindOf, rowCounts, titleOf, type NodeKind } from './names.js';
+import { NONE, actedOn, collapseSel, extendSel, followSel, inOrder, isSelected, pruneSel, rangeSel, selectAll, selectOne, several, toggleSel, topmost, type Sel } from './treeSelect.js';
+import { GLYPH, SESSION, WRITTEN_GLYPH, descendants, findNode, itemsLabel, kindOf, rowCounts, titleOf, type NodeKind } from './names.js';
 import { MathText } from './MathText.js';
 import { NodeMenu, menuAt, menuAtRow, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
 import { failed } from './land.js';
 import { useApp } from './store.js';
-import { TREE_INDENT, TREE_PAD, afterDelete, followMove, isMenuKey, isNodeRow, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeCards, type TreeRow } from './treeModel.js';
+import { TREE_INDENT, TREE_PAD, afterDelete, isMenuKey, isNodeRow, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeCards, type TreeRow } from './treeModel.js';
 import { cardSet, frontLine } from './cardSet.js';
-import { deleteNode } from './remove.js';
+import { deleteNode, deleteNodes } from './remove.js';
 import { docsOf, placeNode, renameNode, toggleOpen } from './vault.js';
 import { cardsPath, cardsId } from './names.js';
 import { appNow } from './clock.js';
@@ -65,12 +77,15 @@ const PAD = TREE_PAD;
 const INDENT = TREE_INDENT;
 const SURF: Surface = { pad: PAD, indent: INDENT, scroller: '.side', spring: (p) => toggleOpen(p, true) };
 
+// a card's row is no node: nothing of it is selected with others, and ⌘-click is still its tab
 const clickOpts = (e: MouseEvent): OpenOpts => ({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
+/** On a Mac ctrl-click is the right-click: the menu's, never a click on the row. */
+const ctrlMenu = (e: { ctrlKey: boolean }): boolean => e.ctrlKey && /Mac|iPhone|iPad/.test(globalThis.navigator?.platform ?? '');
 const inField = (t: EventTarget | null) => {
   const tag = (t as HTMLElement | null)?.tagName?.toLowerCase();
   return tag === 'input' || tag === 'textarea';
 };
-const sel = (path: string) => `.trow[data-path="${CSS.escape(path)}"]:not(.placeholder)`;
+const rowSel = (path: string) => `.trow[data-path="${CSS.escape(path)}"]:not(.placeholder)`;
 
 export function Tree({ activeId, onOpen }: Props) {
   const tree = useApp((s) => s.tree);
@@ -90,19 +105,34 @@ export function Tree({ activeId, onOpen }: Props) {
   const editNow = useRef<Editing | null>(null);
   const setEditing = (e: Editing | null) => { editNow.current = e; setEditingState(e); };
   const [menu, setMenu] = useState<MenuAt | null>(null);
-  const [selected, setSelectedState] = useState<string | null>(null);
+  const [sel, setSelState] = useState<Sel>(NONE);
   // the selection as of now, not as of the last render: a key pressed right
   // after the press that selected a row (as a smoke dispatches them) reads it
-  const selRef = useRef<string | null>(null);
-  const setSelected = (p: string | null) => { selRef.current = p; setSelectedState(p); };
+  const selRef = useRef<Sel>(NONE);
+  const setSel = (s: Sel) => { if (s === selRef.current) return; selRef.current = s; setSelState(s); };
+  const setSelected = (p: string | null) => setSel(selectOne(p));
+  /** The row the keys are on. */
+  const selected = sel.focus;
+  const many = several(sel);
+  // under a finger, after the menu's `select`: a tap puts a row in or out of the selection
+  const [selecting, setSelecting] = useState(false);
   const [hoist, setHoist] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
   // a row asked about that is gone (moved or deleted meanwhile) is asked about no more: a node later at its path is not
   useEffect(() => { if (asking !== null && !findNode(tree, asking)) setAsking(null); }, [tree, asking]);
-  /** The selected row follows a node moved or renamed (it, or a row under it). */
-  const follow = (from: string, to: string) => { const s = followMove(selRef.current, from, to); if (s !== selRef.current) setSelected(s); };
-  // the drag's surface: a drop that moves the selected row takes the selection with it
-  const surf = useMemo<Surface>(() => ({ ...SURF, landed: (_d, to, from) => follow(from, to) }), []);
+  /** The selected rows follow a node moved or renamed (it, or a row under it). */
+  const follow = (from: string, to: string) => setSel(followSel(selRef.current, from, to));
+  // a move of this tree's own making is under way (`own`): the selection is not pruned until it has followed
+  const busy = useRef(0);
+  const [settled, setSettled] = useState(0);
+  const own = <T,>(work: Promise<T>): Promise<T> => {
+    busy.current += 1;
+    const done = () => { busy.current -= 1; setSettled((n) => n + 1); };
+    work.then(done, done);
+    return work;
+  };
+  // the drag's surface: a drop that moves the selected rows takes the selection with it
+  const surf = useMemo<Surface>(() => ({ ...SURF, landed: (_d, to, from) => follow(from, to), during: (work) => { void own(work); } }), []);
   const typed = useRef({ buf: '', at: 0 });
   const editRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -130,6 +160,18 @@ export function Tree({ activeId, onOpen }: Props) {
     nodes.forEach((r, k) => by.set(r, g[k]!));
     return by;
   }, [rows]);
+  // the rows several can be picked from: the nodes, not the root's row (or a hoist's), a card's, or a placeholder
+  const picks = useMemo(() => rows.filter((r) => isNodeRow(r) && r.depth > 0).map((r) => r.path), [rows]);
+  const picksRef = useRef(picks);
+  picksRef.current = picks;
+  // of several, what is gone is selected no more: a row deleted (here, or by a pull) or folded away
+  useEffect(() => {
+    if (busy.current === 0) setSel(pruneSel(selRef.current, picks));
+  }, [picks, settled]);
+  /** What an act on row `id` is done to: every row selected when it is one of several, else it. */
+  const acted = (id: string) => actedOn(selRef.current, picksRef.current, id);
+  /** The selection a range grows from: the rows selected, else the open document's row. */
+  const base = (): Sel => (selRef.current.focus === null && activeId !== undefined && picksRef.current.includes(activeId) ? selectOne(activeId) : selRef.current);
   const cardAt = useApp((s) => s.cardAt);
   /** A row's name: a node's title, a card's front, a document's cards counted. */
   const rowName = (path: string) => {
@@ -162,12 +204,12 @@ export function Tree({ activeId, onOpen }: Props) {
     if (hoisted !== null && !(activeId === hoisted || activeId.startsWith(`${childDirOf(hoisted)}/`))) return;
     const st = useApp.getState().open;
     for (const p of revealRows(tree, activeId)) if (!st[p] && p !== activeId && p !== hoisted) toggleOpen(p, true);
-    setTimeout(() => boxRef.current?.querySelector<HTMLElement>(sel(activeId))?.scrollIntoView?.({ block: 'nearest' }), 0);
+    setTimeout(() => boxRef.current?.querySelector<HTMLElement>(rowSel(activeId))?.scrollIntoView?.({ block: 'nearest' }), 0);
   }, [activeId, ready]);
 
   // the selected row kept in view as the keys move it
   useEffect(() => {
-    if (selected !== null) boxRef.current?.querySelector<HTMLElement>(sel(selected))?.scrollIntoView?.({ block: 'nearest' });
+    if (selected !== null) boxRef.current?.querySelector<HTMLElement>(rowSel(selected))?.scrollIntoView?.({ block: 'nearest' });
   }, [selected]);
 
   const beginRename = (id: string) => {
@@ -185,32 +227,65 @@ export function Tree({ activeId, onOpen }: Props) {
     setEditing(null);
     // a node moved or deleted while its name was being edited is not renamed (its path is another's now, or nothing's)
     const here = findNode(useApp.getState().tree, id);
-    if (here && value.trim() && value.trim() !== title(id)) renameNode(id, value).then((to) => follow(id, to)).catch(failed('rename'));
+    if (here && value.trim() && value.trim() !== title(id)) void own(renameNode(id, value).then((to) => follow(id, to)).catch(failed('rename')));
     boxRef.current?.focus();
   };
 
-  const del = (id: string) => {
-    const node = findNode(tree, id);
-    if (!node) return;
-    if (descendants(node) > 0 && asking !== id) { setAsking(id); return; }
+  /** How many nodes are under `paths`, all the way down. */
+  const inside = (paths: readonly string[]) => paths.reduce((n, p) => { const node = findNode(tree, p); return n + (node ? descendants(node) : 0); }, 0);
+
+  // the row, or every row selected when it is one of several: asked once (on the row) when anything is under them
+  const del = (row: string) => {
+    const list = acted(row).filter((p) => findNode(tree, p));
+    if (!list.length) return;
+    // one of several whose folder is selected too is the folder's
+    const id = list.includes(row) ? row : list[0]!;
+    if (inside(list) > 0 && asking !== id) { setAsking(id); return; }
     setAsking(null);
-    // the next row not under it: not its cards' rows either, which go with it
-    setSelected(afterDelete(rows, id));
-    deleteNode(id).catch(failed('delete'));
+    // the next row not under them: not their cards' rows either, which go with them
+    setSel(selecting ? NONE : selectOne(afterDelete(rows, id, list)));
+    (list.length > 1 ? deleteNodes(list) : deleteNode(id)).catch(failed('delete'));
+  };
+
+  /** A press that is a menu's (the right button, a Mac's ctrl-click, `···`): the row selected alone, unless it is one of several selected. */
+  const menuPress = (id: string) => { if (!selecting && !(several(selRef.current) && isSelected(selRef.current, id))) setSelected(id); };
+
+  /**
+   * The menu of row `id` at `at`: of every row selected when it is one of several, else the row's own, and then
+   * several selected elsewhere are let go for it (as the Finder does).
+   */
+  const rowMenu = (at: MenuAt, id: string) => {
+    const cur = selRef.current;
+    // under a finger, picking: the row held joins what was picked
+    if (selecting) { if (!isSelected(cur, id) && picksRef.current.includes(id)) setSel(toggleSel(cur, picksRef.current, id)); }
+    else if (several(cur) && !isSelected(cur, id)) setSelected(id);
+    const list = acted(id);
+    if (list.length > 1) setMenu({ ...at, many: list, all: inOrder(selRef.current.paths, picksRef.current) });
+    else setMenu({ ...at, id: list[0] ?? id });
   };
 
   // the tree's keys, while it has focus (`treeModel.ts`); in the page they are the page's
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (editing || inField(e.target)) return;
-    const cur = selRef.current;
+    // (a key on the picking line's buttons is the button's)
+    if (editing || inField(e.target) || (e.target as Element | null)?.closest?.('.tree-select')) return;
+    const cur = selRef.current.focus;
     const focus = cur !== null && rows.some((r) => r.path === cur) ? cur : activeId && rows.some((r) => r.path === activeId) ? activeId : null;
     // ⇧F10 or the Menu key: the row's menu, at the row (a card's row has none)
     if (isMenuKey(e)) {
       e.preventDefault();
       e.stopPropagation();
       const at = focus === null ? undefined : rows.find((r) => r.path === focus);
-      const el = at && isNodeRow(at) ? boxRef.current?.querySelector(sel(at.path)) : null;
-      if (at && el) { setSelected(at.path); setAsking(null); setMenu(menuAtRow(el, at.path)); }
+      const el = at && isNodeRow(at) ? boxRef.current?.querySelector(rowSel(at.path)) : null;
+      if (at && el) { menuPress(at.path); setAsking(null); rowMenu(menuAtRow(el, at.path), at.path); }
+      return;
+    }
+    // Esc: several are the one row again, and a finger's picking is over; with one row it is the page's
+    if (e.key === 'Escape' && (several(selRef.current) || selecting)) {
+      e.preventDefault();
+      e.stopPropagation();
+      setAsking(null);
+      setSelecting(false);
+      setSel(collapseSel(selRef.current));
       return;
     }
     const act = treeKey(rows, focus, e);
@@ -237,6 +312,13 @@ export function Tree({ activeId, onOpen }: Props) {
     e.stopPropagation();
     switch (act.kind) {
       case 'focus': setSelected(act.path); break;
+      case 'extend': {
+        const from = base();
+        const next = extendSel(from.focus === focus ? from : selectOne(focus), picks, act.by);
+        if (next) setSel(next);
+        break;
+      }
+      case 'all': setSel(selectAll(base(), picks)); break;
       case 'fold': toggleOpen(act.path, act.open); break;
       case 'activate': {
         const r = rows.find((x) => x.path === act.path);
@@ -247,11 +329,13 @@ export function Tree({ activeId, onOpen }: Props) {
         onOpen(act.path, {});
         break;
       }
-      case 'rename': beginRename(act.path); break;
+      // a name is one row's: with several, F2 is nothing
+      case 'rename': if (!several(selRef.current)) beginRename(act.path); break;
       case 'delete': del(act.path); break;
       case 'move': {
+        // the keys move the one row they are on
         const to = keyPlace(rows, act.path, act.to);
-        if (to) placeNode(act.path, to.target, to.mode).then(setSelected).catch(failed('move'));
+        if (to) { setSelected(act.path); own(placeNode(act.path, to.target, to.mode).then(setSelected)).catch(failed('move')); }
         break;
       }
       case 'type': if (typedHit !== null) setSelected(typedHit); break;
@@ -261,7 +345,7 @@ export function Tree({ activeId, onOpen }: Props) {
   const openMenu = (e: MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setMenu(menuAt(e, id));
+    rowMenu(menuAt(e, id), id);
   };
 
   // The sidebar's empty space and headings are outside this box (the box
@@ -272,7 +356,7 @@ export function Tree({ activeId, onOpen }: Props) {
     if (!side) return;
     const onMenu = (e: globalThis.MouseEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t?.closest('.trow, .ctx-menu')) return;
+      if (t?.closest('.trow, .ctx-menu, .tree-select')) return;
       e.preventDefault();
       setMenu(menuAt(e, ''));
     };
@@ -281,12 +365,45 @@ export function Tree({ activeId, onOpen }: Props) {
   }, []);
 
   // the `+` in the root row opens the menu for the selected folder, else the root
-  const plusDir = selected !== null && (selected === '' || findNode(tree, selected)?.kind === 'folder') ? selected : '';
+  const plusDir = !many && selected !== null && (selected === '' || findNode(tree, selected)?.kind === 'folder') ? selected : '';
+  // `+` makes things in the one row; `···` is the row's menu, or the selection's when the row is one of several
   const menuFrom = (e: MouseEvent, id: string, plus: boolean) => {
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
-    setMenu(menuAt({ clientX: r.left, clientY: r.bottom + 2 }, id, plus));
+    const at = menuAt({ clientX: r.left, clientY: r.bottom + 2 }, id, plus);
+    if (plus) setMenu(at);
+    else { menuPress(id); rowMenu(at, id); }
   };
+
+  // ── under a finger: picking several ──────────────────────────
+  const pickedNow = () => inOrder(selRef.current.paths, picksRef.current);
+  const beginSelecting = (id: string) => { setSelecting(true); setAsking(null); setSel(picksRef.current.includes(id) ? selectOne(id) : NONE); };
+  const endSelecting = () => { setSelecting(false); setAsking(null); setSel(NONE); };
+  const picked = selecting ? inOrder(sel.paths, picks) : [];
+  const pickedTop = topmost(picked);
+  const askedOfPicked = selecting && asking !== null && pickedTop.includes(asking) ? inside(pickedTop) : 0;
+  const selectBar = selecting && (
+    <div className="tree-select" role="toolbar" aria-label="selection" onMouseDown={(e) => e.stopPropagation()}>
+      <span className="ts-n">{picked.length} selected</span>
+      <button
+        type="button"
+        className="ts-b"
+        data-act="move"
+        disabled={!pickedTop.length}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          const list = topmost(pickedNow());
+          if (!list.length) return;
+          setAsking(null);
+          setMenu({ ...menuAt({ clientX: r.left, clientY: r.bottom + 2 }, list[0]!), sub: true, ...(list.length > 1 ? { many: list } : {}) });
+        }}
+      >move to…</button>
+      <button type="button" className="ts-b danger" data-act="delete" disabled={!pickedTop.length} onClick={() => { const list = topmost(pickedNow()); if (list.length) del(list[0]!); }}>
+        {askedOfPicked > 0 ? `delete with ${askedOfPicked} inside?` : 'delete'}
+      </button>
+      <button type="button" className="ts-b" data-act="done" onClick={endSelecting}>done</button>
+    </div>
+  );
 
   /** A press that opened something gives the keys back to the page: the tree keeps its selection, not the focus. */
   const toPage = () => { if (document.activeElement === boxRef.current) boxRef.current?.blur(); };
@@ -337,13 +454,13 @@ export function Tree({ activeId, onOpen }: Props) {
         data-doc={c.doc}
         data-block={c.block}
         data-active={on ? '1' : '0'}
-        data-selected={selected === r.path ? '1' : '0'}
+        data-selected={isSelected(sel, r.path) ? '1' : '0'}
         role="treeitem"
         aria-level={r.depth + 1}
-        aria-selected={selected === r.path}
+        aria-selected={isSelected(sel, r.path)}
         title={frontLine(c.text, 400)}
-        onMouseDown={() => { setSelected(r.path); setAsking(null); }}
-        onClick={(e) => { openCardRow(r, clickOpts(e)); toPage(); }}
+        onMouseDown={() => { if (selecting) return; setSelected(r.path); setAsking(null); }}
+        onClick={(e) => { if (selecting) return; openCardRow(r, clickOpts(e)); toPage(); }}
       >
         {guides(r.depth)}
         <span className="chev" />
@@ -361,11 +478,12 @@ export function Tree({ activeId, onOpen }: Props) {
       style={{ paddingLeft: PAD + r.depth * INDENT }}
       data-path={r.path}
       data-kind="cards"
-      data-selected={selected === r.path ? '1' : '0'}
+      data-selected={isSelected(sel, r.path) ? '1' : '0'}
       role="treeitem"
       aria-level={r.depth + 1}
+      aria-selected={isSelected(sel, r.path)}
       aria-expanded={r.open}
-      onMouseDown={() => { setSelected(r.path); setAsking(null); }}
+      onMouseDown={() => { if (selecting) return; setSelected(r.path); setAsking(null); }}
       onClick={() => toggleOpen(r.path)}
     >
       {guides(r.depth)}
@@ -386,13 +504,34 @@ export function Tree({ activeId, onOpen }: Props) {
     // a drag resting on a closed row opens it only for nodes under it: a deck's card list would push the rows under the pointer away
     const springs = r.has && !r.open && (kind === 'folder' || (node?.kind === 'doc' && (node.children?.length ?? 0) > 0));
     const cls = ['row', 'trow', m.className, fileOver === id && !m.className.includes('drop-') ? 'drop-into' : '', isRoot ? 'root-row' : ''].filter(Boolean).join(' ');
-    const asked = asking === id && node ? descendants(node) : 0;
+    const isSel = isSelected(sel, id);
+    const pickable = !isRoot && !!node;
+    // the delete being asked about on this row: its own, or every selected row's when it is one of several
+    const askedOf = asking === id && node && !selecting ? actedOn(sel, picks, id) : [];
+    const asked = inside(askedOf);
     const notHere = node?.kind === 'doc' && node.pdf !== undefined && away.has(node.pdf);
+    // a press selects the row alone, at once (the keys and a drag start from it). Not one with ⇧ or ⌘, which the
+    // click reads; and not on one of several selected, which a drag takes together and a menu is for: letting go
+    // without a drag is the click, and that selects it alone
+    const onMouseDown = (e: MouseEvent) => {
+      setAsking(null);
+      if (e.button !== 0 || ctrlMenu(e)) { menuPress(id); return; }
+      if (selecting || e.shiftKey || e.metaKey || e.ctrlKey) return;
+      if (several(selRef.current) && isSelected(selRef.current, id)) return;
+      setSelected(id);
+    };
     const onClick = (e: MouseEvent) => {
-      if (editingThis) return;
+      if (editingThis || ctrlMenu(e)) return;
+      // under a finger, picking: a tap puts the row in or out, and opens nothing
+      if (selecting) { if (pickable) setSel(toggleSel(selRef.current, picksRef.current, id)); return; }
       if (e.altKey && !isRoot && r.has) { setHoist(id); setSelected(id); return; }
+      const cmd = e.metaKey || e.ctrlKey;
+      // ⌘: in or out of the selection; ⇧: the range from the anchor. Nothing opens, and the keys stay the tree's
+      if (cmd && !e.shiftKey) { setSel(toggleSel(selRef.current, picksRef.current, id)); return; }
+      if (e.shiftKey && !cmd) { setSel(rangeSel(base(), picksRef.current, id)); return; }
+      setSelected(id);
       if (kind === 'folder') toggleOpen(id, true);
-      onOpen(id, clickOpts(e));
+      onOpen(id, cmd ? { cmdClick: true, shiftClick: true } : {});
       toPage();
     };
     return (
@@ -403,16 +542,16 @@ export function Tree({ activeId, onOpen }: Props) {
         data-path={id}
         data-kind={kind}
         data-active={activeId === id ? '1' : '0'}
-        data-selected={selected === id ? '1' : '0'}
+        data-selected={isSel ? '1' : '0'}
         role="treeitem"
         aria-level={r.depth + 1}
-        aria-selected={selected === id}
+        aria-selected={isSel}
         aria-expanded={r.has ? r.open : undefined}
         title={counts.full || undefined}
-        {...rowDrag(geoms.get(r)!, surf, { draggable: !isRoot && !editingThis, folded: springs })}
+        {...rowDrag(geoms.get(r)!, surf, { draggable: !isRoot && !editingThis, folded: springs, group: () => (several(selRef.current) && isSelected(selRef.current, id) ? acted(id) : null) })}
         onContextMenu={(e) => openMenu(e, id)}
-        onMouseDown={() => { setSelected(id); setAsking(null); }}
-        onDoubleClick={(e) => { e.stopPropagation(); beginRename(id); }}
+        onMouseDown={onMouseDown}
+        onDoubleClick={(e) => { e.stopPropagation(); if (selecting || e.shiftKey || e.metaKey || e.ctrlKey) return; beginRename(id); }}
         onClick={onClick}
       >
         {guides(r.depth)}
@@ -446,7 +585,7 @@ export function Tree({ activeId, onOpen }: Props) {
         ) : (
           <MathText className="name" dir="auto" text={title(id)} />
         )}
-        {asked > 0 && <span className="asking">delete with {asked} inside? ⌘⌫</span>}
+        {asked > 0 && <span className="asking">delete {askedOf.length > 1 ? `${itemsLabel(askedOf.length)} ` : ''}with {asked} inside? ⌘⌫</span>}
         {!asked && notHere && <span className="away">not here</span>}
         {!asked && counts.due > 0 && <span className="due">{counts.due}</span>}
         {id === '' && (
@@ -455,8 +594,9 @@ export function Tree({ activeId, onOpen }: Props) {
         {!isRoot && !editingThis && (
           <span className="row-acts" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
             {/* the tree is the one Tab stop: from the keys the row's menu is ⇧F10 */}
-            <button type="button" className="ra add" title="new inside" aria-label={`add under ${title(id)}`} tabIndex={-1} onClick={(e) => { setSelected(id); menuFrom(e, id, true); }}><Glyph g="+" /></button>
-            <button type="button" className="ra more" title="more" aria-label="more" aria-haspopup="menu" tabIndex={-1} onClick={(e) => { setSelected(id); menuFrom(e, id, false); }}><Icon name="more" /><span className="gch">···</span></button>
+            {/* `+` makes things inside one row: one of several selected has only the menu, which is theirs */}
+            {!(many && isSel) && <button type="button" className="ra add" title="new inside" aria-label={`add under ${title(id)}`} tabIndex={-1} onClick={(e) => { setSelected(id); menuFrom(e, id, true); }}><Glyph g="+" /></button>}
+            <button type="button" className="ra more" title="more" aria-label="more" aria-haspopup="menu" tabIndex={-1} onClick={(e) => menuFrom(e, id, false)}><Icon name="more" /><span className="gch">···</span></button>
           </span>
         )}
       </div>
@@ -480,13 +620,16 @@ export function Tree({ activeId, onOpen }: Props) {
       tabIndex={0}
       role="tree"
       aria-label="collection"
+      aria-multiselectable
       data-hoist={hoisted ?? undefined}
+      data-selecting={selecting ? '1' : undefined}
       onKeyDown={onKey}
     >
+      {selectBar}
       {crumb}
       {rows.map((r, i) => (r.card ? cardRow(r) : r.cards ? cardsRow(r) : r.placeholder ? placeholder(r, i) : row(r, i)))}
 
-      {menu && <NodeMenu at={menu} set={setMenu} onCreated={(path) => setEditing({ id: path, value: title(path) })} onRename={beginRename} onMoved={follow} />}
+      {menu && <NodeMenu at={menu} set={setMenu} onCreated={(path) => setEditing({ id: path, value: title(path) })} onRename={beginRename} onMoved={follow} onWork={(work) => { void own(work); }} onSelect={beginSelecting} selects />}
     </div>
   );
 }

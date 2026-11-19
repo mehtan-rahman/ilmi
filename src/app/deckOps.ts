@@ -6,7 +6,7 @@ import { PRI_DEFAULT, meta } from '../format/index.js';
 import { applyEdit, insertCard } from './cardEdit.js';
 import { applyBulk, bulkLine, docsUnder, restore, restoreCards, type BulkAction, type CardRef } from './deck.js';
 import { notify } from './land.js';
-import { SESSION, titleOf } from './names.js';
+import { SESSION, itemsLabel, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
 import { itemKey, studyItems, type StudyOptions } from './study.js';
@@ -64,11 +64,21 @@ export async function newCardAt(path: string, after: CardRef | null, text: strin
  * says so and nothing opens.
  */
 export function studyDeck(id: string, opts: StudyOptions = {}, openOpts: OpenOpts = {}): number {
+  return studyNodes([id], id, opts, openOpts);
+}
+
+/**
+ * Study several lenses as one (the tree's selection, none under another): a session over the cards under all of
+ * them, in their order, named `3 items`; its end goes back to `back`, the row it was asked on.
+ */
+export function studyNodes(ids: readonly string[], back: string, opts: StudyOptions = {}, openOpts: OpenOpts = {}): number {
   const s = useApp.getState();
+  const id = back;
   // what the day's allowance holds back in the queue is held back here too, unless the cards were picked by hand
   const held = new Set(s.queue.filter((i) => i.kind === 'card' && i.held).map((i) => itemKey(i as import('../schedule/index.js').CardItem)));
-  const items = studyItems(docsOf(docsUnder(s.tree, id, s.order, s.files)), appNow(), { exams: examsAtPath, linked: cardsById(allDocs()), ...(opts.only ? opts : { held: (i: import('../schedule/index.js').CardItem) => held.has(itemKey(i)), ...opts }) });
-  const title = titleOf(id, s.docs, s.vault);
+  const paths = [...new Set(ids.flatMap((one) => docsUnder(s.tree, one, s.order, s.files)))];
+  const items = studyItems(docsOf(paths), appNow(), { exams: examsAtPath, linked: cardsById(allDocs()), ...(opts.only ? opts : { held: (i: import('../schedule/index.js').CardItem) => held.has(itemKey(i)), ...opts }) });
+  const title = ids.length === 1 ? titleOf(id, s.docs, s.vault) : itemsLabel(ids.length);
   if (!items.length) {
     notify(`${opts.cram ? 'no cards' : 'nothing due'} · ${title}`);
     return 0;

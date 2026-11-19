@@ -249,18 +249,19 @@ export interface MoveTarget {
  * directory); `id` itself, what is under it, and the directory it is in
  * already left out.
  */
-export function moveTargets(nodes: TreeNode[], id: string, order: Order = {}): MoveTarget[] {
+export function moveTargets(nodes: TreeNode[], id: string | readonly string[], order: Order = {}): MoveTarget[] {
   const out: MoveTarget[] = [];
-  const own = childDirOf(id);
+  // several moved as one (the tree's selection): none of them, nothing under any, and not where they all already are
+  const ids = typeof id === 'string' ? [id] : id;
   const add = (path: string, dir: string, depth: number) => {
-    if (path === id || (id !== '' && within(path, own)) || dir === dirOf(id)) return;
+    if (ids.includes(path) || ids.some((i) => i !== '' && within(path, childDirOf(i))) || ids.every((i) => dir === dirOf(i))) return;
     out.push({ path, dir, depth });
   };
   add('', '', 0);
   const visit = (list: TreeNode[], dir: string, depth: number) => {
     for (const n of ordered(list, order[dir])) {
       // a node's own subtree is no place to move it to; a PDF on its own holds nothing
-      if (n.path === id || (n.kind === 'doc' && n.bare)) continue;
+      if (ids.includes(n.path) || (n.kind === 'doc' && n.bare)) continue;
       const kids = n.kind === 'folder' ? n.children : n.children;
       add(n.path, childDirOf(n.path), depth);
       if (kids) visit(kids, childDirOf(n.path), depth + 1);
@@ -269,6 +270,9 @@ export function moveTargets(nodes: TreeNode[], id: string, order: Order = {}): M
   visit(nodes, '', 1);
   return out;
 }
+
+/** What several nodes are called as one (a menu's `delete 3 items`, a notice's, a drag's ghost): `3 items`. */
+export const itemsLabel = (n: number): string => `${n} items`;
 
 /** How many nodes are under `node`, all the way down. */
 export function descendants(node: TreeNode): number {

@@ -12,6 +12,10 @@
 // subtab, rename, duplicate, move to…, delete. Every delete has the notice's undo
 // (`remove.ts`). The `+` in the sidebar's root row opens the same menu
 // without the node's half.
+// Opened on one of several rows selected in the tree (`many`, `treeSelect.ts`) it is the
+// menu of them all, and holds only what several can take: open in new tabs, study,
+// duplicate, move to…, delete n items (asked once, undone once). Under a finger the
+// tree's menu has `select`, which is how several are picked there.
 // Escape and a press outside close it; it stays inside the window at the
 // right (`MENU_W`) and the bottom (`placeMenu`). Its keys are every menu's
 // (`menuKeys` in `popMenu.ts`): it takes the focus, ↓ ↑ Home End move, ⏎ or
@@ -21,12 +25,12 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
 import { NEW_NAMES, childDirOf, dirOf, isDoc, isPdfPath } from '../vault/index.js';
-import { hasCards, studyDeck } from './deckOps.js';
+import { hasCards, studyDeck, studyNodes } from './deckOps.js';
 import { importFiles, failed } from './land.js';
-import { GLYPH, WRITTEN_GLYPH, descendants, findNode, glyphOf, kindOf, moveTargets, titleOf, type MoveTarget, type NodeKind } from './names.js';
+import { GLYPH, WRITTEN_GLYPH, descendants, findNode, glyphOf, itemsLabel, kindOf, moveTargets, titleOf, type MoveTarget, type NodeKind } from './names.js';
 import { createWritten } from './written.js';
 import { useApp } from './store.js';
-import { deleteNode } from './remove.js';
+import { deleteNode, deleteNodes } from './remove.js';
 import { createNode, duplicateNode, enrolReading, moveNode, openDir, openIntake, openNode, openNodeBeside, setTabs, sortByName } from './vault.js';
 import { Glyph } from './icons.js';
 import { menuKeys } from './popMenu.js';
@@ -58,6 +62,12 @@ export interface MenuAt {
   plus?: boolean;
   /** A tab rail row's `···`: only add subtab, rename, duplicate, move to…, delete (Google Docs' tab menu). */
   tab?: boolean;
+  /**
+   * The row is one of several selected (the tree's): what the menu acts on, the topmost of them in the order drawn,
+   * `id` or a row above it among them. `all` is every row selected, for `open in new tabs`.
+   */
+  many?: readonly string[];
+  all?: readonly string[];
 }
 
 /** A menu for `id` at the pointer, kept off the right edge. */
@@ -90,6 +100,12 @@ interface Props {
   onSubtab?(id: string): void;
   /** `move to…` moved the node: it is at `to` now. */
   onMoved?(from: string, to: string): void;
+  /** ⌘-click on this surface's rows selects (the tree): `open in new tab` is the only way to one, and names no click. */
+  selects?: boolean;
+  /** Under a finger: `select` was chosen on the row (the tree picks several by taps from there). */
+  onSelect?(id: string): void;
+  /** Something the menu began on the nodes (a move of several) ends with `work`. */
+  onWork?(work: Promise<unknown>): void;
 }
 
 /** Marks and case off, so `arabi` finds `ʿarabī`. */
@@ -161,7 +177,7 @@ function MoveList({ targets, back, move }: { targets: MoveTarget[]; back(e: Mous
   );
 }
 
-export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Props) {
+export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved, selects, onSelect, onWork }: Props) {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
@@ -195,12 +211,16 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
 
   // the menu stays inside the window at the bottom edge, with the list open or not
   const phone = useApp((s) => s.phone);
+  const mobile = useApp((s) => s.mobile);
   useLayoutEffect(() => { placeMenu(ref.current); }, [at]);
 
   const found = at.id === '' ? undefined : findNode(tree, at.id);
+  // several: every one of them still there, or the menu is of something else than it said
+  const many = at.many && at.many.length > 1 ? at.many : null;
+  const lost = (at.id !== '' && !found) || (many !== null && many.some((p) => !findNode(tree, p)));
   // its node moved or deleted meanwhile: the menu is closed, not only hidden (a node later at that path would bring it back)
-  useEffect(() => { if (at.id !== '' && !found) set(null); }, [at.id, found, set]);
-  if (at.id !== '' && !found) return null;
+  useEffect(() => { if (lost) set(null); }, [lost, set]);
+  if (lost) return null;
   const kind: NodeKind = at.id === '' ? 'folder' : kindOf(at.id, docs);
   const pdfAlone = isPdfPath(at.id);
   // new items, imports, and the intake land in the folder, or inside the document (its children directory)
@@ -210,31 +230,78 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   // written notes (milestone 82): made where a note would be, named the same way
   const createPaper = () => { createWritten(dir, NEW_NAMES.note).then((p) => { openDir(dir); onCreated(p); }).catch(fail); };
   const sub = (on: boolean) => (e: MouseEvent) => { e.stopPropagation(); set((m) => (m ? { ...m, sub: on } : m)); };
-  const targets = moveTargets(tree, at.id, order);
+  const targets = moveTargets(tree, many ?? at.id, order);
   const node = at.id !== '' && !at.plus;
-  const under = found ? descendants(found) : 0;
-  // a node with something under it asks before it goes, and says how much
+  const under = many ? many.reduce((n, p) => n + descendants(findNode(tree, p)!), 0) : found ? descendants(found) : 0;
+  // a node with something under it asks before it goes, and says how much; several are asked about once
   const del = (e: MouseEvent) => {
     e.stopPropagation();
     if (under > 0 && !asking) { setAsking(true); return; }
-    deleteNode(at.id).catch(failed('delete'));
+    if (many) deleteNodes(many).catch(failed('delete'));
+    else deleteNode(at.id).catch(failed('delete'));
     ran.current = true;
     set(null);
   };
+  /** `move to…`: the node, or each of several in their order, into `dir`; the host hears where each went. */
+  const moveTo = (dir: string) => {
+    ran.current = true;
+    const work = (async () => {
+      for (const from of many ?? [at.id]) onMoved?.(from, await moveNode(from, dir));
+    })().catch(failed('move'));
+    onWork?.(work);
+    set(null);
+  };
+  const duplicateAll = async (paths: readonly string[]) => { for (const p of paths) await duplicateNode(p); };
+
+  // under a finger there is no ⌘-click: `select` begins a selection of several with this row (the tree's)
+  const pick = node && mobile && onSelect ? (
+    <div className="ci" data-act="select" onClick={act(() => onSelect(at.id))}>
+      <span className="cg"><Glyph g="✓" /></span>select
+    </div>
+  ) : null;
 
   // a row opened in a tab of its own, or in the pane beside (a pane made when there is one): what ⌘-click and
   // ⌘⇧-click do, for a hand with no ⌘. Not on a phone, which shows one thing
   const opens = node && !phone ? (
     <>
       <div className="ci" data-act="open-tab" onClick={act(() => openNode(at.id, { newTab: true }))}>
-        <span className="cg"><Glyph g="+" /></span>open in new tab<span className="ck long">⌘ click</span>
+        <span className="cg"><Glyph g="+" /></span>open in new tab{!selects && <span className="ck long">⌘ click</span>}
       </div>
       <div className="ci" data-act="open-beside" onClick={act(() => openNodeBeside(at.id))}>
         <span className="cg"><Glyph g="⊟" /></span>open beside<span className="ck long">⇧⌘ click</span>
       </div>
+      {pick}
       <div className="cd" />
     </>
-  ) : null;
+  ) : pick ? <>{pick}<div className="cd" /></> : null;
+
+  // several rows as one: only what several can take
+  const cards = many ? many.filter((p) => hasCards(p)) : [];
+  const several = many && (
+    <>
+      {!phone && (
+        <div className="ci" data-act="open-tabs" onClick={act(() => { for (const p of at.all ?? many) openNode(p, { newTab: true }); })}>
+          <span className="cg"><Glyph g="+" /></span>open in new tabs
+        </div>
+      )}
+      {cards.length > 0 && (
+        <div className="ci" data-act="study" onClick={act(() => { studyNodes(many, at.id); })}>
+          <span className="cg"><Glyph g={GLYPH.session} /></span>study
+        </div>
+      )}
+      {(!phone || cards.length > 0) && <div className="cd" />}
+      <div className="ci" data-act="duplicate" onClick={act(() => { duplicateAll(many).catch(failed('duplicate')); })}>
+        <span className="cg"><Glyph g="⧉" /></span>duplicate
+      </div>
+      <div className="ci has-sub" data-act="move" onClick={sub(true)}>
+        <span className="cg"><Glyph g="→" /></span>move to…<span className="ck"><Glyph g="▸" /></span>
+      </div>
+      <div className="cd" />
+      <div className={`ci danger${asking ? ' asking' : ''}`} data-act="delete" onClick={del}>
+        <span className="cg"><Glyph g="⌫" /></span>{asking ? `delete ${itemsLabel(many.length)} with ${under} inside?` : `delete ${itemsLabel(many.length)}`}
+      </div>
+    </>
+  );
 
   const menu = (
     <div
@@ -244,7 +311,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
       onMouseDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
     >
-      {!at.sub && at.tab ? (
+      {!at.sub && several ? several : !at.sub && at.tab ? (
         <>
           {opens}
           {onSubtab && (
@@ -357,7 +424,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
           )}
         </>
       ) : (
-        <MoveList targets={targets} back={sub(false)} move={(dir) => { const from = at.id; ran.current = true; moveNode(from, dir).then((to) => onMoved?.(from, to)).catch(failed('move')); set(null); }} />
+        <MoveList targets={targets} back={sub(false)} move={moveTo} />
       )}
     </div>
   );

@@ -78,7 +78,41 @@ moving the pointer left lands it further out. The same drag works in the tab
 rail and the folder lens, and between them and the tree. With the tree
 focused: ↑↓ → ← ⏎, F2 renames, ⌘⌫ deletes, ⌥⌘↑↓ moves a row among its
 siblings, ⌥⌘← → outdents and nests it, a letter jumps to a name. ⌥-click a
-row to hoist it. The menu's `new …`
+row to hoist it.
+
+Several rows can be selected and handled as one. A click opens a row and
+selects it alone, as before. ⇧-click selects every row shown from the row
+last clicked to that one, and ⌘-click puts a row in or out of the selection
+(ctrl-click too, where the system does not make it the right-click);
+neither opens anything, so in the tree a tab of a row's own is its menu's
+`open in new tab`, and ⇧⌘-click still opens it beside. (⌘-click still opens
+a tab in the folder lens, a notebook's tabs, the crumbs and the queue, and
+on a card listed under its document.) With the tree focused ⇧↑ and ⇧↓ grow
+and shrink the selection from where it began, ⌘A selects every row shown
+but the collection's own, and Esc or a plain arrow goes back to the one
+row. (Several are always folders and documents: a card listed under its
+document is not one of them.) The menu opened on one of the selected rows is the menu of them all,
+with only what several can take: `open in new tabs`, `study` when any of
+them holds cards (one session over them all), `duplicate`, `move to…`, and
+`delete n items`; opened on a row outside the selection it selects that row
+alone and is that row's own. ⌘⌫ deletes them all. Several are asked about
+once, and only when something is inside one of them, as one row is; they
+leave one notice, and its `undo` puts all of them back. Dragging any
+selected row drags them all (the pointer carries `n items`): they land
+where one would, in the order they were shown, and never on one of
+themselves or inside one. When a folder, or a document with children, is
+selected together with something inside it, moving, duplicating or deleting
+takes the outer one, the inner going with it. The selection follows rows
+that are moved or renamed; of several, a row that is deleted (here or by a
+sync) or folded out of sight is selected no more. F2 and the keys that move
+a row act on one row: F2 does nothing while several are selected, and ⌥⌘
+with an arrow moves the row the keys are on and selects it alone. On an
+iPad or a phone, hold a row and choose `select`: from then a tap puts a row
+in or out instead of opening it, and a line at the head of the tree says
+how many are selected, with `move to…`, `delete` and `done`; `done` goes
+back to taps that open.
+
+The menu's `new …`
 on a document makes the new item inside it, `move to…` lists documents as
 well as folders, and a document's children open as a folder lens from its
 inspector's `children` line or ⌥-click on its chevron. Deleting a document
@@ -960,8 +994,10 @@ and a `×` at the end of them that closes the pane; a pane also closes with
 its last tab. A row tapped opens in the pane you touched last, the one
 whose tabs carry a rule in the accent. A third pane asked for joins the
 second, and a session takes the whole window while it is in front. (On the
-Mac the same entries are in the right-click menus, beside ⌘-click and
-⇧⌘-click, and there are three panes.) Upright, the sidebar comes over the page from the left edge (its
+Mac the same entries are in the right-click menus, beside ⇧⌘-click and,
+outside the tree, ⌘-click; and there are three panes.) The tree's menu has
+`select` under them, which is how several rows are picked by touch (see The
+tree). Upright, the sidebar comes over the page from the left edge (its
 toggle, or a swipe in from the edge) and goes once something is opened. A
 tap opens; the queue, the session, and its grades are buttons; a passage
 selected brings `card` and `extract` under it. No keys are named there: the

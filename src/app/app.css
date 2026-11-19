@@ -353,6 +353,48 @@
 .tree .hoist-crumb .hc:not(.here):hover { color: var(--fg-1); }
 .tree .hoist-crumb .hc + .hc::before { content: "/"; margin-right: 4px; color: var(--fg-5); }
 .tree .hoist-crumb .hc.here { color: var(--fg-2); }
+/* under a finger, picking several (the row menu's `select`): how many, and what is done to them; it stays at the
+   sidebar's head as the rows scroll under it */
+.tree .tree-select {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-height: 44px;
+  margin-bottom: 4px;
+  padding: 0 4px 0 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--sans);
+  font-size: var(--t-sm);
+  color: var(--fg-2);
+}
+/* the count is never cut: the words after it give way first */
+.tree .tree-select .ts-n { flex: 1 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tree .tree-select .ts-b {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  color: var(--fg-1);
+  min-height: 44px;
+  min-width: 0;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+.tree .tree-select .ts-b:active { background: var(--line-2); }
+.tree .tree-select .ts-b.danger { color: var(--danger); }
+.tree .tree-select .ts-b:disabled { color: var(--fg-5); }
+[data-theme="eink"] .tree .tree-select .ts-b.danger:not(:disabled) { color: var(--fg-1); font-weight: 600; }
+/* while picking, a row's own `+` and `···` are out of the way: a tap anywhere on it is the pick */
+.tree[data-selecting="1"] .row .row-acts { display: none; }
 .tree .row[draggable="true"]:active { cursor: grabbing; }
 .tree .row .chev, .tab-rail .rail-row .chev {
   width: 12px;

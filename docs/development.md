@@ -94,6 +94,11 @@ installed app's.
 `ILMI_SMOKE=join` (a simulated iPad or iPhone, from its welcome) puts a
 collection of the sample in Documents into the loopback WebDAV server, deletes
 it, and makes it again through the welcome's `join`.
+`ILMI_SMOKE=treesel` (a scratch copy of the sample) is the tree's selection of
+several: ⇧-click and ⌘-click with nothing opening, ⇧↓, ⌘A, Esc, the menu of
+several and of a row outside them, ⌘⌫ on a range as one notice and its undo,
+two rows dragged into a folder by the pointer and moved back by `move to…`,
+and the finger's `select` with its line (the store told it is a device).
 `ILMI_SMOKE=finish` (a scratch copy of the sample) sets a finish day on the
 merchant passage from the inspector, reads the row's words, makes a pass on the
 pacing's day, reads `behind`, clears it, and counts a chapter's pages.

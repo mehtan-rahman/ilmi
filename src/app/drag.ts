@@ -17,10 +17,15 @@
 //               missed), or a new press ends a mouse drag where it is, landing nowhere
 //  · leaving    a row for another row keeps the mark until the next
 //               dragover, so crossing a row's text never flickers
+//  · several    a row dragged out of a selection of several takes them all (the
+//               tree's, `treeSelect.ts`): no drop on any of them or under one, and
+//               they land one after another where one would, in the order drawn
 
 import type { CSSProperties, DragEvent, PointerEvent as RPointerEvent } from 'react';
 import { create } from 'zustand';
-import { INTO_DWELL, SPRING_MS, dropAt, edgeScroll, sameDrop, type Drop, type Pointer, type RowGeom } from './dnd.js';
+import { INTO_DWELL, SPRING_MS, dropAt, edgeScroll, sameDrop, type Drop, type Mode, type Pointer, type RowGeom } from './dnd.js';
+import { itemsLabel } from './names.js';
+import { refusedAny } from './treeSelect.js';
 import { placeNode } from './vault.js';
 
 export interface DragState {
@@ -28,9 +33,32 @@ export interface DragState {
   dragging: string | null;
   /** Where it would land now, drawn on `drop.row`. */
   drop: Drop | null;
+  /** Every node the drag takes when it takes several (`dragging` among them), in the order drawn; else null. */
+  many?: readonly string[] | null;
 }
 
 export const useDrag = create<DragState>(() => ({ dragging: null, drop: null }));
+
+/** The drop of what is being dragged over row `g`: one node's (`dropAt`), and with several none on any of them or under one. */
+function dropOf(g: RowGeom, p: Pointer, dragging: string, rested: boolean): Drop | null {
+  const d = dropAt(g, p, dragging, rested);
+  const many = useDrag.getState().many;
+  return d && many && refusedAny(many, d.target) ? null : d;
+}
+
+/**
+ * Place `paths` where a drop said, one after another, in their order: into
+ * the target they are added in turn, before it each lands just above it, and
+ * after it each lands after the one before. `landed` hears of each as it lands.
+ */
+export async function placeAll(paths: readonly string[], d: { target: string; mode: Mode }, landed?: (to: string, from: string) => void): Promise<void> {
+  let last = d.target;
+  for (const from of paths) {
+    const to = await placeNode(from, d.mode === 'after' ? last : d.target, d.mode);
+    if (d.mode === 'after') last = to;
+    landed?.(to, from);
+  }
+}
 
 /** What a surface tells the drag about how its rows are drawn. */
 export interface Surface {
@@ -43,6 +71,8 @@ export interface Surface {
   spring?(path: string): void;
   /** A drop landed (after `placeNode` was asked): the node `from` is at `to` now. */
   landed?(drop: Drop, to: string, from: string): void;
+  /** A drop is being carried out: `work` ends when every node of it has landed (or one could not). */
+  during?(work: Promise<void>): void;
 }
 
 // the row the pointer is resting on and since when (for the spring and the
@@ -83,7 +113,7 @@ const restedOn = (h: Hover | null, now: number): boolean => h !== null && h.mid 
 function redrawRested(): void {
   const { dragging, drop } = useDrag.getState();
   if (!hover || dragging === null || cancelled) return;
-  const next = dropAt(hover.g, hover.p, dragging, restedOn(hover, Date.now()));
+  const next = dropOf(hover.g, hover.p, dragging, restedOn(hover, Date.now()));
   if (next && !sameDrop(drop, next)) useDrag.setState({ drop: next });
 }
 
@@ -104,12 +134,13 @@ const onEsc = (e: KeyboardEvent) => {
 };
 
 /** Start dragging `path` (also for a smoke or a test that drives the drag without a DataTransfer). */
-export function beginDrag(path: string): void {
+export function beginDrag(path: string, many: readonly string[] | null = null): void {
   cancelled = false;
   hover = null;
   clearTimers();
   sprung = new Set();
-  useDrag.setState({ dragging: path, drop: null });
+  // (the state is replaced whole: a drag of one has no `many` at all)
+  useDrag.setState(many && many.length > 1 && many.includes(path) ? { dragging: path, drop: null, many } : { dragging: path, drop: null }, true);
   window.addEventListener('keydown', onEsc, true);
 }
 
@@ -118,7 +149,7 @@ export function endDrag(): void {
   hover = null;
   clearTimers();
   window.removeEventListener('keydown', onEsc, true);
-  if (useDrag.getState().dragging !== null || useDrag.getState().drop !== null) useDrag.setState({ dragging: null, drop: null });
+  if (useDrag.getState().dragging !== null || useDrag.getState().drop !== null || useDrag.getState().many) useDrag.setState({ dragging: null, drop: null }, true);
 }
 
 /** Esc pressed during the drag (the native drag cancels itself; this makes sure the drop does nothing). */
@@ -182,7 +213,7 @@ function overRow(el: HTMLElement, key: string, at: Live, x: number, y0: number):
     const dy = edgeScroll(y0, b.top, b.bottom);
     if (dy) box.scrollTop += dy;
   }
-  const next = cancelled ? null : dropAt(g, p, dragging, rested);
+  const next = cancelled ? null : dropOf(g, p, dragging, rested);
   if (!next) {
     if (drop) useDrag.setState({ drop: null });
     return null;
@@ -199,16 +230,16 @@ function offRows(): void {
 
 /** Let go over row `el`: the node is placed where the mark said (or nests, after a rest on a bare document's middle). */
 function dropOnRow(el: Element, g: RowGeom, s: Surface): void {
-  const { dragging } = useDrag.getState();
+  const { dragging, many } = useDrag.getState();
   let { drop } = useDrag.getState();
   // a drop after a rest on this row's middle nests, even when no timer or dragover has drawn it yet
   if (!cancelled && dragging !== null && hover?.el === el && g.nest === 'dwell' && restedOn(hover, Date.now())) {
-    drop = dropAt(hover.g, hover.p, dragging, true) ?? drop;
+    drop = dropOf(hover.g, hover.p, dragging, true) ?? drop;
   }
   if (!cancelled && dragging !== null && drop) {
     const d = drop;
-    const from = dragging;
-    placeNode(from, d.target, d.mode).then((to) => s.landed?.(d, to, from)).catch((err) => console.error(err));
+    const work = placeAll(many ?? [dragging], d, (to, from) => s.landed?.(d, to, from)).catch((err) => console.error(err));
+    s.during?.(work);
   }
   endDrag();
 }
@@ -230,7 +261,7 @@ const TICK_MS = 50;
 /** Whether this screen drags rows the system's way: a touch screen's long press. */
 const nativeDrag = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
-interface Press { path: string; label: string; x: number; y: number; started: boolean; lastX: number; lastY: number }
+interface Press { path: string; label: string; many: readonly string[] | null; x: number; y: number; started: boolean; lastX: number; lastY: number }
 let press: Press | null = null;
 let ghost: HTMLElement | null = null;
 let ticker: ReturnType<typeof setInterval> | null = null;
@@ -257,7 +288,7 @@ function moveTo(x: number, y: number): void {
 
 function startPointerDrag(p: Press): void {
   p.started = true;
-  beginDrag(p.path);
+  beginDrag(p.path, p.many);
   window.getSelection?.()?.removeAllRanges();
   document.documentElement.dataset.nodeDrag = 'none';
   ghost = document.createElement('div');
@@ -326,18 +357,30 @@ const onCancel = () => {
 const onBlur = (e: FocusEvent) => { if (!(e.target instanceof Node)) onCancel(); };
 
 /** A mouse pressed on a row that can be dragged: watched until it moves past `SLOP` (a drag) or lets go (a click). */
-function armPointer(path: string, label: string, x: number, y: number): void {
+function armPointer(path: string, label: string, many: readonly string[] | null, x: number, y: number): void {
   // a press while one is under way (its letting go missed): that one ends first, its drag with it
   onCancel();
-  press = { path, label, x, y, started: false, lastX: x, lastY: y };
+  press = { path, label, many, x, y, started: false, lastX: x, lastY: y };
   window.addEventListener('pointermove', onMove, true);
   window.addEventListener('pointerup', onUp, true);
   window.addEventListener('pointercancel', onCancel, true);
   window.addEventListener('blur', onBlur);
 }
 
-/** The props a row on `s` takes to be dragged and dropped on. `folded`: it has something under it and is closed (the spring opens it). */
-export function rowDrag(g: RowGeom, s: Surface, opts: { draggable: boolean; folded?: boolean }) {
+/**
+ * The props a row on `s` takes to be dragged and dropped on. `folded`: it has something under it and is closed (the
+ * spring opens it). `group`: asked as a drag of the row begins, every node the drag takes when the row is one of
+ * several selected (in the order drawn, the topmost of them), else null.
+ */
+export function rowDrag(g: RowGeom, s: Surface, opts: { draggable: boolean; folded?: boolean; group?: () => readonly string[] | null }) {
+  // what a drag of this row takes: itself, or the selection it is part of (a row whose folder is selected too is the folder's)
+  const taken = (name: string) => {
+    const m = opts.group?.() ?? null;
+    if (!m || !m.length) return { path: g.path, many: null, label: name };
+    const path = m.includes(g.path) ? g.path : m[0]!;
+    const many = m.length > 1 ? m : null;
+    return { path, many, label: many ? itemsLabel(many.length) : path === g.path ? name : path.replace(/^.*\//, '').replace(/\.md$/, '') };
+  };
   const key = g.key ?? g.path;
   const folded = !!opts.folded;
   return {
@@ -349,18 +392,19 @@ export function rowDrag(g: RowGeom, s: Surface, opts: { draggable: boolean; fold
       if (!opts.draggable || e.button !== 0 || e.pointerType === 'touch') return;
       const t = e.target as Element | null;
       if (t?.closest('input, textarea, [contenteditable="true"], .row-acts, .side-add')) return;
-      const label = e.currentTarget.querySelector('.name')?.textContent?.trim() || g.path;
-      armPointer(g.path, label, e.clientX, e.clientY);
+      const take = taken(e.currentTarget.querySelector('.name')?.textContent?.trim() || g.path);
+      armPointer(take.path, take.label, take.many, e.clientX, e.clientY);
     },
     // the system's drag (a touch screen's, and the smokes', which send DragEvents)
     onDragStart: (e: DragEvent) => {
       if (!opts.draggable) return;
       e.stopPropagation();
       finishPointer();
-      beginDrag(g.path);
+      const t = taken(g.path);
+      beginDrag(t.path, t.many);
       try {
         e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', g.path);
+        e.dataTransfer.setData('text/plain', t.path);
       } catch { /* not every host allows it */ }
     },
     onDragOver: (e: DragEvent) => {
@@ -393,7 +437,7 @@ export function rowDrag(g: RowGeom, s: Surface, opts: { draggable: boolean; fold
 export function rowMark(st: DragState, key: string, path: string, s: Surface): { className: string; style: CSSProperties } {
   const cls: string[] = [];
   let style: CSSProperties = {};
-  if (st.dragging === path) cls.push('dragging');
+  if (st.dragging === path || (st.dragging !== null && st.many?.includes(path))) cls.push('dragging');
   const d = st.drop;
   if (d && d.row === key) {
     cls.push(d.draw === 'box' ? 'drop-into' : d.draw === 'top' ? 'drop-top' : 'drop-bottom');

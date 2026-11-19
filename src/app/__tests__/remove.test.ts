@@ -17,7 +17,7 @@ vi.mock('../vault.js', async (orig) => {
   return { ...real, currentVault: () => vault, openDir: vi.fn() };
 });
 
-const { deleteNode } = await import('../remove.js');
+const { deleteNode, deleteNodes } = await import('../remove.js');
 const { undoNotice } = await import('../land.js');
 const { Writer } = await import('../writer.js');
 
@@ -57,5 +57,35 @@ describe('a delete', () => {
     page.close();
     await undoNotice();
     expect(await fsp.readFile(join(dir, EIGEN), 'utf8')).toContain('typed just before the delete');
+  });
+
+  it('several deleted as one leave one notice, and its one undo brings them all back where they were', async () => {
+    const LA = 'courses/linear-algebra';
+    // an order of the directory's own, so "where they were" is more than the names' order
+    await vault.setOrder(LA, ['vectors.md', 'unit-2', 'problem-set-1.md']);
+    const order = [...vault.order[LA]!];
+    const text = await fsp.readFile(join(dir, EIGEN), 'utf8');
+    await deleteNodes([`${LA}/vectors.md`, `${LA}/unit-2`, 'german.md']);
+    expect(vault.documents()).not.toContain(`${LA}/vectors.md`);
+    expect(vault.documents()).not.toContain(EIGEN);
+    expect(vault.documents()).not.toContain('german.md');
+    expect(useApp.getState().notice).toMatchObject({ line: 'deleted · 3 items', undo: true });
+    await undoNotice();
+    expect(vault.documents()).toEqual(expect.arrayContaining([`${LA}/vectors.md`, EIGEN, 'german.md']));
+    expect(await fsp.readFile(join(dir, EIGEN), 'utf8')).toBe(text);
+    expect(vault.order[LA]).toEqual(order);
+  });
+
+  it('one of several that cannot go stops it there: the notice says how many went, and undo puts those back', async () => {
+    const remove = vault.remove.bind(vault);
+    vi.spyOn(vault, 'remove').mockImplementation((path) => (path === 'essays' ? Promise.reject(new Error('held')) : remove(path)));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await deleteNodes(['german.md', 'essays', EIGEN]);
+    vi.restoreAllMocks();
+    expect(vault.documents()).not.toContain('german.md');
+    expect(vault.documents()).toContain(EIGEN);
+    expect(useApp.getState().notice).toMatchObject({ line: 'deleted · 1 of 3 items', undo: true });
+    await undoNotice();
+    expect(vault.documents()).toContain('german.md');
   });
 });

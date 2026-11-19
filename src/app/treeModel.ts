@@ -11,6 +11,8 @@
 //  · ⌘⌫             deletes (asking first when something is under it)
 //  · ⌥⌘↑ ⌥⌘↓        moves the row before / after its neighbour
 //  · ⌥⌘← ⌥⌘→        outdents it (after its parent) / nests it (into the row above)
+//  · ⇧↑ ⇧↓          the selection grown or shrunk by a row from its anchor; ⌘A every row
+//                   (`treeSelect.ts`; Esc, back to the one row, is `Tree.tsx`'s)
 //  · a letter       the next row whose name starts with what was typed
 //                   (`Tree.tsx` takes the key only when one does, and never with a
 //                   session in front: the page's bare keys stay the page's)
@@ -63,11 +65,16 @@ export const rowWithin = (r: TreeRow, id: string): boolean => {
   return p === id || p.startsWith(`${childDirOf(id)}/`);
 };
 
-/** The row selected once `id` is deleted: the next row not under it (its cards' rows are), else the one above it. */
-export function afterDelete(rows: readonly TreeRow[], id: string): string | null {
+/**
+ * The row selected once `id` is deleted: the next row not under it (its cards' rows are), else the one above it.
+ * With several deleted at once (`all`, `id` among them or under one): the next row under none of them, else the
+ * nearest above.
+ */
+export function afterDelete(rows: readonly TreeRow[], id: string, all: readonly string[] = [id]): string | null {
   const real = rows.filter((r) => !r.placeholder);
   const i = real.findIndex((r) => r.path === id);
-  return (real.slice(i + 1).find((r) => !rowWithin(r, id)) ?? real[i - 1])?.path ?? null;
+  const stays = (r: TreeRow) => !all.some((p) => rowWithin(r, p));
+  return (real.slice(i + 1).find(stays) ?? real.slice(0, Math.max(0, i)).reverse().find(stays))?.path ?? null;
 }
 
 /** A selected row's path once node `from` is moved or renamed to `to`: the node, anything under it, and their cards' rows follow; anything else stays. */
@@ -162,6 +169,8 @@ export type TreeAction =
   | { kind: 'rename'; path: string }
   | { kind: 'delete'; path: string }
   | { kind: 'move'; path: string; to: 'up' | 'down' | 'out' | 'in' }
+  | { kind: 'extend'; by: -1 | 1 }
+  | { kind: 'all' }
   | { kind: 'type'; char: string };
 
 export interface KeyLike {
@@ -188,7 +197,9 @@ export function treeKey(rows: readonly TreeRow[], focus: string | null, e: KeyLi
   const cmd = !!(e.metaKey || e.ctrlKey);
   if (cmd && e.altKey && MOVES[e.key]) return at && node && at.depth > 0 && at.parent !== null ? { kind: 'move', path: at.path, to: MOVES[e.key]! } : null;
   if (cmd && (e.key === 'Backspace' || e.key === 'Delete')) return at && node && at.depth > 0 ? { kind: 'delete', path: at.path } : null;
+  if (cmd && !e.altKey && !e.shiftKey && (e.key === 'a' || e.key === 'A')) return { kind: 'all' };
   if (cmd || e.altKey) return null;
+  if (e.shiftKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return { kind: 'extend', by: e.key === 'ArrowDown' ? 1 : -1 };
   switch (e.key) {
     case 'ArrowDown':
       return { kind: 'focus', path: real[Math.min(real.length - 1, i + 1)]!.path };

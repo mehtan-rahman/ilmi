@@ -859,6 +859,24 @@ where the layer they would stretch lies (`stretched`), and `pdfink`'s
 pages, checks that, and pinches out and in for a recording whose bar rows
 are compared frame by frame.
 
+Under a finger the rows over a book's pages (`.meta`, `.pdf-bar`) are not
+in the scroller: `Pdf` gives the pane a place for them over it
+(`.book-head`, after `.book-pages` in the tree so a book's first `.pdf-view`
+is still its pages') and `Pages` draws them there through a portal
+(`overPages`, `outside`), wherever the pages are the page's own. A row that
+sticks in a scroller goes with its content when a finger pulls it past an
+edge. What reads the rows asks `inBar`; the place kept at the top of the
+view is `PLACE_OUT` down the scroller. `written`'s `"part": "stays"` (a
+phone, under the rig) and `pdfink`'s `"part": "bar"` pull the pages past
+each edge at twice their size and read the rows' place every frame
+(`pullsStay`). `pdfink`'s `"part": "word"` and `"part": "held"` (only when
+asked for; counts, not checks) tap `notes` in the bar round after round,
+plainly or after a heading of the note is held for its menu, the page
+keeping every touch, press and click it meets, so a tap that does nothing
+is told apart: never met by the page, met on the word, or met on something
+else. `touch`'s `notes:` lines say what the book, the word and the panes
+hold before each tap on the word and when one does not do its work.
+
 `press` (`platform.ts`) lets go the one mouse press a tap sends after
 itself, up to five seconds late: with a wait of 0.8 s a tap on a box's
 `card` whose picker kept the page busy acted twice (the picker open again

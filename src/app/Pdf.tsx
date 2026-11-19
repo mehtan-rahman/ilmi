@@ -97,7 +97,8 @@
 // pages as well; with none (the Mac) a notebook says `written on an ipad`
 // there.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { boxesAt, boxesEnd, formatClip, meta, pagesLabel, parseBoxes, sectionDismissed, setField, type Box, type Doc, type SectionSchedule } from '../format/index.js';
 import {
   actionPage, bandNear, bookmarksOf, boxAround, contentsHere, contentsWithin, countIn, downPage, findAll, findText, flatOutline, flipRect, headingAbove, highlightAt, highlightHolding, highlightOf,
@@ -158,6 +159,8 @@ const TAG_ROOM = 210;
 const PAGE_MAX = 1600;
 /** How far down the view the place kept across a change of scale is, px: under the words over the pages. */
 const PLACE_AT = 60;
+/** The same where the rows over the pages are outside the scroller: the view begins under them. */
+const PLACE_OUT = 14;
 /** The zooms a book's pages step through: 1 is the pages fitted to the pane's width; under it they are centred, over it they scroll sideways. */
 export const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4];
 /** The least and the most a pinch leaves the pages at; between them a pinch stops anywhere. */
@@ -400,6 +403,8 @@ const notesBeside = (id: string) => (s: { docs: Record<string, DocInfo>; panes: 
 
 export function Pdf({ id, active = true, session = false, readOn = false, onLast }: PdfProps) {
   const open = useApp(notesBeside(id));
+  const mobile = useApp((s) => s.mobile);
+  const [head, setHead] = useState<HTMLElement | null>(null);
   // a book open is its pages (milestone 70): the inspector closed until its toggle asks for it over this book
   // and the sidebar the same: the pages have the window (the top strip's toggle, or ⌃⌘S, brings the tree back over this book)
   useLayoutEffect(() => { useApp.setState({ bookInsp: false, bookSide: false }); }, [id]);
@@ -416,7 +421,12 @@ export function Pdf({ id, active = true, session = false, readOn = false, onLast
   }, [active, id]);
   return (
     <div className="book" data-notes={open ? '1' : '0'} data-path={id}>
-      <div className="book-pages"><Pages id={id} active={active} session={session} readOn={readOn} onLast={onLast} notesOpen={open} /></div>
+      <div className="book-pages"><Pages id={id} active={active} session={session} readOn={readOn} onLast={onLast} notesOpen={open} head={head} /></div>
+      {/* under a finger the rows over the pages are the pane's, not the scroller's: a scroller pulled past its edge
+          takes what sticks in it along (the row came loose from the pane's top and its left as the pages were
+          pulled). They are drawn here, over the scroller (`book-head`; `Pages` puts them in), with the classes their
+          look hangs on; after the scroller, so the first `.pdf-view` of a book is still its pages' */}
+      {mobile && <div className="reader doc-view pdf-view book-head" ref={setHead} />}
     </div>
   );
 }
@@ -449,7 +459,7 @@ interface Drawn {
   sched?: SectionSchedule;
 }
 
-function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required<PdfProps>, 'onLast'> & { onLast: PdfProps['onLast']; notesOpen: boolean }) {
+function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Required<PdfProps>, 'onLast'> & { onLast: PdfProps['onLast']; notesOpen: boolean; /** Where the rows over the pages are drawn on a device: the pane's own place for them, outside the scroller. */ head: HTMLElement | null }) {
   /** Whether the pages have a note yet: the bar's word is `create notes` until they do. */
   const hasNotes = useApp((st) => notesTabsOf(id, st.docs).length > 0);
   /** Whether one more note can be attached: the pages' PDF is a document of its own (`+` beside the notes' word). */
@@ -589,6 +599,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
    * The bar, the menus, page setup, the overview and the box's bar stay this page's, over it.
    */
   const native = !!written && mobile && !phone && hasCanvas() && hash !== null;
+  /** The rows over the pages are outside the scroller (a device's, where the pages are the page's own): nothing of them scrolls, or is pulled, with the pages. */
+  const outside = mobile && !native;
+  const overPages = (rows: ReactNode): ReactNode => (outside ? head && createPortal(rows, head) : rows);
+  /** Something of the rows over the pages, wherever they are drawn. */
+  const inBar = (sel: string): Element | null => (outside ? head : viewRef.current)?.querySelector(sel) ?? null;
+  const inBarRef = useRef(inBar);
+  inBarRef.current = inBar;
   const surfaceId = useMemo(() => `surface:${++surfaceSeq}`, []);
   const [surfaceEl, setSurfaceEl] = useState<HTMLDivElement | null>(null);
   /** What the surface last said: where the last box drawn lies (on the page), and whether the pages are moving. */
@@ -692,7 +709,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const surface: Surface = {
       host() {
         if (!sc.isConnected || !sc.getClientRects().length) return null;
-        const { view, port, top, left, height } = portOf(sc, viewRef.current?.querySelector('.meta'));
+        const { view, port, top, left, height } = portOf(sc, inBarRef.current('.meta'));
         if (port.w <= 0 || port.h <= 0 || covered(sc, port)) return { id: hostId, view, port: { ...port, h: 0 }, top, left, height, open: null, sheets: [] };
         const column = pagesRef.current;
         const sheets: SheetSpec[] = [];
@@ -993,9 +1010,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
 
   const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
   /** How much taller the bar is for the tools' row under its words (an iPad's, `InkBar.tsx`); 0 with none. */
-  const barExtra = (): number => viewRef.current?.querySelector('.meta > .inkbar')?.getBoundingClientRect().height ?? 0;
+  const barExtra = (): number => (outside ? null : viewRef.current?.querySelector('.meta > .inkbar'))?.getBoundingClientRect().height ?? 0;
   /** How far down the view the place kept is: under the whole bar. */
-  const placeAt = (): number => PLACE_AT + barExtra();
+  const placeAt = (): number => (outside ? PLACE_OUT : PLACE_AT + barExtra());
   /** After a scroll: the pane beside is told the portal read past (set below, once the marks are known). */
   const afterScroll = useRef<() => void>(() => {});
   const place = useRef<{ page: number; y: number } | null>(null);
@@ -1200,7 +1217,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     }
     let g: Pinch | null = null;
     // (the word's own text node is written to, the one React holds: a node put in its place would be one React no longer writes to)
-    const say = (z: number) => { const t = viewRef.current?.querySelector('.pt-pct')?.firstChild; if (t && t.nodeType === 3) t.nodeValue = `${Math.round(z * 100)}%`; };
+    const say = (z: number) => { const t = inBarRef.current('.pt-pct')?.firstChild; if (t && t.nodeType === 3) t.nodeValue = `${Math.round(z * 100)}%`; };
     /** How far the pages are moved for the place they were taken by to lie between the fingers, stretched by `k`. */
     const shift = (p: Pinch) => ({ x: p.cx - (p.left - (sc.scrollLeft - p.sl)) - p.k * p.ax, y: p.cy - (p.top - (sc.scrollTop - p.st)) - p.k * p.ay });
     const draw = () => {
@@ -1217,7 +1234,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const here = (x: number, y: number): boolean => {
       if (!sc.isConnected || !sc.getClientRects().length) return false;
       const r = sc.getBoundingClientRect();
-      const bar = viewRef.current?.querySelector('.meta')?.getBoundingClientRect().bottom ?? r.top;
+      const bar = inBarRef.current('.meta')?.getBoundingClientRect().bottom ?? r.top;
       if (x < r.left || x > r.right || y < Math.max(r.top, bar) || y > r.bottom) return false;
       const at = document.elementFromPoint(x, y);
       return !!at && sc.contains(at) && !at.closest('.page-grid, .ink-menu');
@@ -2767,7 +2784,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         if (landed.current) places.set(id, { top: 0, at: place.current, x: placeX.current });
       }
       // the bar's zoom follows the fingers (its own text node, the one React holds)
-      const t = viewRef.current?.querySelector('.pt-pct')?.firstChild;
+      const t = inBarRef.current('.pt-pct')?.firstChild;
       if (t && t.nodeType === 3 && e.zoom !== undefined) t.nodeValue = `${Math.round(e.zoom * 100)}%`;
       const pend = e.pend ?? null;
       const moving = !!e.moving;
@@ -2967,7 +2984,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     <div className="reader-wrap" ref={outerRef} data-wide={wide && !native ? '1' : undefined} data-native={native ? '1' : undefined}>
       <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} data-written={written ? '1' : undefined} data-layout={pageless ? 'pageless' : undefined} data-tools={inkRow ? '1' : undefined} data-surface={native ? surfaceId : undefined} style={native ? undefined : colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
         {/* the bar over the pages, as wide as the pane whatever the page's width: what the book is, its notes, the zoom, the page, search */}
-        <div className="meta pdf-tools" data-ink={inkRow ? '1' : undefined} style={native ? undefined : colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
+        {overPages(<>
+        <div className="meta pdf-tools" data-ink={inkRow ? '1' : undefined} style={native || outside ? undefined : colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
           {/* the bar's first row: the row itself only where the tools make a second under it (an iPad); anywhere else its words are the bar's own */}
           <div className="pt-row">
           {status === 'ok' && !written && <button type="button" className="pt-btn" data-tool="contents" title="contents t" aria-label="contents" onClick={() => openContents(id)}><Icon name="menu" /></button>}
@@ -3067,6 +3085,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
             {looking && <span className="pb-n" role="status">looking</span>}
           </div>
         )}
+        </>)}
         <div className={`doc-wrap pdf-body${reading ? ' reading' : ''}`} ref={wrapRef}>
           {reading && <div className="read-gutter" onPointerDown={gutterDown} onPointerMove={gutterMove} onPointerUp={gutterUp} />}
           {reading && status === 'ok' && (

@@ -1464,6 +1464,29 @@ describe('a written notebook in the lens', () => {
     await vault.update(TYPED, (d) => { d.blocks.splice(1); });
   });
 
+  it('under a finger the rows over the pages are the pane\'s own, outside the scroller; on a Mac they stick in it as they did', async () => {
+    // a phone: the pages are the page's own (no surface), and a scroller pulled past its edge takes what sticks in it along
+    await mount(NB, [1, 2], 'ruled', true, true);
+    const book = q<HTMLElement>('.book')!;
+    const head = q<HTMLElement>('.book > .book-head');
+    expect(head).not.toBeNull();
+    expect(head!.querySelector(':scope > .meta')).not.toBeNull();
+    expect(q('.book-pages .meta')).toBeNull();
+    expect(qa('.meta').length).toBe(1);
+    // the head comes after the scroller: the book's first view is still its pages'
+    expect(Array.from(book.children).map((c) => c.className.split(' ').pop())).toEqual(['book-pages', 'book-head']);
+    expect(book.querySelector('.pdf-view')!.closest('.book-pages')).not.toBeNull();
+    // as wide as the pane by the pane's own layout: no width or margin of its own
+    expect(q<HTMLElement>('.book-head > .meta')!.getAttribute('style')).toBeNull();
+    act(() => root?.unmount());
+    host.remove();
+    // a Mac: as it was
+    await mount(NB, [1, 2]);
+    expect(q('.book-head')).toBeNull();
+    expect(q('.book-pages .pdf-view > .meta')).not.toBeNull();
+    expect(qa('.meta').length).toBe(1);
+  });
+
   it('on a Mac it is shown and cannot be written on: the bar says so, once, and has no tools', async () => {
     await fs.setPageInk(ID, 3, [stroke(7)]);
     await mount(NB, [1, 3]);

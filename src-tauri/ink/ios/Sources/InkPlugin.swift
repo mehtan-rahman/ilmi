@@ -1284,11 +1284,10 @@ class InkPlugin: Plugin, PenEars {
     func look(_ l: CALayer, _ depth: Int) {
       for k in l.sublayers ?? [] where found == nil {
         let f = k.convert(k.bounds, to: scroll.layer)
-        // (not the scroller's whole content, which begins above the column with what stands over it: the bar. A
-        // phone's column begins 64 points down that content, an iPad's with its tools tucked away little more, so
-        // only a page's shadow is allowed above the column: a layer that held the bar too would stretch it and cut
-        // it with the pages, under the fingers)
-        if f.insetBy(dx: -1.5, dy: -1.5).contains(want), f.minY >= want.minY - 24, f.maxY <= want.maxY + 600, f.width <= want.width + 600 {
+        // (not the scroller's whole content, which begins above the column and to its left with the desk the pages
+        // lie on, 22 points of it on a device, and on a Mac with the bar: only a page's shadow is allowed above the
+        // column and beside it)
+        if f.insetBy(dx: -1.5, dy: -1.5).contains(want), f.minY >= want.minY - 12, f.minX >= want.minX - 16, f.maxY <= want.maxY + 600, f.width <= want.width + 600 {
           found = k
           return
         }

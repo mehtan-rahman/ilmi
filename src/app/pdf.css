@@ -241,6 +241,14 @@ html[data-mobile="1"] .book .pdf-view[data-tools="1"] .pdf-page { scroll-margin-
 .book .pdf-view > .meta .pt-readonly { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-xs); color: var(--fg-4); }
 
 /* the pages lie on a desk of their own colour, each a sheet with its edge and a little shade under it */
+/* under a finger the rows over the pages are the pane's own, over the scroller and not in it (`Pdf.tsx`): a scroller
+   pulled past its top or its side takes what sticks in it along. The pane is the rows and, under them, the scroller */
+html[data-mobile="1"] .book { grid-template-rows: auto minmax(0, 1fr); }
+html[data-mobile="1"] .book > .book-pages { grid-row: 2; }
+.book > .book-head { grid-row: 1; position: relative; z-index: 6; width: auto; max-width: none; min-width: 0; margin: 0; padding: 0; }
+html[data-mobile="1"] .book > .book-head.pdf-view > .meta { position: static; margin: 0; width: auto; }
+html[data-mobile="1"] .book > .book-head.pdf-view > .meta ~ .pdf-bar, html[data-mobile="1"] .book > .book-head.pdf-view > .pdf-bar { position: static; width: auto; max-width: none; margin: 0; padding-left: 12px; padding-right: 12px; box-sizing: border-box; }
+html[data-mobile="1"] .book .pdf-page, html[data-mobile="1"] .book .pdf-view[data-tools="1"] .pdf-page { scroll-margin-top: 6px; }
 /* the scroller's bar has its room from the start: the pages are not fitted twice as they open */
 .book .book-pages { background: var(--desk); scrollbar-gutter: stable; }
 .book { --desk: color-mix(in oklab, var(--fg) 9%, var(--bg)); }

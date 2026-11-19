@@ -10871,6 +10871,14 @@ export async function smokeTouch(): Promise<void> {
       return { ok: nr.top >= pr.bottom - 2 && Math.abs(nr.left - pr.left) < 2 && Math.abs(nr.width - pr.width) < 2 && nr.height > 200 && pr.height > 200, line: `pages ${Math.round(pr.top)}–${Math.round(pr.bottom)}, note ${Math.round(nr.top)}–${Math.round(nr.bottom)}, ${Math.round(pr.width)} wide` };
     };
     const word = () => q<HTMLElement>('.meta .notes-toggle', book)!;
+    /** What the book, its word and the panes say of the notes, for a line before a tap on the word and for a check that does not hold. */
+    const notesFacts = (): string => {
+      const live = q<HTMLElement>('.pane[data-active="1"] .book');
+      const ps = useApp.getState().panes;
+      const w = q<HTMLElement>('.meta .notes-toggle', book);
+      const wr = w?.getBoundingClientRect();
+      return `the book ${book.isConnected ? 'in the page' : 'NOT in the page'}${live === book ? '' : ', not the active pane\'s'}, its notes ${book.dataset.notes}; the word "${w?.textContent ?? 'none'}" on ${w?.dataset.on ?? '-'} at ${wr ? `${wr.left.toFixed(0)},${wr.top.toFixed(0)}` : '-'} (${qa('.meta .notes-toggle').length} words, ${qa('.book-head').length} heads); ${qa('.pane').length} panes on the glass, a notes pane ${notesPane() ? 'there' : 'gone'}; the store's panes ${ps.panes.map((x, i) => `${i === ps.active ? '*' : ''}[${x.tabs.map((t, k) => `${k === x.active ? '>' : ''}${t.id}`).join(' ')}]`).join(' ')}; window scrolled ${window.scrollY}`;
+    };
     must(alone() && !q('.insp'), 'upright: a book open is its pages, no note and no inspector beside them');
     must(across().ok, `the pages across the pane (${across().line})`);
     must(/^(create|open) notes$/.test(word().textContent ?? '') && word().dataset.on === '0', 'notes is among the words over the pages');
@@ -10883,7 +10891,8 @@ export async function smokeTouch(): Promise<void> {
     must(!!q('.book-notes-doc', notesPane()!) && activeTab(useApp.getState().panes)?.id === BOOK, 'the chapter\'s body as its notes, the pages still the active pane');
     await shot('touch-notes-word');
     ask('tap', ...mid(word()));
-    await poll(() => alone() && word().dataset.on === '0', 'tapped again, notes closes it, and the pane with it', 20000);
+    log(`notes: before the second tap: ${notesFacts()}`);
+    await poll(() => alone() && word().dataset.on === '0', 'tapped again, notes closes it, and the pane with it', 20000).catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; ${notesFacts()}`); });
     await sleep(500);
     // the inspector, only by its toggle: the book's fields and its passages; then closed again
     ask('tap', ...mid(q('.top .insp-toggle:not(.side-toggle):not(.set-toggle)')!));
@@ -10898,11 +10907,13 @@ export async function smokeTouch(): Promise<void> {
     const top0 = sc.scrollTop;
     ask('flick', 0.5, 0.72, 0.5, 0.3);
     await poll(() => sc.scrollTop > top0 + 150, 'a flick scrolls the pages', 20000);
-    await sleep(1500);
+    // (the pages coast on after the finger: until they lie still, so the flick back begins from where they came to)
+    for (let was = -1, t = Date.now(); Date.now() - t < 8000 && was !== sc.scrollTop;) { was = sc.scrollTop; await sleep(400); }
     must(pending() === 0 && !q('.pbox.ghost', book), `and boxes nothing (scrolled ${Math.round(sc.scrollTop - top0)} px)`);
-    must(word().getBoundingClientRect().top >= sc.getBoundingClientRect().top, 'notes is still at the pane\'s top: under a finger it is the way to the note');
+    must(word().getBoundingClientRect().top >= book.getBoundingClientRect().top && word().getBoundingClientRect().bottom <= sc.getBoundingClientRect().top + 1, 'notes is still at the pane\'s top, over the pages\' scroller: under a finger it is the way to the note');
     ask('flick', 0.5, 0.35, 0.5, 0.75);
-    await poll(() => sc.scrollTop < top0 + 100, 'and back', 20000);
+    const far0 = sc.scrollTop;
+    await poll(() => sc.scrollTop < Math.max(top0 + 100, far0 - 600), 'and back', 20000).catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; from ${Math.round(top0)}, flicked to ${Math.round(far0)}, now ${Math.round(sc.scrollTop)}`); });
     await sleep(1200);
 
     // ── a finger held, then dragged: a box; again: a second; a tap: none ──
@@ -11072,8 +11083,15 @@ export async function smokeTouch(): Promise<void> {
     (document.activeElement as HTMLElement | null)?.blur?.();
     await sleep(600);
     void br;
+    {
+      // (the word is tapped where it is once it is on the glass: what is scrolled when it is not is said)
+      const off = () => { const out: string[] = []; if (window.scrollY) out.push(`window ${window.scrollY}`); for (let e: HTMLElement | null = word(); e; e = e.parentElement) if (e.scrollTop) out.push(`${e.className.split(' ')[0]} ${e.scrollTop}`); return out.join(', '); };
+      if (word().getBoundingClientRect().top < 0) log(`the word is off the glass at ${word().getBoundingClientRect().top.toFixed(0)}: scrolled: ${off() || 'nothing'}; the visual viewport at ${window.visualViewport?.offsetTop ?? 0}, ${window.visualViewport?.height ?? 0} of ${window.innerHeight}`);
+      await poll(() => word().getBoundingClientRect().top >= 0, 'the word over the pages is on the glass', 10000);
+    }
+    log(`notes: before the tap that closes: ${notesFacts()}`);
     ask('tap', ...mid(word()));
-    await poll(() => alone(), 'a tap on notes closes the note', 20000);
+    await poll(() => alone(), 'a tap on notes closes the note', 20000).catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; ${notesFacts()}`); });
     await sleep(600);
 
     // ── a PDF on its own (milestone 70): its pages, no note; a passage kept asks for one, made in a folder picked; `notes` opens it and closes it ──
@@ -11297,7 +11315,8 @@ export async function smokeTouch(): Promise<void> {
     await poll(() => cards[2]!.isConnected && cards[2]!.classList.contains('selected'), 'a tap on a card selects it', 20000);
     await sleep(500);
     ask('press', ...mid(card), 0.9);
-    const cm = await poll(() => q<HTMLElement>('.pane[data-active="1"] .ctx-menu'), 'a long press on a card opens its menu', 20000);
+    // (a deck's menu is the page's own on a device, as the tree's is: not in the pane)
+    const cm = await poll(() => q<HTMLElement>('.pane[data-active="1"] .ctx-menu') ?? q<HTMLElement>('.ctx-menu'), 'a long press on a card opens its menu', 20000);
     log(`card menu: ${qa('.ci', cm).map((i) => i.textContent).join(' | ')}`);
     await sleep(700);
     must((window.getSelection()?.toString() ?? '') === '', 'with nothing selected');
@@ -11389,6 +11408,9 @@ export async function smokeTouch(): Promise<void> {
       const inkNow = async () => (await invoke<InkState>('dev_ink_state')).sheets.find((x) => x.id === sheet);
       await poll(inkNow, 'its page has a canvas ready', 15000);
       const pr = pg.getBoundingClientRect();
+      // (the pen, whatever tool a run before left chosen on this device)
+      (await import('./inkTools.js')).setTool('pen');
+      await poll(async () => (await invoke<InkState>('dev_ink_state')).tool?.kind === 'pen', 'the pen', 8000);
       await invoke('dev_ink_pen', { on: true });
       ask('drag', fx(pr.left + pr.width * 0.2), fy(pr.top + 140), fx(pr.left + pr.width * 0.7), fy(pr.top + 170), 0.05);
       await poll(async () => (await inkNow())?.strokes === 1, 'the Pencil\'s first touch is a stroke on a bare PDF\'s page, on its side', 25000);
@@ -12755,6 +12777,50 @@ export async function smokeInkMac(vault: Vault): Promise<void> {
 //     canvas holds all of them, one more is written, and the Mac's
 //     strokes keep their names through the iPad's save.
 const PAGEINK_BOOK = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+
+/**
+ * The rows over a book's pages while a finger pulls the pages past their edges (under the touch rig): down past the
+ * top, sideways past the left, both at once, up past the foot, sideways past the right. While each pull goes on the
+ * row's place is read every frame against the pane's: `off` is how far it was ever from the pane's top left, `wide`
+ * from its width, `far` how far past their edge the pages went. A `stays:` line each.
+ */
+async function pullsStay(book: HTMLElement, what: string, sideways: boolean, log: (s: string) => void): Promise<{ what: string; off: number; far: number; wide: number }[]> {
+  const sc = book.querySelector<HTMLElement>('.book-pages')!;
+  const pulls: [string, number[], () => number, () => void][] = [
+    ['down past the top', [0.5, 0.4, 0.5, 0.8, 0.02], () => -sc.scrollTop, () => { sc.scrollTop = 0; sc.scrollLeft = 40; }],
+    ['sideways past the left', [0.25, 0.5, 0.85, 0.5, 0.02], () => -sc.scrollLeft, () => { sc.scrollTop = 60; sc.scrollLeft = 0; }],
+    ['down and sideways at once', [0.3, 0.4, 0.8, 0.8, 0.02], () => Math.max(-sc.scrollTop, -sc.scrollLeft), () => { sc.scrollTop = 0; sc.scrollLeft = 0; }],
+    ['up past the foot', [0.5, 0.7, 0.5, 0.3, 0.02], () => sc.scrollTop - (sc.scrollHeight - sc.clientHeight), () => { sc.scrollTop = sc.scrollHeight; }],
+    ['sideways past the right', [0.8, 0.5, 0.2, 0.5, 0.02], () => sc.scrollLeft - (sc.scrollWidth - sc.clientWidth), () => { sc.scrollLeft = sc.scrollWidth; sc.scrollTop = 60; }],
+  ];
+  const seen: { what: string; off: number; far: number; wide: number }[] = [];
+  for (const [pull, path, over, place] of pulls) {
+    if (!sideways && /sideways/.test(pull)) continue;
+    place();
+    await sleep(700);
+    const pane = book.getBoundingClientRect();
+    // (the finger's path is told in the window's parts: it runs in the pane, whatever stands beside it)
+    const at = (x: number, y: number) => [(pane.left + x * pane.width) / window.innerWidth, (pane.top + y * pane.height) / window.innerHeight];
+    log(`do: drag ${[...at(path[0]!, path[1]!), ...at(path[2]!, path[3]!), path[4]!].map((v) => v.toFixed(4)).join(' ')}`);
+    let off = 0; let far = 0; let wide = 0; let frames = 0;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 5000) {
+      await new Promise((r) => requestAnimationFrame(r));
+      const rows = Array.from(book.querySelectorAll<HTMLElement>('.meta, .pdf-bar'));
+      const now = book.getBoundingClientRect();
+      for (const row of rows) {
+        const m = row.getBoundingClientRect();
+        off = Math.max(off, Math.abs(m.left - now.left), row.classList.contains('meta') ? Math.abs(m.top - now.top) : 0);
+        wide = Math.max(wide, Math.abs(m.width - now.width));
+      }
+      far = Math.max(far, over());
+      frames++;
+    }
+    log(`stays: ${what}, ${pull}: the pages pulled ${far.toFixed(0)} px past their edge; the rows over them at most ${off.toFixed(1)} px from the pane's top left, ${wide.toFixed(1)} px from its width (${frames} frames)`);
+    seen.push({ what: `${what}, ${pull}`, off, far, wide });
+  }
+  return seen;
+}
 const PAGEINK_PAGE = 23;
 /** The Mac's made-up writing: `dev_ink_sample`'s lines, strokes a line and seed. */
 const PAGEINK_SAMPLE = { lines: 2, per: 3, seed: 67 };
@@ -16364,6 +16430,40 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
       if (!path) throw new Error('ILMI_VAULT (smoke.json: "vault") names the sample\'s copy');
       const vault = await openVault(await devCollection(path));
       const fs = vault.fs as StoreFs;
+      if (((await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '') === 'stays') {
+        // ── the words over a notebook's pages stay at the pane's top, as wide as the pane, whatever the pages do
+        // (`"part": "stays"`, under the touch rig): zoomed past the pane, a finger pulls the pages down past their
+        // top, sideways past their left, up past their foot and past their right; while each pull goes on the row's
+        // place is read every frame against the pane's. A `stays:` line each, and the recording for the frames ──
+        const { setBookZoom } = await import('./vault.js');
+        const { setSetup } = await import('./written.js');
+        await createWritten('fleeting', 'stays put');
+        const SB = 'fleeting/stays put.md';
+        await poll(() => docsNow()[SB]?.written?.id, 'a notebook, for the row over its pages', 10000);
+        openNode(SB);
+        const sb = await poll(() => { const x = bookOf(SB); return x && qa('.pdf-page svg.paper', x).length >= 1 && q('.meta', x) ? x : null; }, 'it opens', 15000);
+        const seen: Awaited<ReturnType<typeof pullsStay>> = [];
+        for (const z of [2, 1]) {
+          setBookZoom(SB, z);
+          await poll(() => Number(q<HTMLElement>('.pdf-view', sb)?.dataset.zoom) === z, `at ${z} times`, 8000);
+          await sleep(1500);
+          seen.push(...(await pullsStay(sb, `a notebook at ${z}x`, z > 1, log)));
+        }
+        await shot('stays-notebook');
+        // a PDF's pages the same
+        openNode(PAGEINK_BOOK);
+        const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-page canvas', x) && q('.meta', x) ? x : null; }, 'the sample\'s chapter opens', 60000);
+        setBookZoom(PAGEINK_BOOK, 2);
+        await poll(() => Number(q<HTMLElement>('.pdf-view', pb)?.dataset.zoom) === 2, 'at 2 times', 8000);
+        await sleep(2500);
+        seen.push(...(await pullsStay(pb, 'a PDF at 2x', true, log)));
+        await shot('stays-after');
+        must(seen.filter((x) => x.far > 12).length >= 3, `the pulls went past the pages' edges (${seen.map((x) => Math.round(x.far)).join(', ')} px)`);
+        must(seen.every((x) => x.off < 1 && x.wide < 1), `through every pull the row stayed at the pane's top left, as wide as the pane (${seen.map((x) => `${x.what}: ${x.off.toFixed(1)}`).join('; ')})`);
+        finished = true;
+        log(`done; collection ${vault.root}`);
+        return;
+      }
       if (((await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '') === 'thin') {
         // ── how sharp a notebook's ink is on a phone (`"part": "thin"`): level strokes 0.2 to 2 points wide and a
         // slanted one, read at fit, zoomed as far as the pages go, and pageless. An `inkgeo:` line before each
@@ -20319,8 +20419,9 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       ask('drag', ...P3(60, 60), ...P3(200, 60), 0.02);
       await poll(async () => { const c = await there(); return c && c.strokes === n0 + 1 && c.live === 0 && !c.shown && paths().length === n0 + 1; }, 'a finger writes a stroke, and the page draws it', 30000);
       {
-        const k = paths()[paths().length - 1]!.getBoundingClientRect();
         const want = [r.left + (60 / W) * r.width, r.top + (60 / H) * r.height, r.left + (200 / W) * r.width];
+        // (the stroke nearest where the finger went: the page's paths are not in the order they were written, and a highlighter's are in a drawing of their own)
+        const k = paths().map((x) => x.getBoundingClientRect()).sort((a, b) => Math.abs((a.top + a.bottom) / 2 - want[1]!) + Math.abs(a.left - want[0]!) - (Math.abs((b.top + b.bottom) / 2 - want[1]!) + Math.abs(b.left - want[0]!)))[0]!;
         log(`finger: the stroke at ${k.left.toFixed(1)}, ${((k.top + k.bottom) / 2).toFixed(1)} to ${k.right.toFixed(1)}; the finger went ${want[0]!.toFixed(1)}, ${want[1]!.toFixed(1)} to ${want[2]!.toFixed(1)}`);
         must(Math.abs(k.left - want[0]!) < 12 && Math.abs((k.top + k.bottom) / 2 - want[1]!) < 8 && Math.abs(k.right - want[2]!) < 12, 'where the finger went');
       }
@@ -20356,6 +20457,114 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       await invoke('dev_ink_unshare');
       await poll(async () => !(await state()).sharing, 'closed', 10000);
     }
+    if (part.split(',').includes('word') || part.split(',').includes('held')) {
+      // ── how surely a tap on a word of the bar over the pages does what it says (`"part": "word"`, under the touch
+      // rig; only when asked for; a count, not a check). With `"part": "held"` the word is tapped as the touch check
+      // taps it where that has failed: after a heading in the note's pane is held for its menu, the menu closed by a
+      // tap under it, and the field let go of. `notes` is tapped to open the note beside, the note's pane
+      // is made the one in use by a tap on its tab strip, and `notes` is tapped again to close it: twenty times
+      // round. For each tap the page keeps what it met of it (every touch, press and click, and on what), so a tap
+      // that does nothing is told apart: never met by the page (the runner's, or the simulator's), met on the word
+      // with nothing done (the app's), or met on something else (what lies over the bar). A `word:` line for each
+      // tap that did nothing, with what the ink layer met, and one at the end ──
+      const word = () => q<HTMLElement>('.meta .notes-toggle', pb);
+      const notesPaneEl = () => qa<HTMLElement>('.pane').find((x) => q('.reader-wrap[data-pdf]', x)) ?? null;
+      const store = () => useApp.getState().panes;
+      const isOpen = () => pb.dataset.notes === '1' && !!notesPaneEl() && store().panes.length === 2;
+      const isShut = () => !notesPaneEl() && store().panes.length === 1 && qa('.pane').length === 1;
+      const notesActive = () => { const el = notesPaneEl(); return !!el && el.dataset.active === '1'; };
+      await poll(() => word(), 'the chapter has its word for the notes in the bar', 15000);
+      if (!isShut()) throw new Error(`the note is open before the count begins (${store().panes.length} panes)`);
+      const met: string[] = [];
+      const name = (t: EventTarget | null): string => { const e = t instanceof Element ? t : null; if (!e) return 'nothing'; const w = e.closest('.notes-toggle') ? 'the word' : e.closest('.meta') ? 'the bar' : e.closest('.tabbar') ? 'a tab strip' : e.closest('.book-pages') ? 'the pages' : e.closest('.pane') ? 'a pane' : 'elsewhere'; return `${w} (${e.tagName.toLowerCase()}${e.className && typeof e.className === 'string' ? `.${e.className.split(' ')[0]}` : ''})`; };
+      const hear = (e: Event) => { const p = e instanceof MouseEvent ? e : e instanceof TouchEvent ? (e.touches[0] ?? e.changedTouches[0]) : null; met.push(`${e.type}${p ? ` ${Math.round(p.clientX)},${Math.round(p.clientY)}` : ''} on ${name(e.target)}`); };
+      const kinds = ['touchstart', 'touchend', 'touchcancel', 'pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'click'];
+      for (const k of kinds) document.addEventListener(k, hear, true);
+      const steady = async (el: () => Element | null) => {
+        const now = () => { const r = el()?.getBoundingClientRect(); return r ? `${r.left.toFixed(0)} ${r.top.toFixed(0)} ${r.width.toFixed(0)}` : '-'; };
+        for (let was = now(), t = Date.now(), since = t; Date.now() - t < 5000 && Date.now() - since < 500;) { await sleep(80); if (now() !== was) { was = now(); since = Date.now(); } }
+      };
+      const count: Record<string, { asked: number; dead: number; unmet: number; onIt: number; other: number; ms: number[] }> = {};
+      /** One tap on `el`, until `done` holds: whether it did what it should, and if not what the page met of it. Asked once more to go on, which is not counted. */
+      const tapFor = async (kind: string, round: number, el: () => Element | null, on: (t: string) => boolean, done: () => boolean, where?: () => [number, number], verb: [string, ...number[]] = ['tap']): Promise<boolean> => {
+        const c = (count[kind] ??= { asked: 0, dead: 0, unmet: 0, onIt: 0, other: 0, ms: [] });
+        await steady(el);
+        const r = el()!.getBoundingClientRect();
+        const px: [number, number] = where ? where() : kind === 'activate' ? [r.left + r.width * 0.6, r.top + r.height / 2] : [r.left + r.width / 2, r.top + r.height / 2];
+        const at: [number, number] = [fx(px[0]), fy(px[1])];
+        const [how, ...rest] = verb;
+        met.length = 0;
+        c.asked++;
+        const t0 = Date.now();
+        ask(how, ...at, ...rest);
+        while (!done() && Date.now() - t0 < 7000) await sleep(50);
+        if (done()) { c.ms.push(Date.now() - t0); await sleep(350); return true; }
+        c.dead++;
+        const starts = met.filter((m) => /^(touchstart|pointerdown)/.test(m));
+        if (!starts.length) c.unmet++; else if (starts.some(on)) c.onIt++; else c.other++;
+        const st = (await state()) as unknown as { touchLog?: string[] };
+        log(`word: round ${round}, ${kind}: a ${how} at ${Math.round(px[0])},${Math.round(px[1])} did nothing in 7 s; the page met: ${met.join(' | ') || 'nothing'}; the ink layer met: ${st.touchLog?.slice(-6).join(' | ') ?? '-'}; the word "${word()?.textContent ?? ''}", the book's notes ${pb.dataset.notes}, ${store().panes.length} panes, the notes' pane ${notesPaneEl() ? (notesActive() ? 'in use' : 'beside') : 'gone'}`);
+        // (once more, to go on)
+        met.length = 0;
+        const t1 = Date.now();
+        ask(how, ...at, ...rest);
+        while (!done() && Date.now() - t1 < 9000) await sleep(50);
+        if (!done()) log(`word: round ${round}, ${kind}: nor did a second; the page met: ${met.join(' | ') || 'nothing'}`);
+        await sleep(350);
+        return done();
+      };
+      phase('the word, tapped');
+      let rounds = 0;
+      let said = false;
+      const held = part.split(',').includes('held');
+      for (let i = 1; i <= (held ? 12 : 20); i++) {
+        if (!(await tapFor('open', i, word, (t) => t.includes('the word'), isOpen))) break;
+        if (!held) {
+          if (!(await tapFor('activate', i, () => q('.tabbar', notesPaneEl() ?? document.body), (t) => t.includes('a tab strip'), notesActive))) break;
+        } else {
+          // as the touch check does: a heading of the note held for its menu, the menu closed by a tap under it, the field let go of
+          const pane = notesPaneEl()!;
+          const heads = await poll(() => { const h = qa<HTMLElement>('.dd-h', pane); return h.length ? h : null; }, 'the note has a heading to hold', 10000);
+          const head = heads[Math.min(2, heads.length - 1)]!;
+          head.scrollIntoView({ block: 'center' });
+          await sleep(400);
+          const first = (): [number, number] => {
+            const range = document.createRange();
+            const tw = document.createTreeWalker(head, NodeFilter.SHOW_TEXT);
+            let t: Node | null = tw.nextNode();
+            while (t && !(t.textContent ?? '').trim()) t = tw.nextNode();
+            range.selectNodeContents(t ?? head);
+            const wr = range.getBoundingClientRect();
+            return [wr.left + Math.min(60, wr.width / 2), wr.top + wr.height / 2];
+          };
+          if (!(await tapFor('hold a heading', i, () => head, (t) => t.includes('a pane'), () => !!q('.ctx-menu.section-menu'), first, ['press', 0.9]))) break;
+          await sleep(700);
+          const under = (): [number, number] => { const nr = pane.getBoundingClientRect(); const m = q<HTMLElement>('.ctx-menu.section-menu')?.getBoundingClientRect(); return [nr.left + nr.width / 2, Math.min(nr.bottom - 60, (m?.bottom ?? nr.top) + 220)]; };
+          if (!(await tapFor('close its menu', i, () => pane, (t) => !t.includes('the word'), () => !q('.ctx-menu.section-menu'), under))) break;
+          await sleep(600);
+          (document.activeElement as HTMLElement | null)?.blur?.();
+          await sleep(600);
+          // where the word is before it is tapped: off the glass, or moving, is said with what is scrolled
+          const wr = word()?.getBoundingClientRect();
+          if (wr && (wr.top < 0 || wr.bottom > window.innerHeight)) {
+            const scrolled: string[] = [];
+            if (window.scrollY) scrolled.push(`window ${window.scrollY}`);
+            for (let e: HTMLElement | null = word(); e; e = e.parentElement) if (e.scrollTop) scrolled.push(`${e.className.split(' ')[0]} ${e.scrollTop}`);
+            log(`word: round ${i}: the word is off the glass at ${wr.top.toFixed(0)} before its tap; scrolled: ${scrolled.join(', ') || 'nothing'}; the visual viewport at ${window.visualViewport?.offsetTop ?? 0}, ${window.visualViewport?.height ?? 0} of ${window.innerHeight}`);
+          }
+        }
+        if (!said) { said = true; log(`word: with the notes' pane the one in use the word reads "${word()?.textContent ?? ''}", the book's notes ${pb.dataset.notes}, the notes' pane ${notesActive() ? 'in use' : 'beside'}`); }
+        if (!(await tapFor(held ? 'close, after a heading held' : 'close', i, word, (t) => t.includes('the word'), isShut))) break;
+        rounds = i;
+      }
+      for (const k of kinds) document.removeEventListener(k, hear, true);
+      const mid = (v: number[]) => (v.length ? [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)]! : 0);
+      log(`word: ${rounds} rounds whole; ${Object.entries(count).map(([k, c]) => `${k}: ${c.asked} taps, ${c.dead} did nothing (${c.unmet} the page never met, ${c.onIt} met on it, ${c.other} met on something else), ${mid(c.ms)} ms to act`).join('; ')}`);
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('bar')) {
       // ── the bar over a short PDF's pages while two fingers zoom them (`"part": "bar"`, with `books`; only when
       // asked for): a paper of a few pages, whose whole column the web view keeps in layers of its own, so that a
@@ -20381,7 +20590,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       };
       const layer = await said('a short paper');
       const colTop = q<HTMLElement>('.pdf-pages', tb)!.getBoundingClientRect().top - q<HTMLElement>('.book-pages', tb)!.getBoundingClientRect().top + q<HTMLElement>('.book-pages', tb)!.scrollTop;
-      if (layer) must(Number(layer.split(' ')[0]!.split(',')[1]) > colTop - 24, `the layer two fingers stretch begins at the column (${layer}; the column ${colTop.toFixed(0)} down), under the bar`);
+      if (layer) must(Number(layer.split(' ')[0]!.split(',')[1]) > colTop - 12, `the layer two fingers stretch begins at the column (${layer}; the column ${colTop.toFixed(0)} down), under the bar`);
       const zoomOf = () => Number(tview.dataset.zoom);
       const p1 = q<HTMLElement>('.pdf-page[data-page="1"]', tb)!.getBoundingClientRect();
       const [cx, cy] = [p1.left + p1.width / 2, Math.min(p1.top + p1.height / 2, window.innerHeight * 0.6)];
@@ -20394,6 +20603,20 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       await poll(() => { const v = zoomOf(); return v < 1.2 && !tview.dataset.pinch ? v : 0; }, 'closed: smaller', 40000);
       await sleep(1500);
       await said('after');
+      {
+        // and pulled past their edges, zoomed past the pane: the rows over the pages stay the pane's
+        const { setBookZoom } = await import('./vault.js');
+        setBookZoom(T, 2);
+        await poll(() => zoomOf() === 2 && !tview.dataset.pinch, 'at 2 times', 8000);
+        await sleep(2000);
+        // (a finger scrolls: nothing a run before left on makes it write)
+        (await import('./inkTools.js')).setFinger(false);
+        await poll(async () => (await state()).finger !== true, 'a finger scrolls', 8000);
+        phase('the bar, pulled');
+        const seen = await pullsStay(tb, 'a paper at 2x', true, log);
+        must(seen.filter((x) => x.far > 12).length >= 3, `the pulls went past the pages' edges (${seen.map((x) => Math.round(x.far)).join(', ')} px)`);
+        must(seen.every((x) => x.off < 1 && x.wide < 1), `through every pull the rows stayed at the pane's top left, as wide as the pane (${seen.map((x) => `${x.what}: ${x.off.toFixed(1)}`).join('; ')})`);
+      }
       phase('done');
       finished = true;
       log('done');
@@ -20422,6 +20645,8 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       const { useLasso, lassoDo } = await import('./ink.js');
       const paths = () => qa<SVGElement>(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb);
       const names = () => paths().map((x) => x.dataset.n!).join(' ');
+      /** The pen's strokes alone, the newest last (a highlighter's are in a drawing of their own, after the pens' in the page). */
+      const pens = () => qa<SVGElement>(`svg.page-ink:not(.page-ink-under)[data-page="${PAGEINK_PAGE}"] [data-n]`, pb);
       const count = async () => (await there())?.strokes ?? 0;
       /** The finger is off the glass: nothing is undone under it. */
       const lifted = async () => { await poll(async () => !(await state()).down, 'the finger is up', 15000); await sleep(150); };
@@ -20472,13 +20697,13 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       ask('loop', ...P2(325, 406), ...P2(395, 406), ...P2(395, 460), ...P2(325, 460), ...P2(325, 406));
       await poll(() => (useLasso.getState().picked?.count === 1 ? true : null), 'a loop round the short stroke holds it', 30000);
       await poll(() => q('.ink-menu'), 'its menu is beside it', 8000);
-      const short = paths()[paths().length - 1]!;
+      const short = pens()[pens().length - 1]!;
       const was = short.getBoundingClientRect();
       const shortName = short.dataset.n!;
       let carried = false;
       const seeCarry = setInterval(() => { if (paths().some((x) => x.dataset.n === shortName && x.hasAttribute('transform'))) carried = true; }, 10);
       ask('drag', ...P2(360, 432), ...P2(360, 472), 0.3);
-      await poll(async () => { const now = paths(); const k = now[now.length - 1]; return k && k.dataset.n !== shortName && !k.hasAttribute('transform') && Math.abs(k.getBoundingClientRect().top - was.top - (40 / H) * r.height) < 6 ? k : null; }, 'carried down the page: a stroke anew where it was put down, as far down as the finger took it', 30000);
+      await poll(async () => { const now = pens(); const k = now[now.length - 1]; return k && k.dataset.n !== shortName && !k.hasAttribute('transform') && Math.abs(k.getBoundingClientRect().top - was.top - (40 / H) * r.height) < 6 ? k : null; }, 'carried down the page: a stroke anew where it was put down, as far down as the finger took it', 30000);
       clearInterval(seeCarry);
       must(carried, 'and while it was carried its path was moved in the page, not drawn anew');
       await lifted();
@@ -20504,7 +20729,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       await poll(async () => (await count()) === n0 + 5 && paths().length === n0 + 5, 'a stroke with the pen following the hand not at all', 30000);
       {
         // every disc of its outline the same size: the widths of the arcs in its path
-        const d = paths()[paths().length - 1]!.getAttribute('d') ?? '';
+        const d = pens()[pens().length - 1]!.getAttribute('d') ?? '';
         const radii = Array.from(d.matchAll(/a([0-9.]+) [0-9.]+ 0 1 0/g)).map((m) => Number(m[1]));
         const lo = Math.min(...radii), hi = Math.max(...radii);
         log(`pressure 0: ${radii.length / 2} places, the nib ${lo} to ${hi} points`);

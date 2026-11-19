@@ -6,6 +6,22 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-19 — a phone's notebook ink as paths; the pages' layer never the bar's; a tap's late mouse press; the pen's slip in the dark
+
+Four reports after the entry below. Runs are under `/private/tmp/claude-501/-Users-mehtan-foundry-projects-ilmi/50979f6b-ceb6-4416-b123-70b6777ef705/scratchpad/gaps/runs/`.
+
+**Blurred ink in a notebook on a phone.** Measured first (`written` with `"part": "thin"`, `scripts/ink-thin.py`; `n1-thin-before`): a sheet's picture was made at two pixels to the point (1224 px) and shown over 1026 of a 3x screen's, then over 1539, 3078 and 4104 as the pages were zoomed, and over a paged sheet PencilKit's canvas drew instead, every stroke under a pixel about 1.8 px wide at half. A 0.2 pt stroke read 51 of the 76 it could, 1.7 px wide. Now a notebook's sheet read on a phone or a Mac is drawn by the page from its strokes, as a PDF's page is (`PageInkSvg`: one renderer everywhere but an iPad's surface), and a phone shows no canvas over a notebook. After (`n2-thin-after`): 0.2 pt at fit 78 of 76, 1.05 px wide, its edge 0.9 px where it was 1.4 to 1.7; at four times 0.3 pt is 2.01 px wide where it should be 2.01. A pageless sheet's drawing is as tall as its ink and kept while any of the eight sheets after it is near (the Mac's capture of the third sheet had no ink until then: `t2-mac-long`).
+
+**The bar over a PDF while it is zoomed** was not seen to clip here: a phone and an iPad Air, a chapter and a paper of four pages, slow and quick, every frame's bar rows the same but the zoom's number (`a1-phone-pinch`, `b4-phone-bar`, `b3-air-bar`, `y2-all`). What could do it is closed all the same: the layer two fingers stretch was allowed to begin 64 points above the column, and a phone's column begins exactly 64 points down its scroller's content, under the bar; it may now begin 24 above (a page's shadow), and `pdfink`'s `"part": "bar"` checks where the layer stretched lies (`stretched` in `dev_ink_state`). On the phone simulator no layer is found at all and the page does the zoom.
+
+**The two smokes.** `phone` failed once in two at `typed: phone back one` holding "phone back on", and once at `save, another`. Both are the simulator's keyboard, not the app's: as the runner's keys come the keyboard leaves the glass and comes back, as it does for a keyboard attached, the field keeping its caret throughout (the recording's frames: `r3-1/seq.png`, `r3-2/last.png`); keys typed as it goes are lost, and a button's place taken while it is away is the keyboard's when it is back (the tap fell on the space bar). The smoke takes a place once nothing has moved for a second and afresh for a second touch, and types the rest once when the keys fall short with the caret still in the field (`keys short:`); a field that lost its caret fails as before. `written` on the iPad failed once in two, not at the far sheet but at `p. 23 has its canvas`: the picker for a box's `card` was open a second time. `press` acted on the touch and again on the tap's mouse press when that came more than 0.8 s later; it lets that one press go now however late (five seconds).
+
+**The pen's slip in the dark** is the page as it is written on there: turned as `.page-ink` is (`r1-written-2/shots/more-pen-settings-dark.png`).
+
+**Checks.** typecheck clean; npm test 2507 passed and 2 skipped in 159 files. On the simulators, after the last change to each: `phone` twice running (`r4-1`, `r4-2`), the iPad's `written` twice running and again (`r3-written-1`, `r3-written-2`), a phone's `written` (`t3-phone-written`), the Mac's `written`, `book` and `pageink` with the iPad's halves (`f1-written-mac`, `r1-book-mac`, `r1-pageink.txt`, `f1-mac1`), `pdfink`'s `bar` on the Air and the phone. No Rust changed; cargo test not run.
+
+**Not verified.** A device: the phone's ink on its own screen, and the bar while zooming, which was not reproduced on a simulator.
+
 ## 2026-11-18, night — what the evening's entry left open: the rig's touches, a stroke on the glass once, the pen's pressure everywhere
 
 Five things the entry below left as not passing or not verified, each closed. Runs are under `/private/tmp/claude-501/-Users-mehtan-foundry-projects-ilmi/50979f6b-ceb6-4416-b123-70b6777ef705/scratchpad/gaps/runs/`.

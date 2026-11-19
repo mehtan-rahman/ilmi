@@ -177,6 +177,8 @@ const PINCH_GAP = 260;
 const NAME_BACK = 30;
 /** How far past its foot a pageless notebook's sheet is drawn, of its height: a stroke kept on one sheet runs on over the next (88: a sheet's height, where it was half). */
 export const RUN_OVER = 1;
+/** How many sheets above the ones near the view a pageless notebook's ink is drawn from: a stroke is kept on the sheet its top lies on and may run on into the view from as far up (the surface's `runsOver`). */
+const RUNS_OVER = 8;
 /** How far down a notebook's last page a stroke begins for a page to be added after it: its lower third. */
 const ADD_FROM = 2 / 3;
 
@@ -425,33 +427,6 @@ const inkStore = (): StoreFs | null => {
   return vault && 'pageInk' in vault.fs ? (vault.fs as StoreFs) : null;
 };
 
-/** What is written on a page, laid over it: a picture of the whole page made from its strokes, on nothing. `rev` moves when the strokes change. */
-function PageInk({ hash, page, at, w, h, rev, rect, live: canvasOn, paper, dark, run, onShown }: { /** A pageless notebook's sheet: its picture is as tall as its ink reaches (a stroke is kept on the sheet its top lies on, however far down it runs), `h` at the least. */ run?: boolean; /** A notebook's sheet: its paper, and whether that is dark, so its ink is drawn the dark way (87); a PDF's page goes by the theme. */ paper?: string | undefined; dark?: boolean; hash: string; /** The page as the store knows it: a PDF's page, a notebook's sheet. */ page: number; /** Its place in the column. */ at: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
-  const [url, setUrl] = useState<string | null>(null);
-  // as fine as the screen shows it at the size the page is drawn (85): zoomed into, the writing stays sharp
-  const fine = inkScale(w, h, rect.width / w, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
-  /** The picture shown, kept until the next one is made: a page drawn anew is never bare of its writing meanwhile. */
-  const shown = useRef<string | null>(null);
-  useEffect(() => {
-    const fs = inkStore();
-    // while a canvas shows the writing no picture of it is made: one is, again, when the canvas goes
-    if (!fs || (canvasOn && shown.current)) return;
-    let live = true;
-    // (a height under nothing asks for a picture as tall as the ink: `ink_page`)
-    fs.pageInkFile(hash, page, 'picture', w, run ? -h : h, fine).then((bytes) => {
-      if (!live || !bytes.length) return;
-      const made = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/png' }));
-      const was = shown.current;
-      shown.current = made;
-      setUrl(made);
-      // the one before goes once this one has had time to be on the screen
-      if (was) setTimeout(() => URL.revokeObjectURL(was), 1500);
-    }, console.error);
-    return () => { live = false; };
-  }, [hash, page, w, h, rev, fine, canvasOn, run]);
-  useEffect(() => () => { if (shown.current) URL.revokeObjectURL(shown.current); }, []);
-  return url ? <img className="page-ink" data-page={at} data-sheet={page} data-rev={rev} data-fine={fine} data-paper={paper} data-ink-dark={dark ? '1' : undefined} data-live={canvasOn ? '1' : undefined} data-run={run ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: run ? 'auto' : rect.height }} /> : null;
-}
 
 /** A notebook's pages, as many as it has sheets. */
 const sheetSizes = (n: number, size: Size = { w: SHEET_W, h: SHEET_H }): Size[] => Array.from({ length: n }, () => ({ w: size.w, h: size.h }));
@@ -697,9 +672,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const filled = new Map<number, number>();
     const fill = (n: number) => {
       const rev = inkedRef.current[n];
-      // (a phone's pageless notebook is read from its pictures: nothing is written there, and a picture is as tall
-      // as its sheet's ink reaches, where a canvas ends a sheet under its own. Its canvases rest.)
-      const shown = !(sheetsRef.current && runRef.current && useApp.getState().phone);
+      // (a phone's notebook is read from the page's own drawing of its strokes: nothing is written there, and
+      // PencilKit's canvas drew a thin stroke a pixel wide whatever its width, soft at the edge. Its canvases rest.)
+      const shown = !(sheetsRef.current && useApp.getState().phone);
       const as = rev === undefined ? undefined : shown ? rev : -1 - rev;
       if (rev === undefined || filled.get(n) === as) return;
       filled.set(n, as!);
@@ -2980,8 +2955,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   canWriteRef.current = canWrite && !phone;
   /** The tools' row: an iPad's (a phone's bar is one line). */
   const inkRow = canWrite && !phone && status === 'ok' && toolsShown;
-  /** A PDF's pages: what is written on them is drawn by the page, as paths (89, `pageInk.ts`), on every device: where there are canvases what they say is shown at once, and on a Mac what the store holds. (A notebook's sheets read on a Mac or a phone are pictures still.) */
-  const vectorInk = !written;
+  /** What is written on the pages is drawn by the page, as paths (89, `pageInk.ts`), wherever the pages are the page's own (a notebook's on an iPad are a surface): a PDF's on every device, where there are canvases what they say shown at once; a notebook's sheets read on a Mac or a phone, from what the store holds. One renderer: as sharp as the screen at any zoom, a stroke as wide as it was written. */
+  const vectorInk = true;
   /** The scroller the pages lie in, and the book over them: where the lasso's menu and the overview are drawn. */
   const scrollerEl = wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
   const bookEl = wrapRef.current?.closest<HTMLElement>('.book') ?? null;
@@ -3143,11 +3118,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                   // what is written on it is kept under the page's own number: a notebook's sheet
                   const page = sheetAt(n);
                   // a page's writing is made when the page itself is drawn, as it comes near
-                  const r = page !== null && (inked[page] !== undefined || (vectorInk && liveInk.has(page))) && (sheets ? isNear(n) : rendered.current.has(n)) ? pageRect(n) : null;
+                  const r = page !== null && (inked[page] !== undefined || (vectorInk && liveInk.has(page))) && (sheets ? isNear(n) || (pageless && near !== null && n < near.lo && n >= near.lo - RUNS_OVER) : rendered.current.has(n)) ? pageRect(n) : null;
                   // (89) where there are canvases a PDF's page draws its writing itself, a path a stroke: it goes wherever the page goes
-                  if (vectorInk) return r && page !== null && <PageInkSvg key={page} hash={hash} page={page} at={n} w={s.w} h={s.h} rev={inked[page] ?? 0} rect={r} sheet={`p.${hash}.${page}`} onShown={pictureShown} />;
-                  // (a pageless sheet's picture reaches past its foot, as far as its ink does)
-                  return r && page !== null && <PageInk key={page} hash={hash} page={page} at={n} w={s.w} h={s.h} run={pageless} rev={inked[page]!} rect={r} live={liveInk.has(page)} paper={written?.paper} dark={inkDark} onShown={pictureShown} />;
+                  // (a notebook's sheet says its paper, and whether that is dark; a pageless one's strokes run on past its foot)
+                  return r && page !== null && <PageInkSvg key={page} hash={hash} page={page} at={n} w={s.w} h={s.h} rev={inked[page] ?? 0} rect={r} sheet={`p.${hash}.${page}`} paper={written?.paper} dark={written ? inkDark : undefined} run={pageless} onShown={pictureShown} />;
                 })}
               </div>
             )}

@@ -68,6 +68,8 @@ vi.mock('@tauri-apps/api/core', () => ({
     if (cmd === 'ink_surface') { told.push(args.surface as SurfaceSpec); return null; }
     if (cmd === 'ink_surface_do') { asks.push({ cmd, args }); return null; }
     if (cmd === 'ink_fill') { asks.push({ cmd, args }); return { took: true }; }
+    // (a stroke as the page draws it: an outline of its own, named by the store)
+    if (cmd === 'ink_shapes') return JSON.stringify((args.strokes as string[]).map((_, i) => ({ n: `shape${i}`, k: 'p', d: 'M0 0L1 1L1 0z', c: '#1c1c1e' })));
     if (cmd === 'ink_take') { const d = drawn; drawn = null; return { strokes: d?.length ?? 0, drawing: d ? b64(memDrawing(d)) : null }; }
     if (cmd === 'ink_split') return memSplit(Uint8Array.from(atob(args.drawing as string), (c) => c.charCodeAt(0)));
     return null;
@@ -1132,8 +1134,9 @@ describe('a written notebook in the lens', () => {
     // lines are cheap: a page scrolled to fast is never bare
     expect(qa<HTMLElement>('.pdf-page').map((p) => p.querySelector('svg.paper') !== null)).toEqual([true, true, true, true, true]);
     // the view is 900 tall: the fifth sheet is out of reach of it, and its writing waits until it comes near
-    expect(q('img.page-ink[data-page="1"]')).not.toBeNull();
-    expect(q('img.page-ink[data-page="5"]')).toBeNull();
+    expect(q('svg.page-ink[data-page="1"]')).not.toBeNull();
+    expect(q('.page-ink[data-page="5"]')).toBeNull();
+    expect(q('img.page-ink')).toBeNull();
     expect(pageEl(5).dataset.paper).toBe('grid');
     // (a page's rules lie on the screen's pixels: half a pixel on from where the sheet has them)
     expect(q('svg.paper .paper-rule')!.getAttribute('d')).toBe(paperPaths('grid', ON).rules);
@@ -1150,11 +1153,11 @@ describe('a written notebook in the lens', () => {
   it('a sheet, its ink\'s layer and each picture say when the paper is dark, by the paper and not by the theme alone', async () => {
     await fs.setPageInk(ID, 1, [stroke(1)]);
     await mount(NB, [1, 2], 'ruled');
-    const marks = () => [pageEl(1).dataset.inkDark, pageEl(2).dataset.inkDark, q<HTMLElement>('.pdf-ink')!.dataset.inkDark, q<HTMLElement>('img.page-ink')!.dataset.inkDark].map((v) => v ?? null);
+    const marks = () => [pageEl(1).dataset.inkDark, pageEl(2).dataset.inkDark, q<HTMLElement>('.pdf-ink')!.dataset.inkDark, q<SVGSVGElement>('svg.page-ink')!.dataset.inkDark].map((v) => v ?? null);
     const paper = () => [q('svg.paper .paper-sheet')!.getAttribute('fill'), q('svg.paper .paper-rule')!.getAttribute('stroke')];
     const setup = (more: Record<string, unknown>) => act(async () => { useApp.setState((s) => ({ docs: { ...s.docs, [NB]: { ...s.docs[NB]!, written: { id: ID, paper: 'ruled', sheets: [1, 2], ...more } } } })); });
     // a notebook's layer and pictures are known as paper's, so the theme's rule for a PDF's pages leaves them be
-    expect([q<HTMLElement>('.pdf-ink')!.dataset.paper, q<HTMLElement>('img.page-ink')!.dataset.paper]).toEqual(['ruled', 'ruled']);
+    expect([q<HTMLElement>('.pdf-ink')!.dataset.paper, q<SVGSVGElement>('svg.page-ink')!.dataset.paper]).toEqual(['ruled', 'ruled']);
     expect([marks(), paper()]).toEqual([[null, null, null, null], ['#ffffff', '#c3cfdd']]);
     try {
       // paper that follows a dark theme is dark
@@ -1314,7 +1317,7 @@ describe('a written notebook in the lens', () => {
     expect(sheetsShown()).toEqual([1, 5, 4, 2, 3]);
     expect((await fs.pageInk(ID, 5)).map((s) => s.stroke)).toEqual(['s1', 's2']);
     // the copy is a page of its own in the column, with its own picture
-    expect(q<HTMLImageElement>('img.page-ink[data-page="2"]')!.dataset.sheet).toBe('5');
+    expect(q<SVGSVGElement>('svg.page-ink[data-page="2"]')!.dataset.sheet).toBe('5');
     expect(asked.addSheet).toBe(0);
   });
 
@@ -1384,7 +1387,7 @@ describe('a written notebook in the lens', () => {
     // sheet 2 is written on: with it in view the row asks, and a second press does it
     await act(async () => { useApp.setState((s) => ({ docs: { ...s.docs, [NB]: { ...s.docs[NB]!, written: { ...written(), sheets: [2, 3] } } } })); });
     await wait(30);
-    expect(q<HTMLImageElement>('img.page-ink[data-page="1"]')!.dataset.sheet).toBe('2');
+    expect(q<SVGSVGElement>('svg.page-ink[data-page="1"]')!.dataset.sheet).toBe('2');
     await click(more());
     await click(menuRow('page-delete')!);
     await wait(20);
@@ -1406,7 +1409,7 @@ describe('a written notebook in the lens', () => {
     await wait(40);
     expect(sheetsShown()).toEqual([2, 3]);
     expect((await fs.pageInk(ID, 2)).map((s) => s.stroke)).toEqual(['s1']);
-    expect(q('img.page-ink[data-page="1"]')).not.toBeNull();
+    expect(q('svg.page-ink[data-page="1"]')).not.toBeNull();
   });
 
   it('a page that holds a passage asks too, and says so', async () => {
@@ -1469,35 +1472,34 @@ describe('a written notebook in the lens', () => {
     expect(q('.inkbar')).toBeNull();
     expect(q<HTMLElement>('.meta')!.dataset.ink).toBeUndefined();
     expect(scenes).toEqual([]);
-    // what was written elsewhere is a picture over the paper, found by the sheet's number
-    const img = q<HTMLImageElement>('img.page-ink[data-page="2"]')!;
-    expect(img.dataset.sheet).toBe('3');
-    await wait(20);
-    expect(pictures.get(img.src)).toBe(new TextDecoder().decode(memPagePicture([stroke(7)], W, H)));
-    expect(q('img.page-ink[data-page="1"]')).toBeNull();
+    // what was written elsewhere is drawn by the page over the paper, a path a stroke, found by the sheet's number
+    const svg = q<SVGSVGElement>('svg.page-ink[data-page="2"]')!;
+    expect(svg.dataset.sheet).toBe('3');
+    expect(svg.getAttribute('viewBox')).toBe(`0 0 ${W} ${H}`);
+    await wait(40);
+    expect(Array.from(svg.querySelectorAll<SVGElement>('[data-n]')).map((x) => x.dataset.n)).toEqual(['s7']);
+    expect(q('.page-ink[data-page="1"]')).toBeNull();
+    expect(q('img.page-ink')).toBeNull();
     // and no button to bring tools back: there are none
     expect(q('.meta [data-tool="ink-tools"]')).toBeNull();
   });
 
-  it('what is written on a page is asked for as fine as the screen shows it: finer on a denser one', async () => {
+  it('what is written on a page is drawn from its strokes, as fine as any screen: no picture of it is asked for, however dense the screen', async () => {
     await fs.setPageInk(ID, 1, [stroke(7)]);
     const real = fs.pageInkFile.bind(fs);
     const asks: unknown[][] = [];
     fs.pageInkFile = (...a: Parameters<StoreFs['pageInkFile']>) => { asks.push(a); return real(...a); };
     try {
-      await mount(NB, [1, 2]);
-      const img = () => q<HTMLImageElement>('img.page-ink[data-page="1"]')!;
-      // a point a pixel here: the coarsest
-      expect(img().dataset.fine).toBe('1');
-      expect(asks).toEqual([[ID, 1, 'picture', W, H, 1]]);
-      // two pixels to the point: twice as fine
-      act(() => root?.unmount());
-      host.remove();
-      asks.length = 0;
-      Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
-      await mount(NB, [1, 2]);
-      expect(img().dataset.fine).toBe('2');
-      expect(asks).toEqual([[ID, 1, 'picture', W, H, 2]]);
+      for (const dpr of [1, 3]) {
+        Object.defineProperty(window, 'devicePixelRatio', { value: dpr, configurable: true });
+        await mount(NB, [1, 2]);
+        await wait(40);
+        expect(Array.from(q<SVGSVGElement>('svg.page-ink[data-page="1"]')!.querySelectorAll<SVGElement>('[data-n]')).map((x) => x.dataset.n)).toEqual(['s7']);
+        expect(q('img.page-ink')).toBeNull();
+        expect(asks.filter((a) => a[2] === 'picture')).toEqual([]);
+        act(() => root?.unmount());
+        host.remove();
+      }
     } finally {
       fs.pageInkFile = real;
       Object.defineProperty(window, 'devicePixelRatio', { value: 1, configurable: true });

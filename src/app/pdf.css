@@ -320,6 +320,7 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 .pdf-ink:not([data-paper]) > .page-ink-under { z-index: 2; mix-blend-mode: multiply; }
 [data-theme="dark"] .pdf-ink:not([data-paper]) > .page-ink-under { mix-blend-mode: screen; }
 .page-ink { position: absolute; display: block; pointer-events: none; -webkit-user-select: none; user-select: none; }
+/* (a pageless notebook's sheet, `data-run`: its drawing is as tall as its ink reaches, past its foot and over the sheets after it; the column cuts it where the long sheet ends) */
 /* a canvas lies over this page: the same strokes */
 .page-ink[data-live] { visibility: hidden; }
 [data-theme="dark"] .page-ink:not([data-paper]) { filter: invert(0.92) hue-rotate(180deg); }

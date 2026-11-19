@@ -560,8 +560,9 @@ Since milestone 85 a page's canvas stays on the screen at rest (`ink_fill`
 with `show`; since 89 only a phone's notebook's, see below: a PDF's page
 draws its own ink): what is written on a page is drawn by PencilKit from the
 strokes at the canvas's zoom, whatever size the page is, and the picture of
-it (`store_ink_page`, now with a `scale`) is what a Mac and a phone show
-and what an iPad shows until a page's canvas has been filled. Before, a
+it (`store_ink_page`, now with a `scale`) was what a Mac and a phone showed
+(they draw the strokes themselves now, as paths: see `PageInkSvg` below)
+and what an iPad showed until a page's canvas had been filled. Before, a
 kept page was shown as a PNG at two pixels to the point of the page,
 stretched to the page's size: softer than the live stroke at fit on every
 iPad, and more so zoomed. The canvas is laid on the page as the picture
@@ -835,8 +836,38 @@ and `scripts/ink-export.py` draws the file's page (`scripts/pdfpng.swift`)
 and looks for the ink where it was written. On a phone the same smoke with
 `"part": "most"` needs no rig. Since these gaps were closed a Mac draws a
 PDF's writing the same way, from what the store holds (`vectorInk` in
-`Pdf.tsx`): one renderer; a notebook's sheets read on a Mac or a phone are
-pictures still.
+`Pdf.tsx`): one renderer. Since the round after, a notebook's sheets read
+on a Mac or a phone are drawn the same way (`PageInkSvg` with the sheet's
+`paper`, whether it is dark, and `run` for a pageless one, whose drawing is
+as tall as its ink reaches (its own box: what overflows a box far off the
+screen is not painted) and is kept while any of the eight sheets after it
+is near the view (`RUNS_OVER`)), and a phone shows no canvas over a
+notebook: a picture of the sheet at two pixels to the point
+was shown over a 3x screen's 1.68, and stretched as the pages were zoomed,
+and the canvas PencilKit drew over a paged sheet made every stroke under a
+pixel a pixel and a half wide and soft. `written`'s `"part": "thin"` (a
+phone, no rig) hands strokes of 0.2 to 2 points to a sheet and captures it
+at fit, zoomed to four times and pageless; `scripts/ink-thin.py <run dir>`
+reads each stroke's darkness, width and edge from the captures. The page
+grid's small pages are pictures still (`store_ink_page`).
+
+Two fingers stretch the pages' own layer in the web view (`pagesLayer`): it
+must begin at the column (a page's shadow above it and no more), never be a
+layer that holds the bar over the pages too. `dev_ink_state`'s hosts say
+where the layer they would stretch lies (`stretched`), and `pdfink`'s
+`"part": "bar"` (with `"books"`; only when asked for) opens a paper of four
+pages, checks that, and pinches out and in for a recording whose bar rows
+are compared frame by frame.
+
+`press` (`platform.ts`) lets go the one mouse press a tap sends after
+itself, up to five seconds late: with a wait of 0.8 s a tap on a box's
+`card` whose picker kept the page busy acted twice (the picker open again
+over whatever came next: `written` failed there once in this round). The
+phone smoke's `typeIn` says `keys short:` and types the rest once when the
+runner's keys fall short with the caret still in the field, and its `tap`
+takes a place once nothing has moved for a second: a simulator's keyboard
+leaves the glass and comes back as the runner's keys come (as for a keyboard
+attached), the field keeping its caret, and what stands over it moves.
 
 `dev_ink_state` says each surface (`surfaces`: where it lies in the
 screen's pixels, the zoom laid out and the stretch over it, the offset,

@@ -390,6 +390,8 @@ struct HostState: Encodable {
   let zoomer: Bool
   /// The web view's layers that lie over the column, outermost first, for a dev run's notes: how deep, and where in the scroller's content.
   let layers: [String]
+  /// The layer two fingers stretch, where it lies in the scroller's content (`x,y wxh`), for a dev run's notes: the column's own, never one that holds the bar over the pages too.
+  var stretched: String? = nil
   /// A zoom going on: `fingers`, `waiting` for the page's word, `settling` there, `held` until the page has laid out.
   let phase: String?
 }
@@ -1282,8 +1284,11 @@ class InkPlugin: Plugin, PenEars {
     func look(_ l: CALayer, _ depth: Int) {
       for k in l.sublayers ?? [] where found == nil {
         let f = k.convert(k.bounds, to: scroll.layer)
-        // (not the scroller's whole content, which begins above the column with what stands over it)
-        if f.insetBy(dx: -1.5, dy: -1.5).contains(want), f.minY >= want.minY - 64, f.maxY <= want.maxY + 600, f.width <= want.width + 600 {
+        // (not the scroller's whole content, which begins above the column with what stands over it: the bar. A
+        // phone's column begins 64 points down that content, an iPad's with its tools tucked away little more, so
+        // only a page's shadow is allowed above the column: a layer that held the bar too would stretch it and cut
+        // it with the pages, under the fingers)
+        if f.insetBy(dx: -1.5, dy: -1.5).contains(want), f.minY >= want.minY - 24, f.maxY <= want.maxY + 600, f.width <= want.width + 600 {
           found = k
           return
         }
@@ -3158,8 +3163,13 @@ class InkPlugin: Plugin, PenEars {
         let on = k.sheet.canvas.convert(CGRect(x: box.minX * z, y: box.minY * z, width: box.width * z, height: box.height * z), to: layer)
         heldAt = Box(layer.convert(on, to: web.scrollView))
       }
-      let hosts = self.hosts.values.sorted { $0.id < $1.id }.map { h in
-        HostState(id: h.id, follows: h.scroll != nil, offset: Double(h.scroll?.contentOffset.y ?? -1), port: Box(h.clip.frame), zoomer: self.pagesLayer(of: h) != nil, layers: self.layersOver(h), phase: h.live?.phase.rawValue)
+      let hosts = self.hosts.values.sorted { $0.id < $1.id }.map { h -> HostState in
+        var st = HostState(id: h.id, follows: h.scroll != nil, offset: Double(h.scroll?.contentOffset.y ?? -1), port: Box(h.clip.frame), zoomer: self.pagesLayer(of: h) != nil, layers: self.layersOver(h), phase: h.live?.phase.rawValue)
+        if let l = self.pagesLayer(of: h), let scroll = h.scroll {
+          let f = l.convert(l.bounds, to: scroll.layer)
+          st.stretched = "\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))"
+        }
+        return st
       }
       let onSurface = self.surfaces.values.first(where: { $0.selected > 0 })
       if let f = onSurface { heldAt = f.heldAt() }

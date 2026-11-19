@@ -108,6 +108,10 @@
 
 /* the stroke as it is set, on a slip of paper */
 .ink-pop .ip-preview { display: block; width: 100%; height: 60px; margin: 10px 0 4px; border-radius: var(--radius); background: #fff; box-shadow: inset 0 0 0 1px var(--line-2); }
+/* in the dark theme the slip is the page it would be written on there: turned as a page is, its paper dark and the
+   ink the colour it shows on that paper (the same turn `.page-ink` is given: a black pen writes light). The hairline
+   round it is drawn in what the turn makes a faint line of. */
+[data-theme="dark"] .ink-pop .ip-preview { filter: invert(0.92) hue-rotate(180deg); box-shadow: inset 0 0 0 1px #cfcfcf; }
 .ink-pop .ip-preview .ip-words { stroke: #8a8f98; stroke-width: 2.4; stroke-linecap: round; }
 .ink-pop .ip-preview .ip-line { stroke: #1c1c1e; stroke-width: 2.6; stroke-linecap: round; }
 .ink-pop .ip-preview .ip-reach { fill: rgb(120 120 120 / 0.14); stroke: #6b6b70; stroke-width: 1; }

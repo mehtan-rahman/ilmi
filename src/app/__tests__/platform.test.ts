@@ -98,6 +98,24 @@ describe('one pane', () => {
 });
 
 describe('a press under a finger or a mouse', () => {
+  it('acts once for a tap whose mouse press comes late, the page having been busy; a mouse after that acts', () => {
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(10000);
+      const act = vi.fn();
+      const prevent = vi.fn();
+      press(act).onTouchStart();
+      vi.advanceTimersByTime(2000);
+      press(act).onMouseDown({ preventDefault: prevent });
+      expect(act).toHaveBeenCalledTimes(1);
+      // the tap's own mouse press is let go once only
+      press(act).onMouseDown({ preventDefault: prevent });
+      expect(act).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('acts once for a tap, whose mouse press follows the touch', () => {
     vi.useFakeTimers();
     try {

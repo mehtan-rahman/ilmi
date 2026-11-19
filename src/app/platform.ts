@@ -132,15 +132,19 @@ export function onePane(s: Panes): Panes {
  */
 export function press(act: () => void): { onMouseDown(e: { preventDefault(): void }): void; onTouchStart(): void } {
   return {
-    onTouchStart() { touched = Date.now(); act(); },
+    onTouchStart() { touched = Date.now(); owed = true; act(); },
     onMouseDown(e) {
       e.preventDefault();
-      if (Date.now() - touched < TOUCH_MOUSE_MS) return;
+      // (the one mouse press a tap sends after itself, however late: what the touch began, a picker opening or a
+      // note being made, can keep the page busy past any short wait, and the press then acted a second time)
+      if (owed && Date.now() - touched < TOUCH_MOUSE_MS) { owed = false; return; }
+      owed = false;
       act();
     },
   };
 }
 
-/** When a finger last pressed such a control; the mouse events a tap sends after itself come within this. */
+/** When a finger last pressed such a control, and whether the mouse press its tap sends after itself is still to come: it is let go once, if it comes within this. */
 let touched = 0;
-const TOUCH_MOUSE_MS = 800;
+let owed = false;
+const TOUCH_MOUSE_MS = 5000;

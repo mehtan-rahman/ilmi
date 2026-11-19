@@ -2421,6 +2421,13 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     void writerRef.current?.update((doc) => { advanceWrite(doc, action, appNow()); });
   };
 
+  // what is placed at the selection or the caret (the cue, the link's field, the `/` menu, the card's composer) lies in
+  // what can be seen: not past the right edge of a narrow page, not under the keyboard. After every draw, since each
+  // is placed anew by where the text is
+  useLayoutEffect(() => {
+    for (const el of wrapRef.current?.querySelectorAll<HTMLElement>(':scope > .sel-cue, :scope > .link-pop, :scope > .slash-menu, :scope > .card-pop') ?? []) keepInView(el);
+  });
+  // (every hook is above this line: a document that goes, or has not come, is drawn by the same component)
   if (status === 'gone' || (status === 'ok' && !info)) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
   }
@@ -2431,12 +2438,6 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const frozen = !notes && (info?.frozen ?? false);
   // the selection's cue: above it when there is room, below under a finger (`CUE_TOUCH_GAP`)
   const touch = useApp.getState().mobile;
-  // what is placed at the selection or the caret (the cue, the link's field, the `/` menu, the card's composer) lies in
-  // what can be seen: not past the right edge of a narrow page, not under the keyboard. After every draw, since each
-  // is placed anew by where the text is
-  useLayoutEffect(() => {
-    for (const el of wrapRef.current?.querySelectorAll<HTMLElement>(':scope > .sel-cue, :scope > .link-pop, :scope > .slash-menu, :scope > .card-pop') ?? []) keepInView(el);
-  });
   const phone = useApp.getState().phone;
   const cueBelow = sel !== null && (touch || sel.rect.top < CUE_ROOM);
   const cards = info?.cards ?? 0;

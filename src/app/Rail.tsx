@@ -37,7 +37,7 @@ import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
 import { importFiles, failed } from './land.js';
 import { GLYPH, WRITTEN_GLYPH, descendants, findNode, kindOf, titleOf, type NodeKind } from './names.js';
-import { NodeMenu, menuAt, menuAtRow, placeMenu, type MenuAt } from './NodeMenu.js';
+import { NodeMenu, menuAt, menuAtRow, placeMenu, type MenuAt, onPage } from './NodeMenu.js';
 import { menuKeys } from './popMenu.js';
 import type { OpenOpts } from './panes.js';
 import { deleteNode } from './remove.js';
@@ -440,7 +440,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
           {...(menuDepth < TAB_DEPTH ? { onSubtab: subtab } : {})}
         />
       )}
-      {plus && (
+      {plus && onPage(
         <div className="ctx-menu rail-menu" ref={plusRef} style={{ left: plus.x, top: plus.y }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
           {ADD.map(([type, label]) => (
             <div key={type} className="ci" onClick={() => { setPlus(null); add(childDirOf(nb), type); }}>

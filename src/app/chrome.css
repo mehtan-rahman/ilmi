@@ -617,6 +617,25 @@ html[data-mobile="1"] .insp-toggle { padding: 9px 10px; margin: 0 -6px; }
 html[data-mobile="1"] .pane-body > .queue { min-height: calc(100% + 1px); box-sizing: border-box; }
 html[data-mobile="1"] .side { position: relative; }
 html[data-mobile="1"] .side::after { content: ""; position: absolute; left: 0; top: 0; width: 1px; height: calc(100% + 1px); visibility: hidden; pointer-events: none; }
+/* under a finger (the design audit after 89): what is pressed is a finger's size. A menu's rows are 44 pt; an
+   iPad's tree, its saved queries, a notebook's tabs and the settings' choices are 40, their words a size up (they
+   were the Mac's 28, made for a pointer); the small buttons of the strip, a tab's close and a session's arrows
+   keep their look and take presses from a finger's size about them */
+html[data-mobile="1"] .ctx-menu .ci { line-height: 44px; font-size: 15px; }
+html[data-mobile="1"]:not([data-shape="phone"]) .tree { font-size: 15px; }
+html[data-mobile="1"]:not([data-shape="phone"]) .tree .row { min-height: 40px; }
+html[data-mobile="1"]:not([data-shape="phone"]) .tab-rail .rail-row:not(.heading):not(.extracts) { min-height: 40px; font-size: 14px; }
+html[data-mobile="1"]:not([data-shape="phone"]) .tab-rail .rail-row:is(.heading, .extracts) { min-height: 32px; display: flex; align-items: center; }
+html[data-mobile="1"]:not([data-shape="phone"]) .tw-rows .tw-seg button { min-height: 40px; }
+html[data-mobile="1"] .tw-rows .tw-slider { min-height: 36px; }
+html[data-mobile="1"] :is(.top .insp-toggle, .tabbar .tab .close, .tabbar .ctl, .sess-nav .sn-btn, .tree .row .side-add, .tree .row .chev) { position: relative; }
+html[data-mobile="1"] :is(.top .insp-toggle, .tabbar .tab .close, .tabbar .ctl, .sess-nav .sn-btn, .tree .row .side-add)::after { content: ""; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); }
+/* a book's search and go-to fields under a finger: text a size the system does not zoom the page for, and a field
+   as wide as the bar allows; a notebook's page setup ends above the foot of its pane */
+html[data-mobile="1"] .pdf-bar { align-items: center; padding: 4px 0; font-size: var(--t-sm); }
+html[data-mobile="1"] .pdf-bar input { font-size: 16px; min-height: 36px; flex: 1 1 200px; min-width: 0; }
+html[data-mobile="1"] .pdf-bar input[type="number"] { flex: 0 0 72px; }
+html[data-mobile="1"] .page-setup { max-height: calc(100% - 114px); }
 /* under a finger the chrome is not text: nothing in it is selected by a press, and no callout comes up over it.
    What is read and written (a document, a card, a field) is still text */
 html[data-mobile="1"] :is(button, h6, .top, .phone-bar, .tabbar, .tab-rail, .queue header, .qlist li, .fv-row, .palette-row, .tweaks, .notice, .inkbar, .recall-meta, .session-bar, .grades, .pdf-bar, .welcome-row) {
@@ -644,6 +663,8 @@ html[data-pressing] body, html[data-pressing] body * { -webkit-user-select: none
   background: color-mix(in oklab, var(--fg) 12%, transparent);
 }
 [data-theme="eink"] .side-scrim { background: transparent; }
+/* a slider in the dark is the dark's own (the system drew its light one: a white bar across the settings) */
+html[data-theme="dark"] input[type="range"] { color-scheme: dark; }
 /* where things move the sheet stays in the page (`App.tsx`), shut off its left edge and not drawn; `edge.ts` says
    when it is anywhere else (`data-on`: `moving`, placed by what it writes, or `open`) */
 .side[data-sheet="1"][data-kept] { transform: translate3d(-100%, 0, 0); visibility: hidden; }

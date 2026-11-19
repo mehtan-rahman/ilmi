@@ -18,7 +18,7 @@
 // space runs, → opens `move to…` and ← or Escape leaves it; ⇧F10 or the Menu
 // key on a row opens it there (`menuAtRow`).
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
 import { NEW_NAMES, childDirOf, dirOf, isDoc, isPdfPath } from '../vault/index.js';
 import { hasCards, studyDeck } from './deckOps.js';
@@ -33,6 +33,12 @@ import { menuKeys } from './popMenu.js';
 import { createPortal } from 'react-dom';
 
 export const MENU_W = 190;
+
+/**
+ * A menu as the page's own under a finger, not its pane's or its sidebar's: a sheet moved by its transform, and a
+ * pane that lays its lens out by its own width, hold what is fixed inside them and cut it off at their edge.
+ */
+export const onPage = (menu: ReactElement): ReactNode => (document.documentElement.dataset.mobile === '1' ? createPortal(menu, document.body) : menu);
 
 /** Keep a context menu inside the window at the bottom edge, as `MENU_W` keeps it at the right. */
 export function placeMenu(el: HTMLElement | null): void {
@@ -340,5 +346,5 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   );
   // under a finger the menu is the page's, not the sidebar's: a sheet that is moved by its transform, and a list
   // that scrolls on an iPad, cut what is fixed inside them off at their own edge
-  return document.documentElement.dataset.mobile === '1' ? createPortal(menu, document.body) : menu;
+  return onPage(menu);
 }

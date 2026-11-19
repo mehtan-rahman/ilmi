@@ -417,7 +417,7 @@ export function Intake({ active, onOpen }: Props) {
         <div className="meta">
           <span className="crumb">intake</span>
         </div>
-        <h1>{book ? 'Add a book' : anki ? (picked.length === 1 ? 'Add a deck' : 'Add decks') : cardsMode ? 'Add a deck' : asNote && text ? 'Add a note' : 'Add a source'}</h1>
+        <h1>{book ? 'add a book' : anki ? (picked.length === 1 ? 'add a deck' : 'add decks') : cardsMode ? 'add a deck' : asNote && text ? 'add a note' : 'add a source'}</h1>
 
         {book ? (
           <div className="book-list">

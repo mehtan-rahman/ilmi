@@ -22,7 +22,7 @@ import {
 } from './deck.js';
 import { bulkCards, newCardAt, studyDeck } from './deckOps.js';
 import { FORM_LABEL, dueWhen, fmtDays, pathLabel, dueTone } from './items.js';
-import { MENU_W, placeMenu } from './NodeMenu.js';
+import { MENU_W, placeMenu, onPage } from './NodeMenu.js';
 import { GLYPH, kindOf, titleOf } from './names.js';
 import { blankAnswers, clozeHTML, faceDir, richHTML } from './Reader.js';
 import { useApp } from './store.js';
@@ -972,7 +972,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
         <DeckRows handle={list} shown={shown} index={index} selSet={selSet} cursorKey={cursorKey} menuKey={menu?.key ?? null} multi={multi} now={now} hooks={plugins?.version} acts={acts} mem={mem} />
       )}
 
-      {menu && menuRow && (
+      {menu && menuRow && onPage(
         <div className="ctx-menu" ref={menuRef} style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
           {!menu.sub ? (
             <>

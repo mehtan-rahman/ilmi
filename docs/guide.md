@@ -953,9 +953,17 @@ moved on one and edited on the other is one document in its new place.
 `opened`. Set to `opened`, a book whose PDF is not on the device says `not
 here` on its row and fetches it when it is opened, the strip reading
 `pulling 40%` as it comes. A large PDF goes to and from the storage a
-piece at a time, and a book over 16 MB is read from disk as its pages are
-turned to. The fields are kept with the settings on each device, never in
-the collection.
+piece at a time, and a book over 16 MB (4 MB on an iPad or an iPhone) is
+read from disk as its pages are turned to. The fields are kept with the
+settings on each device, never in the collection.
+
+A PDF that does not open says why: `not on this device yet` while it is
+still arriving or could not be fetched, `its pdf is not in the collection`,
+`this pdf is locked with a password`, `this file does not read as a pdf`,
+`too large to read on this device`. Each has `try again`, and one that was
+waiting for its file opens by itself when the file lands. If opening a PDF
+ever closes the page on a device, the app comes back and that PDF is not
+opened by itself again: it says so and waits for `try again`.
 
 ### Dropbox and Google Drive
 

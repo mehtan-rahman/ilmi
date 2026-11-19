@@ -74,7 +74,7 @@ export async function importCollection(dir: string, opts: { name?: string; repla
   const root = await createCollection(opts.replace ? base : freeName(base, names));
   forgetStorage(root);
   try {
-    await importFolder(diskFs, from, collectionFs(root), root);
+    await importFolder(diskFs, from, collectionFs(root), root, true);
   } catch (e) {
     await deleteCollection(root).catch(() => { /* the import's error is the one to show */ });
     throw e;

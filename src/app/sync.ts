@@ -186,12 +186,41 @@ async function writeOut(at: string): Promise<void> {
   unwritten = false;
   try {
     await invoke('allow_vault', { path: repoOf(at) });
-    await mirrorFolder(vault.fs, at, diskFs, repoOf(at));
+    await mirrored(at, (known) => mirrorFolder(vault.fs, at, diskFs, repoOf(at), known, true));
   } catch (e) {
     stale = true;
     unwritten = true;
     throw e;
   }
+}
+
+/**
+ * A pass of the mirror with what the repository's folder was last seen to hold of the collection's large files
+ * (each one's path to its bytes' own name), kept in the webview's storage per collection: a file that has not
+ * changed is not read again before every commit.
+ */
+async function mirrored<T>(at: string, run: (known: Map<string, string>) => Promise<T>): Promise<T> {
+  const key = `ilmi.mirrored.${at}`;
+  let known = new Map<string, string>();
+  try { known = new Map(Object.entries(JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, string>)); } catch { /* none kept: every file is looked at */ }
+  try {
+    return await run(known);
+  } finally {
+    try { localStorage.setItem(key, JSON.stringify(Object.fromEntries(known))); } catch { /* no room: it is looked at again next time */ }
+  }
+}
+
+/**
+ * `try again` on a file that did not open: where the repository's folder holds it, it is taken into the collection
+ * again (by the store itself), so a file that came in cut short is whole. True when it was taken.
+ */
+export async function retakeFile(rel: string): Promise<boolean> {
+  const at = root;
+  if (!open || !at || !rel || !useApp.getState().sync.repo) return false;
+  const st = await diskFs.stat(`${repoOf(at)}/${rel}`).catch(() => null);
+  if (!st || st.isDir) return false;
+  await takeIn(at, [rel]);
+  return true;
 }
 
 /** The files a pull changed, from the repository's folder into the collection; the vault told. */
@@ -201,7 +230,7 @@ async function takeIn(at: string, paths: readonly string[]): Promise<void> {
   taking = true;
   try {
     for (const p of paths) if (p.split('/').some((seg) => seg.startsWith('.'))) taken.add(p);
-    await takeFiles(diskFs, repoOf(at), vault.fs, at, paths);
+    await takeFiles(diskFs, repoOf(at), vault.fs, at, paths, true);
     await vault.changed([...paths]);
   } finally {
     taking = false;
@@ -489,7 +518,7 @@ export function stopSync(): void {
       // the collection is closing: its last writes go out through it once more
       if (closing && stale) {
         await invoke('allow_vault', { path: repoOf(at) });
-        await mirrorFolder(closing.fs, at, diskFs, repoOf(at));
+        await mirrored(at, (known) => mirrorFolder(closing.fs, at, diskFs, repoOf(at), known, true));
       }
       const changes = await invoke<Change[]>('sync_changes', { root: repoOf(at) });
       if (changes.length) await invoke<string | null>('sync_commit', { root: repoOf(at), message: describeChanges(changes) });
@@ -561,7 +590,7 @@ export async function cloneCollection(url: string, token: string, name?: string)
   try {
     await invoke('sync_clone', { url: clean, token: token || null, dest: repoOf(dest) });
     await invoke('allow_vault', { path: repoOf(dest) });
-    await importFolder(diskFs, repoOf(dest), collectionFs(dest), dest);
+    await importFolder(diskFs, repoOf(dest), collectionFs(dest), dest, true);
   } catch (e) {
     await deleteCollection(dest).catch(() => { /* the clone's error is the one to show */ });
     throw e;

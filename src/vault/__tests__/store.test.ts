@@ -283,6 +283,114 @@ describe('paths made from names and parents', () => {
   });
 });
 
+describe('a large file between a folder on disk and the collection', () => {
+  it('is taken by the store itself from a folder on disk, not read into the page; a document and a small file go as they did', async () => {
+    const store = memStore();
+    let taken: string[] = [];
+    // (a store that can take a file by its path: the device's)
+    (store as unknown as { blobTake(path: string): Promise<{ hash: string; size: number }> }).blobTake = async (path) => { taken.push(path); return store.blobPut(new Uint8Array(await fsp.readFile(path))); };
+    const fs = storeFs(store, ROOT);
+    const dir = await tmp('take');
+    const big = new Uint8Array(300 * 1024).map((_, i) => (i * 7) % 251);
+    await fsp.mkdir(joinPath(dir, 'library'), { recursive: true });
+    await fsp.writeFile(joinPath(dir, 'library/scan.pdf'), big);
+    await fsp.writeFile(joinPath(dir, 'library/small.png'), new Uint8Array([1, 2, 3]));
+    await fsp.writeFile(joinPath(dir, 'note.md'), `${'a line\n'.repeat(60000)}`);
+    const read: string[] = [];
+    const disk = { ...nodeFs, readBytes: (path: string) => { read.push(relPath(dir, path)); return nodeFs.readBytes(path); } };
+    await takeFiles(disk, dir, fs, ROOT, ['library/scan.pdf', 'library/small.png', 'note.md'], true);
+    expect(taken).toEqual([joinPath(dir, 'library/scan.pdf')]);
+    expect(read.sort()).toEqual(['library/small.png', 'note.md']);
+    expect(await fs.readBytes(`${ROOT}/library/scan.pdf`)).toEqual(big);
+    expect((await fs.stat(`${ROOT}/library/scan.pdf`))?.size).toBe(big.length);
+    // not from a folder that is not on disk, nor into a store that cannot
+    taken = [];
+    read.length = 0;
+    await takeFiles(disk, dir, fs, ROOT, ['library/scan.pdf']);
+    expect([taken, read]).toEqual([[], ['library/scan.pdf']]);
+    // a whole folder brought in the same way
+    const store2 = memStore();
+    const took2: string[] = [];
+    (store2 as unknown as { blobTake(path: string): Promise<{ hash: string; size: number }> }).blobTake = async (path) => { took2.push(relPath(dir, path)); return store2.blobPut(new Uint8Array(await fsp.readFile(path))); };
+    const fs2 = storeFs(store2, ROOT);
+    expect(await importFolder(nodeFs, dir, fs2, ROOT, true)).toBe(3);
+    expect(took2).toEqual(['library/scan.pdf']);
+    expect(await fs2.readBytes(`${ROOT}/library/scan.pdf`)).toEqual(big);
+  });
+
+  it('is not read again before every commit once the folder is known to hold it; written again when it changes', async () => {
+    const store = memStore();
+    const inner = storeFs(store, ROOT);
+    const big = new Uint8Array(300 * 1024).map((_, i) => (i * 5) % 249);
+    await inner.mkdir(`${ROOT}/library`);
+    await inner.writeBytes(`${ROOT}/library/scan.pdf`, big);
+    await inner.writeText(`${ROOT}/note.md`, 'a note\n');
+    const read: string[] = [];
+    const fs = new Proxy(inner, { get: (t, k, r) => (k === 'readBytes' ? (path: string) => { read.push(path.slice(ROOT.length + 1)); return t.readBytes(path); } : Reflect.get(t, k, r)) }) as StoreFs;
+    const dir = joinPath(await tmp('known'), 'repo');
+    const known = new Map<string, string>();
+    expect((await mirrorFolder(fs, ROOT, nodeFs, dir, known)).sort()).toEqual(['library/scan.pdf', 'note.md']);
+    expect(known.get('library/scan.pdf')).toBe(inner.blobAt(`${ROOT}/library/scan.pdf`));
+    read.length = 0;
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir, known)).toEqual([]);
+    expect(read).toEqual(['note.md']);
+    // other bytes under the same name: read, and written
+    const other = big.map((b) => (b + 1) % 256);
+    await inner.writeBytes(`${ROOT}/library/scan.pdf`, other);
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir, known)).toEqual(['library/scan.pdf']);
+    expect(new Uint8Array(await fsp.readFile(joinPath(dir, 'library/scan.pdf')))).toEqual(other);
+    // the folder's copy cut short behind the collection's back: its size says so, and it is whole again
+    await fsp.writeFile(joinPath(dir, 'library/scan.pdf'), other.slice(0, 1000));
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir, known)).toEqual(['library/scan.pdf']);
+    expect((await fsp.stat(joinPath(dir, 'library/scan.pdf'))).size).toBe(other.length);
+    // with nothing known, as before: every file compared
+    read.length = 0;
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir)).toEqual([]);
+    expect(read.sort()).toEqual(['library/scan.pdf', 'note.md']);
+  });
+});
+
+describe('a large file given to a folder on disk by the store itself', () => {
+  it('never comes into the page: written when the folder lacks it or holds other bytes, left when it holds it', async () => {
+    const store = memStore();
+    const gave: string[] = [];
+    // (a store that can write a blob to a path and say whether the path already held it: the device's)
+    (store as unknown as { blobGive(hash: string, path: string): Promise<boolean> }).blobGive = async (hash, path) => {
+      const bytes = await store.blobGet(hash);
+      const there = await fsp.readFile(path).catch(() => null);
+      if (there && there.length === bytes.length && there.every((b, i) => b === bytes[i])) return false;
+      await fsp.mkdir(joinPath(path, '..'), { recursive: true });
+      await fsp.writeFile(path, bytes);
+      gave.push(path);
+      return true;
+    };
+    const inner = storeFs(store, ROOT);
+    const big = new Uint8Array(300 * 1024).map((_, i) => (i * 3) % 247);
+    await inner.mkdir(`${ROOT}/library`);
+    await inner.writeBytes(`${ROOT}/library/scan.pdf`, big);
+    await inner.writeText(`${ROOT}/note.md`, 'a note\n');
+    const read: string[] = [];
+    const fs = new Proxy(inner, { get: (t, k, r) => (k === 'readBytes' ? (path: string) => { read.push(path.slice(ROOT.length + 1)); return t.readBytes(path); } : Reflect.get(t, k, r)) }) as StoreFs;
+    const dir = joinPath(await tmp('give'), 'repo');
+    const known = new Map<string, string>();
+    expect((await mirrorFolder(fs, ROOT, nodeFs, dir, known, true)).sort()).toEqual(['library/scan.pdf', 'note.md']);
+    expect(read).toEqual(['note.md']);
+    expect(new Uint8Array(await fsp.readFile(joinPath(dir, 'library/scan.pdf')))).toEqual(big);
+    // nothing changed: not looked at again
+    gave.length = 0;
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir, known, true)).toEqual([]);
+    expect(gave).toEqual([]);
+    // with nothing known (a first start after this was made): asked of the store, which finds the folder holds it
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir, new Map(), true)).toEqual([]);
+    expect(read).toEqual(['note.md', 'note.md', 'note.md']);
+    // the folder's copy cut short: written whole again, still not through the page
+    await fsp.writeFile(joinPath(dir, 'library/scan.pdf'), big.slice(0, 500));
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir, known, true)).toEqual(['library/scan.pdf']);
+    expect((await fsp.stat(joinPath(dir, 'library/scan.pdf'))).size).toBe(big.length);
+    expect(read.filter((x) => x.endsWith('.pdf'))).toEqual([]);
+  });
+});
+
 describe('a folder kept as the collection is', () => {
   it('writes what differs, removes what is gone, leaves `.git/`, and takes changed files back', async () => {
     const { fs } = await collection(CORPUS);

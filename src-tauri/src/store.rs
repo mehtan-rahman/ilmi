@@ -821,6 +821,22 @@ fn expect_tx(tx: &Connection, hash: &str, size: i64) -> Result<(), String> {
 }
 
 /// `src` copied to `dest`, a megabyte at a time; its SHA-256 in hex and its length. `progress` is told the bytes so far.
+/// A file's SHA-256, read a megabyte at a time.
+pub fn file_hash(path: &Path) -> Result<String, String> {
+    use std::io::Read;
+    let mut from = std::fs::File::open(path).map_err(err)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = from.read(&mut buf).map_err(err)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
 pub fn copy_hashing(src: &Path, dest: &Path, mut progress: impl FnMut(u64)) -> Result<(String, u64), String> {
     use std::io::Read;
     let mut from = std::fs::File::open(src).map_err(err)?;
@@ -1467,6 +1483,32 @@ impl Stores {
     }
     pub fn blob_range(&self, dir: &Path, hash: &str, begin: u64, end: u64) -> Result<Vec<u8>, String> {
         self.with(dir, |s| s.blob_range(hash, begin, end))
+    }
+
+    /// A blob given to a file on disk without its bytes crossing to the renderer: `dest` is made to hold it. False
+    /// when it already did (the same size and the same hash), so a file that has not changed is not written again.
+    pub fn give(&self, dir: &Path, hash: &str, dest: &Path) -> Result<bool, String> {
+        let src = self.blob_file(dir, hash)?.ok_or_else(|| format!("{hash}: not here"))?;
+        let len = std::fs::metadata(&src).map_err(err)?.len();
+        if let Ok(m) = std::fs::metadata(dest) {
+            if m.is_file() && m.len() == len && file_hash(dest)? == hash {
+                return Ok(false);
+            }
+            if m.is_dir() {
+                std::fs::remove_dir_all(dest).map_err(err)?;
+            }
+        }
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(err)?;
+        }
+        let mut name = dest.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+        name.push(".ilmi-tmp");
+        let tmp = dest.with_file_name(name);
+        copy_hashing(&src, &tmp, |_| {}).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })?;
+        std::fs::rename(&tmp, dest).map_err(err)?;
+        Ok(true)
     }
 
     /// A file on disk taken in as a blob: copied beside the database and

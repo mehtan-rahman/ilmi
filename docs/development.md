@@ -913,6 +913,18 @@ is told apart: never met by the page, met on the word, or met on something
 else. `touch`'s `notes:` lines say what the book, the word and the panes
 hold before each tap on the word and when one does not do its work.
 
+A large PDF on a device: `pdfink`'s `"part": "big"` (with `"books"` naming
+a folder that holds `big.pdf` and `turned.pdf`; no rig) brings it in, opens
+it, reads on through sixty pages, and checks the words of a file that is no
+PDF and of one marked as having taken the page down (`ilmi.pdf.opening`);
+`"part": "bigpull"` gives the collection a bare repository in that folder,
+clones a second collection, pushes the PDF from the first and pulls it into
+the second. `gaps/mem.sh`-style sampling of the page's process is by `ps`
+from the host (a simulator's WebContent is a child of that simulator's
+`launchd_sim`); a simulator has no memory limit, so a kill is made by hand.
+`"part": "sess"` opens the session on a PDF's reading and says what its bar
+offers.
+
 `press` (`platform.ts`) lets go the one mouse press a tap sends after
 itself, up to five seconds late: with a wait of 0.8 s a tap on a box's
 `card` whose picker kept the page busy acted twice (the picker open again

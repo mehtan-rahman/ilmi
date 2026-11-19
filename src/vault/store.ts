@@ -294,6 +294,8 @@ export interface Store {
   inkPages(prefix: string): Promise<string[]>;
   /** The writing on a book's page, made from its strokes: the drawing the canvas opens, or a PNG of the whole page, `w` by `h` points, on nothing. */
   inkPage(page: string, what: 'drawing' | 'picture', w: number, h: number, scale?: number): Promise<Uint8Array>;
+  /** A blob written to the file at `path` on disk without passing through here; resolves to whether it was written (false: the file already held it). */
+  blobGive?(hash: string, path: string): Promise<boolean>;
   /** A file on disk taken in as a blob without its bytes passing through here. The app's only. */
   blobTake?(path: string): Promise<{ hash: string; size: number }>;
   /** The bytes of a blob from `begin` up to `end`. The app's only. */
@@ -527,6 +529,8 @@ export interface StoreFs extends Fs {
   pieces(path: string): Promise<{ size: number; read(begin: number, end: number): Promise<Uint8Array> } | null>;
   /** The file on disk at `from` becomes the file at `path`, copied by the store without passing through here. False when the store cannot (it is then to be written the usual way). */
   take(path: string, from: string): Promise<boolean>;
+  /** The file at `path` given to the file `to` on disk, copied by the store without passing through here: true when it was written, false when `to` already held it, null when the store cannot (it is then to be written the usual way). */
+  give(path: string, to: string): Promise<boolean | null>;
   /** The strokes of the page of ink at `path` (its `.pkdrawing`, or the picture beside it); null when no page of strokes is there. */
   ink(path: string): Promise<InkStroke[] | null>;
   /**
@@ -1317,6 +1321,13 @@ export function storeFs(store: Store, root: string): StoreFs {
         touched(path);
         return true;
       }),
+
+    async give(path, to) {
+      await ready;
+      const at = locate(path);
+      if (at.kind !== 'row' || at.row.blob === null || !store.blobGive || awayBlobs.has(at.row.blob)) return null;
+      return store.blobGive(at.row.blob, to);
+    },
 
     async ink(path) {
       await ready;

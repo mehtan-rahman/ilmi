@@ -126,6 +126,7 @@ import {
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
+import { pdfFail, type PdfFail } from './pdfFail.js';
 import { addSurface, afterScene, covered, fillSheet, restSheet, forgetSheet, hasCanvas, holdScenes, inContent, onFingers, onLayout, onSurface, pagePaper, pinchSheets, portOf, sceneSoon, settleSheets, type Box as InkBox, type PenEvent, type SheetSpec, type Surface } from './ink.js';
 import { PageInkSvg } from './PageInkSvg.js';
 import { onLiveSheet } from './pageInk.js';
@@ -274,12 +275,30 @@ interface Find {
 const hitCount = (pages: Find['pages']): number => pages.reduce((n, p) => n + p.n, 0);
 /** The page the `at`th hit is on, and which of that page's hits it is. */
 /** The PDF being opened, kept across a restart: what was being opened when the page last went down. */
+/** How long a PDF's pages are asked their sizes before it is shown: past this the rest are read behind it. */
+const SIZES_WAIT = 400;
+/** How long after its last page is drawn a file is no longer held to be opening. */
+const OPENED_MS = 4000;
 const OPENING_KEY = 'ilmi.pdf.opening';
+/** What this page itself has marked as opening: a mark that is not this page's was left by one that went down. */
+let openingHere: string | null = null;
 function opening(rel: string | null): void {
+  openingHere = rel;
   try { if (rel === null) localStorage.removeItem(OPENING_KEY); else localStorage.setItem(OPENING_KEY, rel); } catch { /* no storage: no guard */ }
 }
+/** Whether the file is marked as opening by a page before this one: it went down with the file half open. (The same file opening in a second pane of this page is this page's own mark.) */
 function fellOpening(rel: string): boolean {
+  try { return localStorage.getItem(OPENING_KEY) === rel && openingHere !== rel; } catch { return false; }
+}
+/** Whether this page holds the file to be opening still. */
+function openingStill(rel: string): boolean {
   try { return localStorage.getItem(OPENING_KEY) === rel; } catch { return false; }
+}
+// a page put away in the ordinary way (the app closed, or sent behind another) went down with nothing: only a page
+// taken from under a file that was opening leaves the mark
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => { if (openingHere !== null) opening(null); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && openingHere !== null) opening(null); });
 }
 
 function hitAt(pages: Find['pages'], at: number): { page: number; k: number } | null {
@@ -498,6 +517,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   /** Its sheets' size, as its page setup has it (85). */
   const { w: sheetW, h: sheetH } = sheetSize(written);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone' | 'unreadable'>(written ? 'ok' : 'loading');
+  /** Why the file did not open, for the page to say; and how often it has been tried again. */
+  const [fail, setFail] = useState<PdfFail | null>(null);
+  const [tries, setTries] = useState(0);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>(() => (written ? sheetSizes(written.sheets.length, sheetSize(written)) : []));
   const [textless, setTextless] = useState(false);
@@ -849,10 +871,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   // a file whose opening took the page down with it (a device with too little memory for it: the page comes back
   // white, and a tab kept from last time would do it again at every start) is not opened by itself a second time:
   // it says so, and `try again` is the reader's to press
-  const [again, setAgain] = useState(0);
   useEffect(() => {
     if (!rel) return;
-    if (fellOpening(rel) && again === 0) { setStatus('unreadable'); return; }
+    if (fellOpening(rel) && tries === 0) {
+      setFail({ kind: 'fell', said: 'this pdf closed the page the last time it was opened', detail: 'it may be too large for this device · it is not opened again by itself' });
+      setStatus('unreadable');
+      return;
+    }
     let live = true;
     opening(rel);
     const held = acquirePdf(rel);
@@ -870,12 +895,22 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       // only the document's own pages when it names a range; a range past the file's end is cut to it
       const lo = Math.max(1, Math.min(range?.first ?? 1, doc.numPages));
       const hi = Math.max(lo, Math.min(range?.last ?? doc.numPages, doc.numPages));
-      for (let n = lo; n <= hi; n++) {
+      // every page's size, while that is quick: a long book on a slow device is shown once its first pages are
+      // known, the rest taken to be the size of the last one read, and put right when they have been read (a book's
+      // pages are nearly always one size, so nothing moves)
+      const began = Date.now();
+      let n = lo;
+      for (; n <= hi; n++) {
+        if (n >= lo + PROBE && Date.now() - began > SIZES_WAIT) break;
         const page = await doc.getPage(n);
+        if (!live) return;
         const v = page.getViewport({ scale: 1 });
         out.push({ w: v.width, h: v.height });
         if (n < lo + PROBE && !hasText) hasText = (await pageBits(page)).some((b) => b.str.trim() !== '');
       }
+      const read = out.length;
+      const like = out[read - 1]!;
+      while (out.length < hi - lo + 1) out.push({ w: like.w, h: like.h });
       if (!live) return;
       lastRef.current?.(hi);
       setBase(lo - 1);
@@ -883,25 +918,65 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       setSizes(out);
       setTextless(!hasText);
       setStatus('ok');
-      opening(null);
+      // (it is still held to be opening: its pages are yet to be drawn, which is what a device has no room for. The
+      // mark goes a few seconds after the last of them is, `settled` below)
+      if (read < out.length) {
+        const exact = out.slice();
+        let differs = false;
+        for (let k = read; k < exact.length; k++) {
+          const v = (await doc.getPage(lo + k)).getViewport({ scale: 1 });
+          if (!live) return;
+          if (Math.abs(v.width - like.w) > 0.01 || Math.abs(v.height - like.h) > 0.01) { exact[k] = { w: v.width, h: v.height }; differs = true; }
+          // (the page's own work comes first: a breath every few pages)
+          if (k % 8 === 0) await new Promise((r) => setTimeout(r, 0));
+          if (!live) return;
+        }
+        if (differs) setSizes(exact);
+      }
     })().catch(async (e: unknown) => {
       console.error(id, e);
       opening(null);
-      // a file that is there and will not open is not one that has gone
+      // a file that is there and will not open is not one that has gone; and why it did not is said
       const vault = currentVault();
-      const there = vault ? await vault.fs.stat(vault.abs(rel)).then((s) => s !== null, () => false) : true;
-      if (live) setStatus(there ? 'unreadable' : 'gone');
+      const st = vault ? await vault.fs.stat(vault.abs(rel)).catch(() => null) : null;
+      const there = vault ? st !== null : true;
+      const away = !!vault && !!(vault.fs as Partial<StoreFs>).isAway?.(vault.abs(rel));
+      if (!live) return;
+      setFail(pdfFail(e, there, away, st?.size ?? 0));
+      setStatus(there ? 'unreadable' : 'gone');
     });
     return () => {
       live = false;
       // left while it was still opening (the tab closed, another document): that is not a fall
-      if (fellOpening(rel)) opening(null);
+      if (openingStill(rel)) opening(null);
       held.release();
       setPdf(null);
       setSizes([]);
       setStatus('loading');
     };
-  }, [id, rel, range?.first, range?.last, again]);
+  }, [id, rel, range?.first, range?.last, tries]);
+
+  // a PDF that did not open is tried again by itself when what it waited for may have come: the file landing in the
+  // collection, its bytes arriving on this device, a sync or a fetch ending; and every so often while its bytes are
+  // on their way. (`try again` on the page does the same at once.)
+  useEffect(() => {
+    if (!rel || (status !== 'unreadable' && status !== 'gone') || (fail?.kind !== 'away' && fail?.kind !== 'absent')) return;
+    const vault = currentVault();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const soon = (ms = 600) => { if (timer) clearTimeout(timer); timer = setTimeout(() => setTries((n) => n + 1), ms); };
+    const isAway = () => useApp.getState().away.includes(rel);
+    let wasAway = isAway();
+    let wasBusy = !!useApp.getState().sync.busy;
+    const offStore = useApp.subscribe((st) => {
+      const [nowAway, nowBusy] = [st.away.includes(rel), !!st.sync.busy];
+      if ((wasAway && !nowAway) || (wasBusy && !nowBusy)) soon();
+      wasAway = nowAway;
+      wasBusy = nowBusy;
+    });
+    const offVault = vault?.subscribe((ev) => { if (ev.kind === 'tree' || (ev.kind === 'doc' && ev.path === rel)) soon(); });
+    const every = setInterval(() => setTries((n) => n + 1), 20_000);
+    return () => { offStore(); offVault?.(); if (timer) clearTimeout(timer); clearInterval(every); };
+  }, [rel, status, fail?.kind]);
 
   // the pane's width sets the scale (milestone 70): a page is drawn across it, up to the width a page is still
   // read at, and centred past that; the read bar and the gutter's § hang in the pane's padding
@@ -970,11 +1045,39 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   /** The scale the pages have at fit. */
   const fit = scale / zoom;
   const renderRef = useRef<(n: number) => Promise<void>>(async () => {});
+  // a file is held to be opening (`opening`) until its pages near the view have been drawn and stayed drawn a
+  // while: a page that goes down while they are drawn is one this file took down
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const relRef = useRef(rel);
+  relRef.current = rel;
+  const settled = () => {
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => { settleTimer.current = null; const r = relRef.current; if (r && openingStill(r)) opening(null); }, OPENED_MS);
+  };
+  useEffect(() => () => { if (settleTimer.current) clearTimeout(settleTimer.current); }, []);
+  /** The drawing of one page waits for the one before it, on a device. */
+  const gate = useRef<Promise<void>>(Promise.resolve());
+  const scrollerOf = useRef<(() => HTMLElement | null) | null>(null);
+  const pdfRef = useRef(pdf);
+  pdfRef.current = pdf;
   const renderPage = useCallback(async (n: number) => {
     const el = pageEls.current.get(n);
     if (!el || !pdf || rendered.current.get(n) === scale || rendering.current.has(n)) return;
     rendering.current.add(n);
+    // on a device one page is drawn at a time: a heavy page's drawing takes a great deal of memory while it lasts,
+    // and the four or five near the view drawn together were that many times as much
+    const one = useApp.getState().mobile;
+    const before = gate.current;
+    let open: () => void = () => {};
+    if (one) gate.current = new Promise<void>((r) => { open = r; });
     try {
+      if (one) {
+        await before;
+        // its turn has come: a page the reader has gone on past meanwhile is not drawn
+        const sc = scrollerOf.current?.();
+        const [pr, r] = [el.getBoundingClientRect(), sc?.getBoundingClientRect()];
+        if (r && pr.height > 0 && (pr.bottom < r.top - AHEAD || pr.top > r.bottom + AHEAD)) return;
+      }
       const page = await pdf.getPage(n);
       const viewport = page.getViewport({ scale });
       // zoomed far in, a page is drawn with fewer pixels to the point than the screen has, never with more than a canvas holds
@@ -1014,10 +1117,12 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       layer.append(end);
       rendered.current.set(n, scale);
       setTick((t) => t + 1);
+      settled();
     } catch (e) {
       console.error(id, `page ${n}`, e);
     } finally {
       rendering.current.delete(n);
+      open();
     }
     // the column changed width while this page was being drawn (an iPad turned): it is drawn again at the scale there is now
     if (scaleRef.current !== scale && rendered.current.get(n) === scale) {
@@ -1029,6 +1134,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   renderRef.current = renderPage;
 
   const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
+  scrollerOf.current = scroller;
   /** How much taller the bar is for the tools' row under its words (an iPad's, `InkBar.tsx`); 0 with none. */
   const barExtra = (): number => (outside ? null : viewRef.current?.querySelector('.meta > .inkbar'))?.getBoundingClientRect().height ?? 0;
   /** How far down the view the place kept is: under the whole bar. */
@@ -1127,10 +1233,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       for (const [k, el] of pageEls.current) {
         const pr = el.getBoundingClientRect();
         if (pr.bottom >= r.top - AHEAD && pr.top <= r.bottom + AHEAD) void renderPage(k);
-        // zoomed, a page is many times the canvas it is at fit: one far from the view gives it back, and draws again as it comes near
-        else if (zoomRef.current > 1 && pr.height > 0 && (pr.bottom < r.top - FAR || pr.top > r.bottom + FAR) && rendered.current.has(k) && !rendering.current.has(k)) {
+        // zoomed, a page is many times the canvas it is at fit: one far from the view gives it back, and draws again as it comes near.
+        // On a device at any zoom: every page read through kept its drawing, sixty of them some 600 MB, and a
+        // device takes the page's process away long before a book has been read through
+        else if ((zoomRef.current > 1 || useApp.getState().mobile) && pr.height > 0 && (pr.bottom < r.top - FAR || pr.top > r.bottom + FAR) && rendered.current.has(k) && !rendering.current.has(k)) {
           rendered.current.delete(k);
+          // (a canvas of no size gives its pixels back at once, not when it is collected)
+          for (const c of Array.from(el.querySelectorAll('canvas'))) { c.width = 0; c.height = 0; }
           el.replaceChildren();
+          // and the reader lets go of what it worked out to draw it
+          const doc = pdfRef.current;
+          if (doc) void doc.getPage(k).then((pg) => { (pg as unknown as { cleanup?: () => void }).cleanup?.(); }, () => {});
         }
       }
       const v = viewRef.current;
@@ -2969,8 +3082,20 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     if (Math.abs(surfaceZoomAt.current - zoom) > 0.0005) { surfaceZoomAt.current = zoom; void surfaceZoom(surfaceId, zoom, true); }
   }, [native, zoom, surfaceId]);
 
-  if (status === 'unreadable' && info) {
-    return <div className="reader-wrap"><div className="reader"><div className="empty">could not open this pdf<div className="empty-next"><button type="button" className="frozen-tag" data-act="pdf-again" onClick={() => { opening(null); setStatus('loading'); setAgain((n) => n + 1); }}>try again</button></div></div></div></div>;
+  if ((status === 'unreadable' || status === 'gone') && info) {
+    // why, in plain words, and a way to try again (it is tried by itself when the file lands)
+    const why = fail ?? { kind: 'other' as const, said: 'could not open this pdf', detail: '' };
+    return (
+      <div className="reader-wrap">
+        <div className="reader">
+          <div className="empty pdf-fail" data-why={why.kind} role="status">
+            <span className="pf-said">{why.said}</span>
+            {why.detail && <span className="pf-detail">{why.detail}</span>}
+            <button type="button" className="pf-again" data-act="pdf-again" onClick={() => { opening(null); void import('./sync.js').then((m) => m.retakeFile(rel ?? '')).catch(console.error).finally(() => setTries((n) => n + 1)); }}>try again</button>
+          </div>
+        </div>
+      </div>
+    );
   }
   if (status === 'gone' || status === 'unreadable' || (status === 'ok' && !info)) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;

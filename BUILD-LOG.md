@@ -57,6 +57,19 @@ The user wants scheduling algorithms other than FSRS to live in plugins, a neura
 
 ---
 
+## 2026-11-19 — a large PDF on a device: why it did not open, said; its bytes kept out of the page; the page loaded again when its process is taken
+
+A 49.8 MB PDF of 604 pages, added on the Mac and synced by git, said `could not open this pdf` on the iPad, and once it had arrived the app was white at every start. Not reproduced on a simulator, which has no limit on a process's memory: there the same file (a copy in the scratch dir, since removed) opens in half a second brought in on the device and in under three seconds after a pull into a second collection. What was measured there (`g1-big` to `g7-bigpull`, `scripts`-free sampler of the page's process, resident size): bringing the file in through the page peaks at about 620 MB; reading on through sixty of its pages took 78 s and climbed past 650 MB with every page read still holding its drawing; and before every commit, and at every start, the folder git works over was made the collection's by reading every file from both sides into the page, this one twice. So the leading cause is memory, in three places, each closed:
+
+- **A file's bytes stay out of the page on a device.** A pull takes a large file into the collection by the store itself (`take`, by its path: `takeFiles` and a clone's `importFolder` with `disk`); the folder is given a large file, and asked whether it holds it, by the store too (`give`, a new command `store_blob_give`: its hash compared, a megabyte at a time), with what the folder was last seen to hold kept per collection so an unchanged file is not looked at again. The pull of the 50 MB file went from 19.8 s to 6.3 s. A device reads a PDF by the piece from 4 MB up (16 on a Mac).
+- **Reading draws one page at a time on a device and lets far pages go**, at any zoom: a canvas three screens from the view gives its pixels back and the reader its work for that page. The same sixty pages: 14 s, five pages holding a drawing at the end, the process level throughout.
+- **A long book is shown once its first pages' sizes are known** when reading every page's size takes more than 0.4 s; the rest are read behind it and put right if any differ.
+
+**The page comes back.** `on_web_content_process_terminate` (tauri's, over WKWebView's own call) loads the page again where it was left white; seen by killing the page's process on a simulator (`k2-killweb`: the log's line, and the page there two seconds on). The stopgap's mark (`ilmi.pdf.opening`) now stays until the pages near the view have been drawn and stayed drawn four seconds, since it is drawing, after the file is read, that a device has no room for; a file so marked at a start says `this pdf closed the page the last time it was opened` and waits for `try again`.
+
+**It says why.** `pdfFail.ts`: `not on this device yet` (still arriving, or not fetched and why), `its pdf is not in the collection`, `this pdf is locked with a password`, `this file does not read as a pdf` with its size here, `too large to read on this device`, else `could not open this pdf` with what was said underneath; each with `try again`, which first takes the file again from git's folder where that holds it (a file that came in cut short is made whole). What waited for a file is tried again by itself when the file lands, its bytes arrive, a sync ends, and every twenty seconds.
+
+**Not known.** Which of these took the page down on the iPad: no device log was read and no simulator has a memory limit. A file brought in on the device itself (the picker, a share) still crosses the page whole.
 ## 2026-11-19 — a file shared to ilmi: the share sheet on an iPad and an iPhone, `Open With` and the Dock on a Mac
 
 The user: "it'd be nice if i can go to a pdf and press share and have ilmi pop up as an option".

@@ -18542,7 +18542,7 @@ async function writtenPressure(log: (s: string) => void): Promise<void> {
       at: [80, 120],
       open: async () => {
         openNode(PAGEINK_BOOK);
-        const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ? x : null; }, 'the chapter', 60000);
+        const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the chapter', 60000);
         const hash = await poll(() => q<HTMLElement>('.pdf-view', pb)!.dataset.hash, 'its hash known', 10000);
         q<HTMLElement>(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, pb)!.scrollIntoView({ block: 'start' });
         const sheet = `p.${hash}.${PAGEINK_PAGE}`;
@@ -20097,7 +20097,7 @@ export async function smokeSharp(path: string | null): Promise<void> {
       await invoke('dev_ink_pen', { on: false });
       tools.setTool('pen');
       openNode(PAGEINK_BOOK);
-      const pb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
+      const pb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
       const view = q<HTMLElement>('.pdf-view', pb)!;
       const sc = q<HTMLElement>('.book-pages', pb)!;
       must(surfaceIn(pb) === null, 'a PDF\'s pages are the page\'s own');
@@ -20281,7 +20281,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
     tools.setSize('pen', 2);
     tools.setRecent('pen', '#ff0000');
     openNode(PAGEINK_BOOK);
-    const pb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
+    const pb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
     const view = q<HTMLElement>('.pdf-view', pb)!;
     const sc = q<HTMLElement>('.book-pages', pb)!;
     const hash = await poll(() => view.dataset.hash, 'its hash known', 10000);
@@ -20767,6 +20767,165 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       for (const k of kinds) document.removeEventListener(k, hear, true);
       const mid = (v: number[]) => (v.length ? [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)]! : 0);
       log(`word: ${rounds} rounds whole; ${Object.entries(count).map(([k, c]) => `${k}: ${c.asked} taps, ${c.dead} did nothing (${c.unmet} the page never met, ${c.onIt} met on it, ${c.other} met on something else), ${mid(c.ms)} ms to act`).join('; ')}`);
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
+    if (part.split(',').includes('sess')) {
+      // ── a PDF's reading in the session and in the queue (`"part": "sess"`; no rig): the sample's chapter is
+      // enrolled to be read, the session opened on it, and what it offers is said (`sess:` lines) and captured ──
+      const { enrolReading } = await import('./vault.js');
+      if (!useApp.getState().docs[PAGEINK_BOOK]?.read) await enrolReading(PAGEINK_BOOK);
+      const item = await poll(() => useApp.getState().queue.find((i) => i.kind === 'read' && i.path === PAGEINK_BOOK), 'the chapter is in the queue to be read', 20000);
+      openSession(item);
+      const bar = await poll(() => q<HTMLElement>('.pane[data-active="1"] .session-bar') ?? q<HTMLElement>('.session-bar'), 'the session is on it, with its bar', 30000);
+      await poll(() => q('.doc-session .pdf-page canvas'), 'its pages drawn', 60000);
+      await sleep(800);
+      const seen = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight + 0.5 && r.left >= 0 && r.right <= window.innerWidth + 0.5; };
+      log(`sess: the bar ${Math.round(bar.getBoundingClientRect().top)} to ${Math.round(bar.getBoundingClientRect().bottom)} of ${window.innerHeight}; its buttons: ${qa<HTMLElement>('button[data-act]', bar).map((x) => `${x.dataset.act} "${x.textContent}" ${seen(x) ? 'on the glass' : 'NOT on the glass'} ${Math.round(x.getBoundingClientRect().width)}x${Math.round(x.getBoundingClientRect().height)}`).join('; ')}`);
+      await shot('sess-pdf');
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
+    if (part.split(',').includes('bigpull')) {
+      // ── a large PDF that comes to a device by git (`"part": "bigpull"`, with `books` as `big`; only when asked for;
+      // a measure): this collection is given a remote (a bare repository in `books`), a second collection is cloned
+      // from it, the PDF is brought in here and pushed, and the second pulls it, as a device that already has the
+      // collection does; then it is opened there. `bigpull:` lines say how long each took and what was said ──
+      const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+      if (!books) throw new Error('ILMI_BOOKS (smoke.json: "books") names the folder with big.pdf');
+      const { importPdfNode, openVault, currentVault } = await import('./vault.js');
+      const sync = await import('./sync.js');
+      const B = 'library/big.pdf';
+      const rootA = currentVault()!.root;
+      const host = `${books}/remote-${Date.now()}.git`;
+      await sync.initBare(host);
+      sync.saveSettings(rootA, { url: host, token: '', server: '' });
+      await sync.connect(host, '');
+      await poll(() => useApp.getState().sync.on && useApp.getState().sync.toPush === 0 && !useApp.getState().sync.busy, 'this collection has its remote, and is pushed', 120000);
+      const rootB = await sync.cloneCollection(host, '', `bigclone ${Date.now() % 100000}`);
+      sync.saveSettings(rootB, { url: host, token: '', server: '' });
+      log(`bigpull: a second collection cloned at ${rootB}`);
+      let t = Date.now();
+      const bytes = new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/big.pdf` }));
+      await importPdfNode('library', { title: 'big', bytes, text: '' });
+      await poll(() => useApp.getState().docs[B], 'the large PDF is in the first collection', 120000);
+      await sync.syncNow();
+      await poll(() => useApp.getState().sync.toPush === 0 && !useApp.getState().sync.busy, 'and pushed', 300000);
+      log(`bigpull: ${bytes.length} bytes brought in and pushed in ${Date.now() - t} ms`);
+      const errs: string[] = [];
+      const was = console.error;
+      console.error = (...a: unknown[]) => { errs.push(a.map((x) => (x instanceof Error ? `${x.name}: ${x.message}` : String(x))).join(' ').slice(0, 300)); was(...a); };
+      await openVault(rootB);
+      await poll(() => currentVault()?.root === rootB && useApp.getState().sync.on, 'the second collection is open, with its remote', 60000);
+      phase('the pull');
+      t = Date.now();
+      await sync.syncNow();
+      const arrived = await poll(() => useApp.getState().docs[B] ?? (errs.length ? true : null), 'the pull brings the PDF, or says why not', 600000);
+      const st = await currentVault()!.fs.stat(currentVault()!.abs(B));
+      log(`bigpull: the pull took ${Date.now() - t} ms; the PDF ${arrived === true ? 'did not come' : 'is in the second collection'}, ${st?.size ?? 'no'} bytes there; errors: ${errs.join(' | ') || 'none'}`);
+      errs.length = 0;
+      phase('opened');
+      t = Date.now();
+      openNode(B);
+      const got = await poll(() => {
+        const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === B);
+        if (!x || !x.getClientRects().length) return null;
+        const said = q<HTMLElement>('.empty', x)?.textContent ?? '';
+        if (said && said !== 'opening') return { said, pages: 0 };
+        return q('.pdf-page canvas', x) ? { said: '', pages: qa('.pdf-page', x).length } : null;
+      }, 'the large PDF opens, or says why not', 600000);
+      console.error = was;
+      log(`bigpull: ${got.said ? `it says "${got.said}"` : `its first page drawn, ${got.pages} pages`} ${Date.now() - t} ms after it was opened; errors: ${errs.join(' | ') || 'none'}`);
+      await shot('bigpull-opened');
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
+    if (part.split(',').includes('big')) {
+      // ── a large PDF on a device (`"part": "big"`, with `books` naming a folder that holds `big.pdf`; only when
+      // asked for; a measure): brought in, opened, and how long until it says how many pages it has and its first
+      // page is drawn, or what it says when it does not open. A `big:` line each ──
+      const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+      if (!books) throw new Error('ILMI_BOOKS (smoke.json: "books") names the folder with big.pdf');
+      const { importPdfNode } = await import('./vault.js');
+      const B = 'library/big.pdf';
+      const t0 = Date.now();
+      if (!useApp.getState().docs[B]) {
+        const bytes = new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/big.pdf` }));
+        log(`big: ${bytes.length} bytes read in ${Date.now() - t0} ms`);
+        await importPdfNode('library', { title: 'big', bytes, text: '' });
+      }
+      await poll(() => useApp.getState().docs[B], 'the large PDF is in the collection', 120000);
+      log(`big: in the collection ${Date.now() - t0} ms on`);
+      const errs: string[] = [];
+      const was = console.error;
+      console.error = (...a: unknown[]) => { errs.push(a.map((x) => (x instanceof Error ? `${x.name}: ${x.message}` : String(x))).join(' ').slice(0, 300)); was(...a); };
+      const t1 = Date.now();
+      openNode(B);
+      const got = await poll(() => {
+        const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === B);
+        if (!x || !x.getClientRects().length) return null;
+        const said = q<HTMLElement>('.empty', x)?.textContent ?? '';
+        if (said && said !== 'opening') return { said, pages: 0 };
+        return q('.pdf-page canvas', x) ? { said: '', pages: qa('.pdf-page', x).length } : null;
+      }, 'the large PDF opens, or says why not', 600000);
+      console.error = was;
+      log(`big: ${got.said ? `it says "${got.said}"` : `its first page drawn, ${got.pages} pages`} ${Date.now() - t1} ms after it was opened; errors: ${errs.join(' | ') || 'none'}`);
+      await shot('big-opened');
+      {
+        // read on through it, a page at a time: `scripts`' memory sampler reads the page's process meanwhile
+        const bb = qa<HTMLElement>('.book').find((k) => k.dataset.path === B)!;
+        const sc = q<HTMLElement>('.book-pages', bb)!;
+        const tt = Date.now();
+        let drawn = 0;
+        for (let i = 2; i <= 60; i++) {
+          const pg = q<HTMLElement>(`.pdf-page[data-page="${i}"]`, bb);
+          if (!pg) break;
+          pg.scrollIntoView({ block: 'start' });
+          await poll(() => q(`.pdf-page[data-page="${i}"] canvas`, bb), `page ${i} is drawn`, 60000);
+          drawn++;
+          await sleep(150);
+        }
+        log(`big: ${drawn} pages more read through in ${Date.now() - tt} ms; ${qa('.pdf-page canvas', bb).length} pages hold a drawing now; the scroller ${Math.round(sc.scrollHeight)} px long`);
+      }
+      {
+        // a file that is here and is no PDF: the page says so in plain words and offers `try again`
+        const X = 'library/not a pdf.pdf';
+        await importPdfNode('library', { title: 'not a pdf', bytes: new TextEncoder().encode('%PDF-1.5\nthis is cut short'), text: '' });
+        await poll(() => useApp.getState().docs[X], 'a file that is no PDF is in the collection', 30000);
+        const quiet = console.error;
+        console.error = () => {};
+        openNode(X);
+        const fail = await poll(() => q<HTMLElement>('.pane[data-active="1"] .pdf-fail'), 'opened, it says why it does not open', 60000);
+        console.error = quiet;
+        must(fail.dataset.why === 'broken' && q('.pf-said', fail)?.textContent === 'this file does not read as a pdf' && q('.pf-again', fail)?.textContent === 'try again', `in plain words, with try again ("${fail.textContent}")`);
+        must(fail.textContent === fail.textContent?.toLowerCase(), 'all lowercase');
+        await shot('big-not-a-pdf');
+      }
+      {
+        // a file whose opening took the page down the last time (as the page keeps it, `ilmi.pdf.opening`) is not
+        // opened by itself again: it says so, and `try again` opens it
+        const T = 'library/turned.pdf';
+        const tbytes = new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/turned.pdf` }).catch(() => new ArrayBuffer(0)));
+        if (tbytes.length) {
+          if (!useApp.getState().docs[T]) await importPdfNode('library', { title: 'turned', bytes: tbytes, text: '' });
+          await poll(() => useApp.getState().docs[T], 'a small paper is in the collection', 30000);
+          localStorage.setItem('ilmi.pdf.opening', T);
+          openNode(T);
+          const fell = await poll(() => q<HTMLElement>('.pane[data-active="1"] .pdf-fail[data-why="fell"]'), 'a file that took the page down is not opened by itself', 30000);
+          must(fell.dataset.why === 'fell' && !q('.pane[data-active="1"] .pdf-page canvas') && fell.textContent === fell.textContent?.toLowerCase(), `it says so in plain words ("${q('.pf-said', fell)?.textContent}")`);
+          await shot('big-fell');
+          q<HTMLButtonElement>('.pf-again', fell)!.click();
+          await poll(() => q('.pane[data-active="1"] .pdf-page canvas'), 'try again opens it', 60000);
+          must(localStorage.getItem('ilmi.pdf.opening') === T, 'while its pages are being drawn it is still held to be opening');
+          await poll(() => localStorage.getItem('ilmi.pdf.opening') === null, 'and a few seconds after they are, no longer', 15000);
+        }
+      }
       phase('done');
       finished = true;
       log('done');

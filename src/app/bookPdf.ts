@@ -32,6 +32,8 @@ const held = new Map<string, Held>();
 const LINGER = 20_000;
 /** A PDF larger than this is read a piece at a time, as its pages are asked for; a smaller one whole. */
 export const WHOLE_MAX = 16 * 1024 * 1024;
+/** The same on a device, which has far less room for a file held whole in the page and again in the reader's worker. */
+export const WHOLE_MAX_DEVICE = 4 * 1024 * 1024;
 
 /** Take the PDF at vault-relative `rel`; `release` lets it go. */
 export function acquirePdf(rel: string): { promise: Promise<PDFDocumentProxy>; release(): void } {
@@ -45,7 +47,7 @@ export function acquirePdf(rel: string): { promise: Promise<PDFDocumentProxy>; r
       if (writtenAt(rel)) throw new Error(`${rel} is written notes, not a pdf`);
       // a file that is not on this device is fetched by either read
       const size = (await vault.fs.stat(vault.abs(rel)))?.size ?? 0;
-      const pieces = size > WHOLE_MAX ? await (vault.fs as Partial<StoreFs>).pieces?.(vault.abs(rel)) : null;
+      const pieces = size > (useApp.getState().mobile ? WHOLE_MAX_DEVICE : WHOLE_MAX) ? await (vault.fs as Partial<StoreFs>).pieces?.(vault.abs(rel)) : null;
       task = pieces ? loadPdfPieces(pieces.size, pieces.read) : loadPdf(await vault.fs.readBytes(vault.abs(rel)));
       return task.promise;
     })();

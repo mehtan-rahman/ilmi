@@ -40,6 +40,7 @@ export function tauriStore(root: string): Store {
     inkPages: (prefix) => invoke<string[]>('store_ink_pages', { root, prefix }),
     inkPage: async (page, what, w, h, scale) => new Uint8Array(await invoke<ArrayBuffer>('store_ink_page', { root, page, what, w, h, scale: scale ?? null })),
     blobTake: (path) => invoke<{ hash: string; size: number }>('store_blob_take', { root, path }),
+    blobGive: (hash, path) => invoke<boolean>('store_blob_give', { root, hash, path }),
     blobRange: async (hash, begin, end) => new Uint8Array(await invoke<ArrayBuffer>('store_blob_range', { root, hash, begin, end })),
     batch: (ops) => invoke<Row[]>('store_batch', { root, ops }),
     meta: () => invoke<[string, string][]>('store_meta', { root }),

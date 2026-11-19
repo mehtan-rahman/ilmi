@@ -1044,6 +1044,13 @@ fn store_blob_take(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores
     stores.take(&collection_dir(&app, &root)?, std::path::Path::new(&path))
 }
 
+/// A blob written to a file on disk without its bytes crossing to the renderer (the repository's folder, kept as the
+/// collection is): true when the file was written, false when it already held it.
+#[tauri::command(async)]
+fn store_blob_give(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, hash: String, path: String) -> Result<bool, String> {
+    stores.give(&collection_dir(&app, &root)?, &hash, std::path::Path::new(&path))
+}
+
 /// A piece of a blob, for a reader that takes a big file as it needs it (the PDF lens).
 #[tauri::command(async)]
 fn store_blob_range(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, hash: String, begin: u64, end: u64) -> Result<tauri::ipc::Response, String> {
@@ -1399,6 +1406,14 @@ async fn sync_push(root: String, token: Option<String>) -> Result<sync::Status, 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
+    // the page's own process can be taken from under it (a device short of memory): the web view is then white
+    // and stays so. It is loaded again; what was being opened when it went is not opened by itself a second time
+    // (`Pdf.tsx`, `fellOpening`)
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    let builder = builder.on_web_content_process_terminate(|webview| {
+        log::warn!("the page's process is gone: loading it again");
+        let _ = webview.reload();
+    });
     // First, so a second launch (the OS opening an `ilmi://` link on
     // Windows or Linux, where a link is an argument to a new process)
     // hands its arguments to the running one and exits. The plugin's
@@ -1435,7 +1450,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, fsrs_fit, plugin_cache_get, plugin_cache_put, plugin_cache_remove, inbox_forget, inbox_sweep, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_shapes, ink_shown, ink_outlines, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, ink_caps, ink_pinch, ink_surface, ink_surface_do, ink_selection, ink_paste, ink_share, pages_pdf, dev_ink_unshare, dev_ink_pencil, dev_ink_stroke, dev_pdf_info, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, dev_ink_picture, dev_ink_plain, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, fsrs_fit, plugin_cache_get, plugin_cache_put, plugin_cache_remove, inbox_forget, inbox_sweep, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_shapes, ink_shown, ink_outlines, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, ink_caps, ink_pinch, ink_surface, ink_surface_do, ink_selection, ink_paste, ink_share, pages_pdf, dev_ink_unshare, dev_ink_pencil, dev_ink_stroke, dev_pdf_info, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, dev_ink_picture, dev_ink_plain, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push, store_blob_give])
         .setup(|app| {
             // the sign-ins to Dropbox and Google Drive are kept in the app's own folder, not a collection's
             if let Ok(dir) = app.path().app_data_dir() {

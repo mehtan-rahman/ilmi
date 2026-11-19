@@ -706,3 +706,10 @@ html[data-mobile="1"] .book .reader-wrap[data-native="1"] > .pdf-view > .meta[da
 .note-surface > .ink-menu { z-index: 8; }
 /* where a sheet lies under the surface: a place, with nothing to see or press */
 .note-surface > .sheet-place { position: absolute; visibility: hidden; pointer-events: none; box-shadow: none; animation: none; }
+
+/* a PDF that did not open: why, a smaller line under it, and `try again` */
+.pdf-fail { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.pdf-fail .pf-detail { font-family: var(--sans); font-style: normal; font-size: var(--t-sm); color: var(--fg-4); }
+.pdf-fail .pf-again { margin-top: 10px; padding: 6px 12px; border: 1px solid var(--line-2); border-radius: var(--radius); background: none; color: var(--fg-2); font-family: var(--sans); font-style: normal; font-size: var(--t-sm); cursor: default; }
+.pdf-fail .pf-again:hover { background: var(--line-3); color: var(--fg-1); }
+html[data-mobile="1"] .pdf-fail .pf-again { min-height: 44px; padding: 0 16px; }

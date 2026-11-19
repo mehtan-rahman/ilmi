@@ -12,17 +12,34 @@ import type { StoreFs } from './store.js';
 /** What never goes in or out: a repository's own folder, the Finder's file, a half-written file. */
 export const skipped = (name: string): boolean => name === '.git' || name === '.DS_Store' || name.endsWith('.ilmi-tmp');
 
-async function copyTree(from: Fs, fromRoot: string, to: Fs, toRoot: string, rel: string, leave?: (path: string) => boolean): Promise<number> {
+/** From this size a file the store keeps as bytes is taken by the store itself where it can be. */
+const TAKE_FROM = 256 * 1024;
+
+/**
+ * A file of a folder into a collection. Where the folder is on disk (`disk`) and the store can take a file by its
+ * path, anything it keeps as bytes (not a document, nothing hidden) and large enough to matter is copied by the
+ * store itself: read here and written back, a scanned book crossed the page twice, which a device has no room for.
+ */
+async function putIn(from: Fs, fromPath: string, to: Fs, toPath: string, rel: string, disk: boolean): Promise<void> {
+  const take = disk ? (to as Partial<StoreFs>).take : undefined;
+  if (take && !rel.endsWith('.md') && !rel.split('/').some((seg) => seg.startsWith('.'))) {
+    const st = await from.stat(fromPath);
+    if (st && !st.isDir && st.size >= TAKE_FROM && await take(toPath, fromPath)) return;
+  }
+  await to.writeBytes(toPath, await from.readBytes(fromPath));
+}
+
+async function copyTree(from: Fs, fromRoot: string, to: Fs, toRoot: string, rel: string, leave?: (path: string) => boolean, disk = false): Promise<number> {
   let files = 0;
   const entries = (await from.readDir(join(fromRoot, rel))).filter((e) => !skipped(e.name)).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const e of entries) {
     const path = rel ? `${rel}/${e.name}` : e.name;
     if (e.isDir) {
       await to.mkdir(join(toRoot, path));
-      files += await copyTree(from, fromRoot, to, toRoot, path, leave);
+      files += await copyTree(from, fromRoot, to, toRoot, path, leave, disk);
     } else if (e.isFile) {
       if (leave?.(path)) continue;
-      await to.writeBytes(join(toRoot, path), await from.readBytes(join(fromRoot, path)));
+      await putIn(from, join(fromRoot, path), to, join(toRoot, path), path, disk);
       files++;
     }
   }
@@ -34,8 +51,8 @@ async function copyTree(from: Fs, fromRoot: string, to: Fs, toRoot: string, rel:
  * collection `to` (a `storeFs`) rooted at `root`: every file, `.ilmi/`
  * included. Resolves to how many files went in.
  */
-export function importFolder(from: Fs, dir: string, to: Fs, root: string): Promise<number> {
-  return copyTree(from, dir, to, root, '');
+export function importFolder(from: Fs, dir: string, to: Fs, root: string, disk = false): Promise<number> {
+  return copyTree(from, dir, to, root, '', undefined, disk);
 }
 
 /**
@@ -65,8 +82,10 @@ const same = (a: Uint8Array, b: Uint8Array): boolean => {
  * (milestone 53) runs over a folder kept this way. Resolves to the
  * vault-relative paths written or removed.
  */
-export async function mirrorFolder(from: Fs, root: string, to: Fs, dir: string): Promise<string[]> {
+export async function mirrorFolder(from: Fs, root: string, to: Fs, dir: string, known?: Map<string, string>, disk = false): Promise<string[]> {
   const changed: string[] = [];
+  const blobAt = (from as Partial<StoreFs>).blobAt;
+  const give = disk ? (from as Partial<StoreFs>).give : undefined;
   const visit = async (rel: string): Promise<void> => {
     await to.mkdir(join(dir, rel));
     const src = (await from.readDir(join(root, rel))).filter((e) => !skipped(e.name));
@@ -87,10 +106,29 @@ export async function mirrorFolder(from: Fs, root: string, to: Fs, dir: string):
         // what is written on a book's page is the same strokes in new bytes every time it is read: only its strokes can say
         const sameInk = (from as Partial<StoreFs>).sameInk;
         if (sameInk && st && !st.isDir && path.startsWith('.ilmi/ink/') && await sameInk(join(root, path), await to.readBytes(join(dir, path)))) continue;
+        // a file kept as bytes that this folder was last seen to hold as the collection names it (`known`: its path
+        // to the bytes' own name) is not read again, from either side, while its size there is still the same: a
+        // scanned book was read twice into the page before every commit
+        const blob = blobAt?.(join(root, path)) ?? null;
+        if (blob && known?.get(path) === blob && st && !st.isDir && st.size === (await from.stat(join(root, path)))?.size) continue;
+        // and where the folder is on disk and the store can write a file itself, it is the store that compares it
+        // (by its hash) and writes it: its bytes do not come here at all
+        if (blob && give && path.split('/').every((seg) => !seg.startsWith('.'))) {
+          const wrote = await give(join(root, path), join(dir, path)).catch(() => null);
+          if (wrote !== null) {
+            known?.set(path, blob);
+            if (wrote) changed.push(path);
+            continue;
+          }
+        }
         const bytes = await from.readBytes(join(root, path));
         if (st?.isDir) await to.remove(join(dir, path));
-        if (st && !st.isDir && st.size === bytes.length && same(await to.readBytes(join(dir, path)), bytes)) continue;
+        if (st && !st.isDir && st.size === bytes.length && same(await to.readBytes(join(dir, path)), bytes)) {
+          if (blob) known?.set(path, blob);
+          continue;
+        }
         await to.writeBytes(join(dir, path), bytes);
+        if (blob) known?.set(path, blob); else known?.delete(path);
         changed.push(path);
       }
     }
@@ -104,7 +142,7 @@ export async function mirrorFolder(from: Fs, root: string, to: Fs, dir: string):
  * `dir` on `from` into the collection (`to`, rooted at `root`), or removed
  * from it when the folder no longer has it.
  */
-export async function takeFiles(from: Fs, dir: string, to: Fs, root: string, paths: readonly string[]): Promise<void> {
+export async function takeFiles(from: Fs, dir: string, to: Fs, root: string, paths: readonly string[], disk = false): Promise<void> {
   for (const path of paths) {
     if (path.split('/').some(skipped)) continue;
     const st = await from.stat(join(dir, path));
@@ -112,7 +150,7 @@ export async function takeFiles(from: Fs, dir: string, to: Fs, root: string, pat
     else if (!st.isDir) {
       const at = path.lastIndexOf('/');
       if (at > 0) await to.mkdir(join(root, path.slice(0, at)));
-      await to.writeBytes(join(root, path), await from.readBytes(join(dir, path)));
+      await putIn(from, join(dir, path), to, join(root, path), path, disk);
     }
   }
 }

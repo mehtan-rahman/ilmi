@@ -80,12 +80,13 @@ vi.mock('../vault.js', async (orig) => {
   return { ...real, currentVault: () => vault };
 });
 vi.mock('../crdt.js', () => ({ crdtWrote: () => {} }));
-/** How often a PDF was asked for. */
+/** How often a PDF was asked for; and what asking for one fails with, when it is to fail. */
 let acquired = 0;
+let failWith: Error | null = null;
 const pdfPage = { getViewport: ({ scale }: { scale: number }) => ({ width: W * scale, height: H * scale }), render: () => ({ promise: Promise.resolve() }), streamTextContent: () => null };
 vi.mock('../bookPdf.js', () => ({
   fillCrops: () => {},
-  acquirePdf: () => { acquired += 1; return { promise: Promise.resolve({ numPages: 2, getPage: async () => pdfPage }), release() {} }; },
+  acquirePdf: () => { acquired += 1; const promise = failWith ? Promise.reject(failWith) : Promise.resolve({ numPages: 2, getPage: async () => pdfPage }); promise.catch(() => {}); return { promise, release() {} }; },
   itemsOf: async () => [],
 }));
 vi.mock('../pdfjs.js', () => ({ TextLayer: class { render() { return Promise.resolve(); } }, pageBits: async () => [{ str: 'text' }], loadPdf: () => { throw new Error('no pdf.js here'); } }));
@@ -1462,6 +1463,46 @@ describe('a written notebook in the lens', () => {
     expect(await fs.readText(`${ROOT}/${NB}`)).toBe(nbText([1, 2, 3]));
     expect(useApp.getState().notice?.line).toContain('clipped · p. 2');
     await vault.update(TYPED, (d) => { d.blocks.splice(1); });
+  });
+
+  it('a pdf that does not open says why, offers `try again`, and is tried again by itself when its bytes arrive', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // its bytes are not on this device yet
+      failWith = new Error('this file is not in the storage yet');
+      await mount(PDF);
+      await wait(40);
+      const fail = q<HTMLElement>('.pdf-fail')!;
+      expect(fail.dataset.why).toBe('away');
+      expect([q('.pf-said')?.textContent, q('.pf-detail')?.textContent, q('.pf-again')?.textContent]).toEqual(['not on this device yet', 'still arriving from the device it was added on', 'try again']);
+      expect(host.textContent).not.toContain('no longer in the collection');
+      // pressed while it still cannot: asked for again, and says the same
+      const before = acquired;
+      await act(async () => { q<HTMLButtonElement>('.pf-again')!.click(); });
+      await wait(60);
+      expect(acquired).toBe(before + 1);
+      expect(q('.pf-said')?.textContent).toBe('not on this device yet');
+      // the file is listed as away, then lands: tried again with no press, and the pages are there
+      await act(async () => { useApp.setState({ away: [PDF] }); });
+      failWith = null;
+      await act(async () => { useApp.setState({ away: [] }); });
+      await act(async () => { await new Promise((r) => setTimeout(r, 750)); });
+      await wait(60);
+      expect(q('.pdf-fail')).toBeNull();
+      expect(qa('.pdf-page').length).toBe(2);
+      act(() => root?.unmount());
+      host.remove();
+      // a file that is here and does not read as a pdf
+      failWith = Object.assign(new Error('Invalid PDF structure.'), { name: 'InvalidPDFException' });
+      await mount(PDF);
+      await wait(40);
+      expect([q<HTMLElement>('.pdf-fail')?.dataset.why, q('.pf-said')?.textContent]).toEqual(['broken', 'this file does not read as a pdf']);
+      expect(q('.pf-again')).not.toBeNull();
+    } finally {
+      failWith = null;
+      useApp.setState({ away: [] });
+      err.mockRestore();
+    }
   });
 
   it('under a finger the rows over the pages are the pane\'s own, outside the scroller; on a Mac they stick in it as they did', async () => {

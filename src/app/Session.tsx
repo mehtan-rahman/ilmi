@@ -21,7 +21,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
 import type { CardSchedule, Doc } from '../format/index.js';
-import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, neverTested, nextGap, owesLearning, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, whenToDate, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
+import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, neverTested, nextGap, owesLearning, metElsewhere, itemOwesLearning, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, whenToDate, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, paceWords, sourceLabel, standing, trailParts, dueTone } from './items.js';
 import { writeDoc } from './sections.js';
 import { queueId } from './names.js';
@@ -208,7 +208,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
   const docPri = useApp((s) => s.docs[item.path]?.pri);
   // a card never tested, and not learnt yet (its line has no `seen`), comes up answered, to learn: its test is at the
   // session's end (the `learnNew` tweak). As the walk had it when the element came up
-  const [learnAt] = useState(() => !given && !!learnable && owesLearning(item.sched));
+  const [learnAt] = useState(() => !given && !!learnable && itemOwesLearning(item));
   // a card graded in this session comes back answered, its grade marked
   const [revealed, setRevealed] = useState(!!given || learnAt);
   // `e`, or a press on a revealed box: the two boxes live in place (`CardFaces.tsx`)
@@ -229,7 +229,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
   const sched = !card ? item.sched : scheduleOf(card, item.group, item.dir);
   // and as the document has it now: a line that has a review since the walk was made (a sync), or that says it was
   // learnt elsewhere, is not up to learn; it is asked, its answer down
-  const learning = learnAt && !(card && (!neverTested(sched) || (sched?.seen !== undefined && !learntHere)));
+  const learning = learnAt && !(card && (!neverTested(sched) || (sched?.seen !== undefined && !learntHere) || metElsewhere(card, sched)));
   useEffect(() => { if (learnAt && !learning && !given) setRevealed(false); }, [learning]);
   const exam = activeExamAt(item.path, now);
   // a grade given again is given from before the one it replaces: so are its hints
@@ -903,7 +903,7 @@ export function Session({ active, onOpen }: Props) {
   // a card learnt and then tested is in the walk twice: one element
   const distinct = new Set(items.map((i) => (i.kind === 'card' ? learnKey(i) : `${i.kind}#${i.path}#${i.kind === 'section' ? `${i.block}#${i.passage ? `${i.passage.hash}#${i.passage.boxes}` : i.heading}` : ''}`))).size;
   // the tests still to come of cards that will be learnt first: counted from the start, so the total does not grow underfoot
-  const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && owesLearning(c.sched) && !learnt.has(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
+  const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && itemOwesLearning(c) && !learnt.has(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
   // a card that comes back is one more when its grade brings it: that cannot be told from the start
   const shownTotal = asked + ahead;
 

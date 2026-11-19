@@ -674,7 +674,9 @@ A card never tested comes up answered the first time, to learn, with one
 choice, `got it`; its test waits at the session's end. `got it` is
 remembered in the collection: leave the queue, close the app, or pick up
 another device after a sync, and the card is asked as a test, not shown to
-learn again. A card graded into its learning steps is asked at the end of
+learn again. A card is learnt once: a both-ways card's other direction and
+a cloze's other blanks, which come on later days, are asked as tests too.
+A card graded into its learning steps is asked at the end of
 whatever session you start next that day, not only the one you graded it
 in. Undo after later, dismiss or suspend takes back only that; a card
 graded in the same file meanwhile keeps its grade.

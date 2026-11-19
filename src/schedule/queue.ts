@@ -67,6 +67,11 @@ export interface CardItem extends ItemBase {
   /** On a both-ways card: the direction this item asks. */
   dir?: Dir;
   /**
+   * Another line of its card (the other direction, another blank) has been learnt or tested: the card has been
+   * met, and this item is not shown to learn; it is asked (`owesLearning`).
+   */
+  met?: true;
+  /**
    * Its sibling (the other direction) is shown today, or was reviewed today:
    * held back until the next day (`dueAt` is then the next day's start).
    * Nothing on disk says so (FORMAT.md §6.2, siblings).
@@ -241,6 +246,7 @@ function cardItems(path: string, block: number, card: Card, trail: readonly stri
     if (sched) item.sched = sched;
     if (group) item.group = group;
     if (dir) item.dir = dir;
+    if (metElsewhere(card, sched)) item.met = true;
     // a link joins bare lines: the item that asks this card's bare line carries it
     const bare = dir === 'f' || (!dir && (!group || (groups.length === 1 && !('n' in group && card.blanks?.[group.n]))));
     if (bare && card.sched?.link !== undefined && card.id !== undefined) item.link = card.sched.link;
@@ -585,6 +591,17 @@ export const neverTested = (s: Pick<CardSchedule, 'state' | 'reps'> | undefined)
 
 /** Never tested, and not learnt yet either (`seen`): it comes up answered first, to learn (the `learnNew` tweak). */
 export const owesLearning = (s: Pick<CardSchedule, 'state' | 'reps' | 'seen'> | undefined): boolean => neverTested(s) && s?.seen === undefined;
+
+/**
+ * A card is learnt once, the first time any of it comes up: whether a line of `card` other than `own` (its other
+ * direction, another of its blanks) has been learnt or tested. Its siblings come on other days, and are asked.
+ */
+export function metElsewhere(card: Card, own: CardSchedule | undefined): boolean {
+  return [card.sched, card.reverse, ...Object.values(card.blanks ?? {})].some((l) => l !== undefined && l !== own && !owesLearning(l));
+}
+
+/** A queue's card comes up to learn: its line owes it, and no other line of its card has been met. */
+export const itemOwesLearning = (c: Pick<CardItem, 'sched' | 'met'>): boolean => owesLearning(c.sched) && !c.met;
 
 /**
  * A card learnt (`got it`): the line the item asks says so, `seen=<now>`, and is otherwise as it was, still new

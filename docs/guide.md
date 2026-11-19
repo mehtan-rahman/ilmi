@@ -1109,6 +1109,12 @@ over the buttons: the deck in front, else the one you chose last on this
 phone. A tap on the name lists the others. `save, another` keeps it open; on a
 cloze, `blank` makes a blank of the selection.
 
+Nothing sits over the keyboard on an iPhone or an iPad but what the app puts
+there (the composer's buttons): the bar a web page gets (`previous`, `next`,
+`done`) is not shown. To put the keyboard away while typing in a note, draw a
+finger down the page and on onto the keyboard; a drag that stays on the page
+only scrolls it.
+
 A document opens as a single page, a notebook's page with no rail. A book opens
 as its pages, and with no pane to put it in `notes` shows the note in their
 place (of several, the one used last; the others are in the tree);

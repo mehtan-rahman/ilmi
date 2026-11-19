@@ -884,6 +884,24 @@ class InkPlugin: Plugin, PenEars {
   /// How near the handle the Pencil comes down to take it, in the screen's points.
   let gripReach: CGFloat = 22
 
+  /// `view` made one of a class of its own, a child of the one it had, whose `inputAccessoryView` is nothing. Once
+  /// for each view: one that is of such a class already is left alone.
+  private static let bareSuffix = "_ilmiNoAccessory"
+  static func noAccessory(_ view: UIView) {
+    guard let was: AnyClass = object_getClass(view) else { return }
+    let name = NSStringFromClass(was)
+    if name.hasSuffix(bareSuffix) { return }
+    let bareName = name + bareSuffix
+    var bare: AnyClass? = NSClassFromString(bareName)
+    if bare == nil, let made = objc_allocateClassPair(was, bareName, 0) {
+      let none: @convention(block) (AnyObject) -> UIView? = { _ in nil }
+      class_addMethod(made, #selector(getter: UIResponder.inputAccessoryView), imp_implementationWithBlock(none), "@@:")
+      objc_registerClassPair(made)
+      bare = made
+    }
+    if let bare { object_setClass(view, bare) }
+  }
+
   override func load(webview: WKWebView) {
     web = webview
     // the page fills the window. The web view does, but it lays the page out short by the status bar and the home
@@ -899,6 +917,19 @@ class InkPlugin: Plugin, PenEars {
     }
     DispatchQueue.main.async(execute: fill)
     NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in fill() }
+    // no bar over the keyboard. The web view puts its own there for any field of a page (previous, next, done), as
+    // a browser must for a form it has never seen; over the app's own fields it is in the way (it lay over a new
+    // card's `cancel` and `save`, which sit on the keyboard), and no app of the system's has one. The view that
+    // takes the keys is the web view's content view: it is made one of a class of its own that has no such bar. Done
+    // again whenever the keyboard is about to come up and when the app comes back, should that view have been made anew
+    let bare = { [weak webview] in
+      guard let w = webview else { return }
+      InkPlugin.noAccessory(w)
+      for v in w.scrollView.subviews where NSStringFromClass(type(of: v)).hasPrefix("WKContent") || NSStringFromClass(type(of: v)).contains("_WKContent") { InkPlugin.noAccessory(v) }
+    }
+    DispatchQueue.main.async(execute: bare)
+    NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in bare() }
+    NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { _ in bare() }
     NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in self?.wentAway() }
     history.levelsOfUndo = 200
     for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange, .NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidOpenUndoGroup] {

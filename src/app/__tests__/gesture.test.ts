@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EDGE, FLING, PULL, ROW_COMMIT, SETTLE_MAX, SETTLE_MIN, SLOP, axisOf, edgeMeans, pullArmed, rowAt, rowCommits, rowEnds, rubber, scrolledSideways, settleEase, settleMs, settlesOpen, velocityOf } from '../gesture.js';
+import { EDGE, FLING, PULL, ROW_COMMIT, SETTLE_MAX, SETTLE_MIN, SLOP, KEYBOARD_DRAG, axisOf, edgeMeans, keyboardDismissed, pullArmed, rowAt, rowCommits, rowEnds, rubber, scrolledSideways, settleEase, settleMs, settlesOpen, velocityOf } from '../gesture.js';
 
 describe('a touch becomes a drag', () => {
   it('rests inside its slop', () => {
@@ -157,5 +157,21 @@ describe('what is under a touch at the edge', () => {
     const outside = node(500);
     const pane = node(0, outside);
     expect(scrolledSideways(node(0, pane), pane)).toBe(false);
+  });
+});
+
+describe('the keyboard under a finger', () => {
+  const TOP = 478;
+  it('goes when a finger is drawn down the page and onto it', () => {
+    expect(keyboardDismissed(300, TOP, TOP)).toBe(true);
+    expect(keyboardDismissed(TOP - KEYBOARD_DRAG, TOP + 2, TOP)).toBe(true);
+  });
+  it('stays for a scroll that keeps to the page', () => {
+    expect(keyboardDismissed(100, TOP - 1, TOP)).toBe(false);
+    expect(keyboardDismissed(300, 120, TOP)).toBe(false);
+  });
+  it('stays for a touch that began on it, and for one that only brushes its edge', () => {
+    expect(keyboardDismissed(TOP + 40, TOP + 200, TOP)).toBe(false);
+    expect(keyboardDismissed(TOP - 5, TOP + 3, TOP)).toBe(false);
   });
 });

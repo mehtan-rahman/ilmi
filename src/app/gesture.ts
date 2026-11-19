@@ -126,3 +126,16 @@ export const PULL = 64;
 
 /** Whether a list `over` px past its top is armed. */
 export const pullArmed = (over: number): boolean => over >= PULL;
+
+// ── the keyboard on the glass ────────────────────────────────────
+
+/** A finger travels at least this far down before it can take the keyboard away, px. */
+export const KEYBOARD_DRAG = 24;
+
+/**
+ * Whether a finger that came down at `from` and is now at `y` puts the keyboard away: it began on the page, above
+ * the keyboard's top edge (`top`), and has been drawn down onto the keyboard.
+ */
+export function keyboardDismissed(from: number, y: number, top: number): boolean {
+  return from < top && y >= top && y - from >= KEYBOARD_DRAG;
+}

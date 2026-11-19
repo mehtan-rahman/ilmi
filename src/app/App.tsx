@@ -33,6 +33,7 @@ import { quiet, startMotion } from './motion.js';
 import { installEdge, openedFromTree, sheetTo } from './edge.js';
 import { installRowSwipe } from './rowSwipe.js';
 import { installPull } from './pull.js';
+import { installKeyboardDrag } from './keyboard.js';
 import { Glyph } from './icons.js';
 
 /** Narrower than this and a drag on the handle hides the sidebar. */
@@ -171,7 +172,7 @@ export function App() {
   // its actions (`rowSwipe.ts`), a list pulled down at its top syncs (`pull.ts`)
   useEffect(() => {
     if (!mobile) return;
-    const stops = [installEdge(), installRowSwipe(), installPull()];
+    const stops = [installEdge(), installRowSwipe(), installPull(), installKeyboardDrag()];
     return () => { for (const stop of stops) stop(); };
   }, [mobile]);
   // portrait: a swipe in from the left edge opens the sheet, a swipe left on it closes it (where nothing moves, `quiet`:

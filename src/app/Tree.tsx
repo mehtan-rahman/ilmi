@@ -43,7 +43,8 @@
 // The open document's row is revealed: its rows above opened and it
 // scrolled into view when the tab changes, the focus left where it was.
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { childDirOf } from '../vault/index.js';
 import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
@@ -75,7 +76,7 @@ interface Editing { id: string; value: string }
 /** The tree's indent (`treeModel.ts`; the smokes read depth back from it). */
 const PAD = TREE_PAD;
 const INDENT = TREE_INDENT;
-const SURF: Surface = { pad: PAD, indent: INDENT, scroller: '.side', spring: (p) => toggleOpen(p, true) };
+const SURF: Surface = { pad: PAD, indent: INDENT, scroller: '.side-scroll, .side', spring: (p) => toggleOpen(p, true) };
 
 // a card's row is no node: nothing of it is selected with others, and ⌘-click is still its tab
 const clickOpts = (e: MouseEvent): OpenOpts => ({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
@@ -382,6 +383,10 @@ export function Tree({ activeId, onOpen }: Props) {
   const picked = selecting ? inOrder(sel.paths, picks) : [];
   const pickedTop = topmost(picked);
   const askedOfPicked = selecting && asking !== null && pickedTop.includes(asking) ? inside(pickedTop) : 0;
+  // (on a device the line is the sidebar's own row over the rows that scroll, `side-top`: pulled past their top, the
+  // rows leave it where it is)
+  const [sideTop, setSideTop] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => { setSideTop(boxRef.current?.closest('.side')?.querySelector<HTMLElement>(':scope > .side-top') ?? null); }, []);
   const selectBar = selecting && (
     <div className="tree-select" role="toolbar" aria-label="selection" onMouseDown={(e) => e.stopPropagation()}>
       <span className="ts-n">{picked.length} selected</span>
@@ -625,7 +630,7 @@ export function Tree({ activeId, onOpen }: Props) {
       data-selecting={selecting ? '1' : undefined}
       onKeyDown={onKey}
     >
-      {selectBar}
+      {selectBar && (sideTop ? createPortal(selectBar, sideTop) : selectBar)}
       {crumb}
       {rows.map((r, i) => (r.card ? cardRow(r) : r.cards ? cardsRow(r) : r.placeholder ? placeholder(r, i) : row(r, i)))}
 

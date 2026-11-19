@@ -10,6 +10,9 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Selection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import { EditorView, type Decoration, type NodeView } from 'prosemirror-view';
 import { keepInView, visibleBottom } from './viewport.js';
+import { usePaneSlot } from './paneSlot.js';
+import { createPortal, flushSync } from 'react-dom';
+import type { ReactElement, ReactNode } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PRI_DEFAULT, blanksIn, cardFields, clozeSegments, formatBody, formatBox, mathSpanEnd, meta, parse, parseClip, serialize, setField, type Blank, type CardSeg, type Block, type Card, type Doc, type MathSeg, type SectionSchedule } from '../format/index.js';
 import {
@@ -1050,11 +1053,36 @@ export function handleClickOn(view: EditorView, _pos: number, node: PMNode, node
 }
 
 /** ⌘-click on a link opens it; a plain click puts the caret, as anywhere. */
-export function handleClick(view: EditorView, _pos: number, event: MouseEvent): boolean {
-  // under a finger there is no ⌘: a tap on a link opens it while the note is only being read (no caret in it, no
-  // keyboard up); while it is being typed in a tap puts the caret, and the link's field has `open`
-  const tapped = useApp.getState().mobile && !view.hasFocus() && !document.documentElement.hasAttribute('data-keyboard');
-  if (!event.metaKey && !event.ctrlKey && !tapped) return false;
+export function handleClick(_view: EditorView, _pos: number, event: MouseEvent): boolean {
+  if (!event.metaKey && !event.ctrlKey) return false;
+  const href = (event.target as HTMLElement | null)?.closest<HTMLElement>('.md-link')?.dataset.href;
+  if (!href) return false;
+  event.preventDefault();
+  openLink(href);
+  return true;
+}
+
+// Under a finger there is no ⌘: a tap on a link opens it while the note is only being read (no caret in it, no
+// keyboard up); while it is being typed in a tap puts the caret, and the link's field has `open`. Whether it was being
+// read is known where the touch begins: by the click the touch itself has given the page the caret.
+const readTouch = new WeakMap<EditorView, { x: number; y: number; t: number }>();
+const TAP_FAR = 10;
+const TAP_LONG = 500;
+export function linkTouchStart(view: EditorView, event: TouchEvent): boolean {
+  readTouch.delete(view);
+  if (!useApp.getState().mobile || event.touches.length !== 1) return false;
+  if (view.hasFocus() || document.documentElement.hasAttribute('data-keyboard')) return false;
+  const t = event.touches[0]!;
+  readTouch.set(view, { x: t.clientX, y: t.clientY, t: event.timeStamp });
+  return false;
+}
+/** The touch lifted where it began, soon, on a link: the link is opened, and the page is given no caret for it. */
+export function linkTouchEnd(view: EditorView, event: TouchEvent): boolean {
+  const was = readTouch.get(view);
+  readTouch.delete(view);
+  const t = event.changedTouches[0];
+  if (!was || !t || event.touches.length > 0) return false;
+  if (Math.hypot(t.clientX - was.x, t.clientY - was.y) > TAP_FAR || event.timeStamp - was.t > TAP_LONG) return false;
   const href = (event.target as HTMLElement | null)?.closest<HTMLElement>('.md-link')?.dataset.href;
   if (!href) return false;
   event.preventDefault();
@@ -1462,6 +1490,10 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   /** The note holds ink areas (an iPad): the writing tools stand under its header. */
   const [inked, setInked] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  // on a device the find bar is the pane's row over what scrolls, not a bar sticking in it (`paneSlot.ts`)
+  const paneOver = usePaneSlot(wrapRef, 'over');
+  const mobileNow = useApp((st) => st.mobile);
+  const overPane = (bar: ReactElement): ReactNode => (paneOver ? createPortal(bar, paneOver) : bar);
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const writerRef = useRef<Writer | null>(null);
@@ -1602,6 +1634,30 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     try { const c = view.coordsAtPos(s.from); at = { left: c.left, top: c.top, bottom: c.bottom }; } catch { /* not drawn yet */ }
     setSlash({ state: s, items, at });
   };
+  // The glass's keyboard comes up, or goes, while the page has the caret: the room changed under it. The caret is
+  // brought back into what is left (it was left behind the keyboard when the keyboard came after the tap that put
+  // it), and a `/` menu open at it is placed again where the caret now is.
+  const followSlashRef = useRef(followSlash);
+  followSlashRef.current = followSlash;
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!mobileNow || !vv) return;
+    let frame = 0;
+    const fit = () => {
+      cancelAnimationFrame(frame);
+      // (a frame on: the shell has its new height by then, `App.tsx`)
+      frame = requestAnimationFrame(() => {
+        const view = viewRef.current;
+        if (!view || !view.hasFocus()) return;
+        let at: { top: number; bottom: number } | null = null;
+        try { at = view.coordsAtPos(view.state.selection.head); } catch { at = null; }
+        if (at && (at.bottom > visibleBottom() - 4 || at.top < 0)) view.dispatch(view.state.tr.scrollIntoView());
+        if (slashKey.getState(view.state)) requestAnimationFrame(() => { if (viewRef.current === view) followSlashRef.current(view, view.state); });
+      });
+    };
+    vv.addEventListener('resize', fit);
+    return () => { cancelAnimationFrame(frame); vv.removeEventListener('resize', fit); };
+  }, [mobileNow]);
   const findWas = useRef<FindState | null>(null);
   const followFind = (view: EditorView, state: EditorState) => {
     const f = findKey.getState(state);
@@ -1768,6 +1824,8 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
           handleDOMEvents: {
             blur: () => { writer.flush(); return false; },
             contextmenu: (view, event) => editorMenu(view, event),
+            touchstart: (view, event) => linkTouchStart(view, event),
+            touchend: (view, event) => linkTouchEnd(view, event),
           },
           // a card double-clicked opens in the card view, its document's cards around it
           handleDoubleClickOn(view, _pos, node, nodePos, _event, direct) {
@@ -2173,8 +2231,14 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     // a selection within a line seeds the field, as a browser's find does
     const { from, to, $from } = view.state.selection;
     const seed = from < to && $from.sameParent(view.state.doc.resolve(to)) ? view.state.doc.textBetween(from, to) : null;
-    if (!cur?.open || seed) findMeta({ query: seed ?? cur?.query ?? '', from });
-    setFindUi((u) => ({ ...u, replace: replace && view.editable ? true : u.replace && view.editable }));
+    const show = () => {
+      if (!cur?.open || seed) findMeta({ query: seed ?? cur?.query ?? '', from });
+      setFindUi((u) => ({ ...u, replace: replace && view.editable ? true : u.replace && view.editable }));
+    };
+    // under a finger the keyboard comes only for a field given the caret within the tap itself: the bar is drawn
+    // now, and its field focused before the tap is over (a moment later the field had the caret and no keyboard)
+    if (mobileNow) { flushSync(show); findRef.current?.focus(); findRef.current?.select(); return; }
+    show();
     setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0);
   };
   const closeFind = () => {
@@ -2409,7 +2473,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       }}
     >
       <div className={`reader doc-view${reading ? ' reading' : ''}${notes ? ' book-notes-doc' : ''}`} data-frozen={frozen ? '1' : '0'}>
-        {find && (
+        {find && overPane(
           <div className="find-bar">
             <input
               ref={findRef}
@@ -2445,8 +2509,15 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
                 <button type="button" className="fb-b" onClick={replaceEvery} title="⌘⏎">all</button>
               </>
             )}
-            <span className="fb-keys"><span className="kbd">⏎</span> <span className="kbd">⇧⏎</span> <span className="kbd">esc</span></span>
-          </div>
+            {/* under a finger there is no ⇧⏎ and no esc, and the keyboard may be put away: the three are pressed */}
+            {mobileNow ? (
+              <span className="fb-acts">
+                <button type="button" className="fb-b" data-act="prev" disabled={!find.matches.length} onClick={() => findMeta({ step: -1 })}>previous</button>
+                <button type="button" className="fb-b" data-act="next" disabled={!find.matches.length} onClick={() => findMeta({ step: 1 })}>next</button>
+                <button type="button" className="fb-b" data-act="done" onClick={closeFind}>done</button>
+              </span>
+            ) : <span className="fb-keys"><span className="kbd">⏎</span> <span className="kbd">⇧⏎</span> <span className="kbd">esc</span></span>}
+          </div>,
         )}
         {notes ? (
           <div className="meta notes-meta">
@@ -2473,7 +2544,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
             </select>
           )}
           {/* find in the note: ⌘F's, for a hand with no ⌘ and for whoever looks for the word */}
-          <button type="button" className="frozen-tag find-word" title="find ⌘F" onClick={() => openFind(false)}>find</button>
+          <button type="button" className="frozen-tag find-word" data-on={find ? '1' : undefined} aria-pressed={!!find} title="find ⌘F" onClick={() => openFind(false)}>find</button>
           {right && <span className="right" title={rightTip}>{right}</span>}
         </div>
         )}

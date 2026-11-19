@@ -351,9 +351,20 @@ export function App() {
         {(sideOn || kept) && (
           <div className="side" data-sheet={sheet ? '1' : undefined} data-kept={kept ? '1' : undefined} style={sheet ? ({ '--sheet-w': `${Math.min(sidebar.width, Math.round(win * 0.84))}px` } as React.CSSProperties) : undefined}>
             {phone && <div className="side-head"><b className="ws">{baseOf(vault ?? '') || 'collection'}</b></div>}
-            <h6>workspace</h6>
-            <Tree activeId={active} onOpen={onTreeOpen} />
-            <SavedQueries activeId={active} />
+            {/* on a device what scrolls is the rows alone: the head, the selecting line (`side-top`: the tree draws it
+                there) and the foot are the sidebar's own, and a pull past the rows' edge leaves them where they are */}
+            {mobile && <div className="side-top" />}
+            {mobile ? (
+              <div className="side-scroll">
+                <h6>workspace</h6>
+                <Tree activeId={active} onOpen={onTreeOpen} />
+                <SavedQueries activeId={active} />
+              </div>
+            ) : (<>
+              <h6>workspace</h6>
+              <Tree activeId={active} onOpen={onTreeOpen} />
+              <SavedQueries activeId={active} />
+            </>)}
             {phone && (
               <div className="side-foot">
                 <button type="button" className="side-find" onClick={() => useApp.setState({ paletteOpen: true, sideSheet: false })}><span className="g"><Glyph g="⌕" /></span><span className="lbl">open or run</span></button>

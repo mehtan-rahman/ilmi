@@ -284,7 +284,8 @@ contents, a link, a reference, a section more than a screen away. ⌫ goes
 back to that place exactly, and again to the one before; ⇧⌫ goes forward.
 Scrolling by hand after going back keeps the way forward until the next
 jump. The strip at the bottom says `⌫ back` while there is somewhere to go
-back to. The trail is the book's own and is kept while the app is open.
+back to. So does the word `back` among the words over the pages, which
+goes back when pressed: under a finger it is the way. The trail is the book's own and is kept while the app is open.
 
 A right-click on a selection offers `passage` and `card` as the two buttons
 under it do, and `search the web` and `search scholar`, which open your
@@ -1017,6 +1018,19 @@ the note below, since half the width cannot hold a page. Where the Mac has
 a right-click, hold: a row, a heading and a deck's
 card open their menus when the finger lifts, and a row held and then moved
 is dragged.
+
+What the Mac does with a key held, a finger does with a word on the glass.
+A deck's card held has `select` in its menu, as a row of the tree has: from
+then a tap puts a card in or out, the line over the cards says how many and
+what can be done with them, and `done` ends it. `find` among the words over
+a note opens the find bar with the keyboard; `previous`, `next` and `done`
+are on the bar, and `find` stays lit while it is open. A link tapped in a
+note you are only reading opens; once the note has the caret a tap puts the
+caret, and the link's field has `open`. After a jump in a book, `back` among
+the words over the pages goes back to where it was made from (below). The
+bars that belong to a pane or to the sidebar (find, a session's bar, the
+sidebar's head and foot, the selecting line) stay where they are when the
+page under them is pulled past its edge.
 
 Writing with the Pencil: there is nothing to open. Put it to a PDF's page
 or to a page of a written notebook and the first touch is a stroke there,

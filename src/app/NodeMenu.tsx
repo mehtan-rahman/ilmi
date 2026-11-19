@@ -52,6 +52,8 @@ export function placeMenu(el: HTMLElement | null): void {
   // (on a device the foot of the glass is the home bar's: the menu ends above it)
   const foot = document.documentElement.dataset.mobile === '1' ? 26 : 6;
   if (r.bottom > visibleBottom() - foot + 6) el.style.top = `${Math.max(0, visibleBottom() - r.height - foot)}px`;
+  // (and at the right: `move to…`, with its field and its long names, is wider than the menu it was opened from)
+  if (r.right > window.innerWidth - 6) el.style.left = `${Math.max(6, window.innerWidth - r.width - 6)}px`;
 }
 
 /** An open menu: the node it is for (`''` the root), where, whether `move to…` is showing, and whether it is the `+` menu. */

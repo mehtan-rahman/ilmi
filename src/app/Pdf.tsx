@@ -2990,6 +2990,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
           {/* the bar's first row: the row itself only where the tools make a second under it (an iPad); anywhere else its words are the bar's own */}
           <div className="pt-row">
           {status === 'ok' && !written && <button type="button" className="pt-btn" data-tool="contents" title="contents t" aria-label="contents" onClick={() => openContents(id)}><Icon name="menu" /></button>}
+          {/* after a jump (a link, a heading, a hit, a mark): back to where it was made from, what ⌫ does; a finger has no ⌫ */}
+          {status === 'ok' && trail.back.length > 0 && <button type="button" className="frozen-tag pt-back" data-tool="back" title="back to where you were ⌫" onClick={() => { goBack(); }}>back</button>}
           <h1 className="pt-title" title={id}>{titleOf(id, docs, root)}</h1>
           {/* a written notebook is its own notes: the word is there only when it has a note already */}
           {!(phone && session) && (!written || hasNotes) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} data-has={hasNotes ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>{notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes'}</button>}

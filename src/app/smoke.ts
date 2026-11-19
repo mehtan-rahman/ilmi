@@ -4786,13 +4786,13 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     window.getSelection()?.removeAllRanges();
     (document.activeElement as HTMLElement | null)?.blur();
     expect('⌘F taken', await key('f', { code: 'KeyF', ...MOD }, window), 'the page took it');
-    const input = await until(() => q<HTMLInputElement>('.pane-body .find-bar .fb-q'), 2000).catch(() => null);
+    const input = await until(() => q<HTMLInputElement>('.pane .find-bar .fb-q'), 2000).catch(() => null);
     await sleep(200);
     expect('the find bar', !!input && document.activeElement === input, input ? `focused ${document.activeElement === input}` : 'no bar');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, WORD);
     input!.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(300);
-    const count = () => q<HTMLElement>('.pane-body .find-bar .fb-n')?.textContent ?? '';
+    const count = () => q<HTMLElement>('.pane .find-bar .fb-n')?.textContent ?? '';
     // every match is lit: by its own span, by a mark in a table's cell or a card, or (where the drawing hides it) by its atom's ring; each names its index
     const litIndices = () => new Set(qa<HTMLElement>('.pane-body .draft-doc [data-find]').flatMap((el) => (el.dataset.find ?? '').split(' ').filter(Boolean)));
     expect('count', count() === `1/${want}`, `"${count()}", the file has ${want} unvoweled in the text outside formulas`);
@@ -4828,7 +4828,7 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     expect('the voweled word finds the same', count() === `1/${want}`, count());
     input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await sleep(200);
-    expect('Esc closes the bar', !q('.pane-body .find-bar'), q('.pane-body .find-bar') ? 'still open' : 'closed');
+    expect('Esc closes the bar', !q('.pane .find-bar'), q('.pane .find-bar') ? 'still open' : 'closed');
     await sleep(700);
     expect('the file untouched', (await text(KANA)) === kanaBefore, 'no write');
 
@@ -4837,8 +4837,8 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     window.getSelection()?.removeAllRanges();
     (document.activeElement as HTMLElement | null)?.blur();
     await key('f', { code: 'KeyF', altKey: true, ...MOD }, window);
-    const fq = await until(() => q<HTMLInputElement>('.pane-body .find-bar .fb-q'), 2000);
-    const fr = await until(() => q<HTMLInputElement>('.pane-body .find-bar .fb-r'), 2000).catch(() => null);
+    const fq = await until(() => q<HTMLInputElement>('.pane .find-bar .fb-q'), 2000);
+    const fr = await until(() => q<HTMLInputElement>('.pane .find-bar .fb-r'), 2000).catch(() => null);
     expect('⌥⌘F replace row', !!fr, fr ? 'shown' : 'none');
     const set = (el: HTMLInputElement, v: string) => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
@@ -4855,7 +4855,7 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     await sleep(200);
     set(fr!, 'matter wave');
     await sleep(200);
-    q<HTMLElement>('.pane-body .find-bar .fb-b:last-of-type')?.click();
+    q<HTMLElement>('.pane .find-bar .fb-b:last-of-type')?.click();
     await expectLines('replace all', ['- matter wave packets', '- matter wave functions']);
     fq.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await sleep(200);
@@ -4864,9 +4864,9 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     await open(SOURCE);
     (document.activeElement as HTMLElement | null)?.blur();
     await key('f', { code: 'KeyF', altKey: true, ...MOD }, window);
-    await until(() => q('.pane-body .find-bar .fb-q'), 2000);
-    expect('frozen: no replace row', !q('.pane-body .find-bar .fb-r'), `editable ${surface().isContentEditable}`);
-    q<HTMLInputElement>('.pane-body .find-bar .fb-q')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await until(() => q('.pane .find-bar .fb-q'), 2000);
+    expect('frozen: no replace row', !q('.pane .find-bar .fb-r'), `editable ${surface().isContentEditable}`);
+    q<HTMLInputElement>('.pane .find-bar .fb-q')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
 
     await open(NOTE);
     const final = await text();
@@ -7539,7 +7539,7 @@ export async function smokeSections(vault: Vault): Promise<void> {
   /** A session at one section; resolves once its bar is drawn on it. */
   const sessionAt = async (s: SectionItem) => {
     openSession(s);
-    await poll(() => { const el = useApp.getState().sessionEl; return el?.kind === 'section' && sameItem(el.item, s) && q('.pane[data-active="1"] .doc-session[data-el="section"] .session-bar') ? true : null; }, `a session on § ${s.heading.slice(0, 40)}`, 8000);
+    await poll(() => { const el = useApp.getState().sessionEl; return el?.kind === 'section' && sameItem(el.item, s) && q('.pane[data-active="1"] .doc-session[data-el="section"]') && q('.pane[data-active="1"] .session-bar') ? true : null; }, `a session on § ${s.heading.slice(0, 40)}`, 8000);
     await sleep(600);
   };
   /** The current element moved on to the one after `s` in the session's order. */
@@ -8484,7 +8484,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
   /** A session at one item; resolves once its bar is drawn in the book. */
   const sessionAt = async (s: SectionItem | ReadItem, page: number) => {
     openSession(s);
-    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, s) && q(`.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="${page}"] canvas`) && q('.pane[data-active="1"] .doc-session .session-bar') ? true : null; }, `the session opens the book at p. ${page}`, 45000); // a covered window draws its pages slowly
+    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, s) && q(`.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="${page}"] canvas`) && q('.pane[data-active="1"] .doc-session') && q('.pane[data-active="1"] .session-bar') ? true : null; }, `the session opens the book at p. ${page}`, 45000); // a covered window draws its pages slowly
     await sleep(600);
   };
   const bar = () => q<HTMLElement>('.pane[data-active="1"] .session-bar')!;
@@ -8746,7 +8746,7 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
   const where = (r: HTMLElement | undefined) => q('.ref-line', r ?? document.createElement('div'))?.textContent ?? '';
   const sessionAt = async (s: SectionItem) => {
     openSession(s);
-    await poll(() => { const el = useApp.getState().sessionEl; return el?.kind === 'section' && sameItem(el.item, s) && q('.pane[data-active="1"] .doc-session[data-el="section"] .session-bar') ? true : null; }, 'the session is on it, its bar drawn', 15000);
+    await poll(() => { const el = useApp.getState().sessionEl; return el?.kind === 'section' && sameItem(el.item, s) && q('.pane[data-active="1"] .doc-session[data-el="section"]') && q('.pane[data-active="1"] .session-bar') ? true : null; }, 'the session is on it, its bar drawn', 15000);
     await sleep(600);
   };
   const changed = (p: string, before: string, what: string) => poll(async () => { const t = await text(p); return t !== before ? t : null; }, what, 8000);
@@ -9215,7 +9215,7 @@ export async function smokeCadence(vault: Vault): Promise<void> {
   const order = () => due().map(itemSeed);
   const sessionAt = async (it: QueueItem) => {
     openSession(it);
-    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, it) && q('.pane[data-active="1"] .doc-session .session-bar') ? true : null; }, `the session opens at ${it.path}`, 20000);
+    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, it) && q('.pane[data-active="1"] .doc-session') && q('.pane[data-active="1"] .session-bar') ? true : null; }, `the session opens at ${it.path}`, 20000);
     await sleep(500);
   };
   const bar = () => q<HTMLElement>('.pane[data-active="1"] .session-bar')!;
@@ -14258,7 +14258,7 @@ export async function smokeFinish(vault: Vault): Promise<void> {
     const body = q<HTMLElement>('.pane[data-active="1"] .pane-body');
     if (body) body.scrollTop = 0;
     openSession(it);
-    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, it) && q('.pane[data-active="1"] .doc-session .session-bar') ? true : null; }, `the session opens at ${it.path}`, 20000);
+    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, it) && q('.pane[data-active="1"] .doc-session') && q('.pane[data-active="1"] .session-bar') ? true : null; }, `the session opens at ${it.path}`, 20000);
     await sleep(500);
   };
   const bar = () => q<HTMLElement>('.pane[data-active="1"] .session-bar')!;

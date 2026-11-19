@@ -6,6 +6,27 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-19 — what was fixed blind, seen under real touches; a pane's bars stay under a pull; picking a deck's cards and going back in a book by touch
+
+The round before fixed ten touch faults without seeing four of them. This one drove them on the simulators with the touch rig (a note written for it: a link, two tasks, a table, twenty paragraphs), light and dark, and fixed what did not hold.
+
+**Seen, and what it turned up.**
+- A tap on a link did not open it: by the click the touch has already given the page the caret, so `!view.hasFocus()` was never true and the link's markers opened instead. Whether the note was only being read is now taken where the touch begins, and the link opened where it ends (`linkTouchStart`, `linkTouchEnd` in `Reader.tsx`; the touch's end is prevented, so no caret and no keyboard). `link-tap.test.ts`.
+- `find` tapped gave a bar whose field had the caret and no keyboard (the focus came a moment after the tap), and the bar had only key caps (⏎ ⇧⏎ esc): with the keyboard put away there was no way on, back or out. The bar is drawn within the tap (`flushSync`) and focused there; on a device it has `previous`, `next`, `done`. The word `find` is lit while the bar is open, as `text` is.
+- `move to…` from the tree's selecting line (and any row's menu on a phone) was 453 points wide on a 402-point glass. A menu is never wider than the glass and is kept in at the right (`placeMenu`); the list's icons, which lay over the names of the rows at depth 0 (an absolute icon, an indent by depth), go beside the names. That was so on the Mac too.
+- With the keyboard gone and back while the page has the caret (the rig's typing does this; a keyboard undocked does too), the caret was left behind the keyboard and a `/` menu stayed where the caret had been. The page brings the caret back into what is left and places the menu again when the room changes.
+- The task's box, the table's `···` and `+`, the `/` menu's rows and the menus with the keyboard up held as they were.
+
+**The phone's card sheet** has the row of blanks under its passage, and no hint about ⌘B (an iPad's popover says `select the words, then press blank`).
+
+**Bars under a pull.** Pulled past their edge, a phone's scrollers took along the find bar, a session's bar (lifted off the foot), the sidebar's head and foot and the tree's selecting line. They are no longer inside what scrolls: a pane on a device has a row over and a row under its scroller (`pane-over`, `pane-under`; `paneSlot.ts`), and the sidebar scrolls its rows alone (`side-scroll`, the selecting line in `side-top`). The deck's bar is not one of these: at the top it is not stuck, and stuck it holds at the foot's pull. The pull to sync reads the new scroller. The Mac has none of these rows.
+
+**By touch.** A deck's card held has `select`; taps then toggle, the line has `done`, and its words are a finger's height. A book's words over its pages have `back` while the trail has a place (the Mac too).
+
+**Measured, not a fault.** A note pushed in on a phone: the page is at the right edge until its words are in the document (352 ms for a long note first opened, 75 ms for a short one) and only then moves; no frame of the slide had an empty page.
+
+---
+
 ## 2026-11-19 — a cloze's blanks edited under a finger; a blank grown to take a missed word
 
 A cloze made on an iPad or a phone could not have its blanks changed there: `blank`, `blank · with N`, `move to group` and `remove blank` are the editor's right-click menu (`editorMenu`, `Reader.tsx`), and a long press in text being typed brings the system's bubble, never that menu. Only a phone's new card had a `blank` button.

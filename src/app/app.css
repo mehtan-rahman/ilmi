@@ -355,7 +355,7 @@
 .tree .hoist-crumb .hc.here { color: var(--fg-2); }
 /* under a finger, picking several (the row menu's `select`): how many, and what is done to them; it stays at the
    sidebar's head as the rows scroll under it */
-.tree .tree-select {
+.tree-select {
   position: sticky;
   top: 0;
   z-index: 3;
@@ -372,8 +372,8 @@
   color: var(--fg-2);
 }
 /* the count is never cut: the words after it give way first */
-.tree .tree-select .ts-n { flex: 1 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.tree .tree-select .ts-b {
+.tree-select .ts-n { flex: 1 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tree-select .ts-b {
   appearance: none;
   -webkit-appearance: none;
   border: 0;
@@ -389,10 +389,10 @@
   text-overflow: ellipsis;
   cursor: default;
 }
-.tree .tree-select .ts-b:active { background: var(--line-2); }
-.tree .tree-select .ts-b.danger { color: var(--danger); }
-.tree .tree-select .ts-b:disabled { color: var(--fg-5); }
-[data-theme="eink"] .tree .tree-select .ts-b.danger:not(:disabled) { color: var(--fg-1); font-weight: 600; }
+.tree-select .ts-b:active { background: var(--line-2); }
+.tree-select .ts-b.danger { color: var(--danger); }
+.tree-select .ts-b:disabled { color: var(--fg-5); }
+[data-theme="eink"] .tree-select .ts-b.danger:not(:disabled) { color: var(--fg-1); font-weight: 600; }
 /* while picking, a row's own `+` and `···` are out of the way: a tap anywhere on it is the pick */
 .tree[data-selecting="1"] .row .row-acts { display: none; }
 .tree .row[draggable="true"]:active { cursor: grabbing; }
@@ -510,6 +510,8 @@
   position: fixed;
   z-index: 80;
   min-width: 184px;
+  /* never wider than the glass: a long name is cut with its dots */
+  max-width: calc(100vw - 12px);
   background: var(--paper);
   border: 1px solid var(--line-1);
   border-radius: var(--radius);
@@ -1327,6 +1329,9 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .reader .meta .tabs-toggle[data-on="1"] { color: var(--accent); }
 /* a PDF's `text` toggle: lit while the Markdown is read instead of the pages */
 .reader .meta .text-toggle[data-on="1"] { color: var(--accent); }
+/* `find` among a note's words is lit while its bar is open, as `text` is */
+.reader .meta .find-word[data-on="1"] { color: var(--accent); }
+[data-theme="eink"] .reader .meta .find-word[data-on="1"] { color: var(--fg); text-decoration: underline; }
 
 /* Arabic names in one-line rows: `dir="auto"` orders each name its own way,
    the row stays left-aligned with its neighbours, and the clip a cut-off
@@ -1390,6 +1395,8 @@ textarea[dir="auto"] { unicode-bidi: plaintext; }
 .ctx-menu .ci .mv-where { margin-left: auto; padding-left: 10px; color: var(--fg-3); font-size: 11.5px; white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
 .ctx-menu .ci.none { color: var(--fg-3); cursor: default; }
 .ctx-menu .sub-scroll .ci { display: flex; align-items: center; }
+/* (a row of the list is indented by its depth: its icon goes with its name, not at the menu's edge under it) */
+.ctx-menu .sub-scroll .ci .cg { position: static; flex: none; margin: 0 8px 0 0; }
 /* the title, edited where it stands (Reader.tsx `TitleField`) */
 .reader h1.doc-title { outline: none; border-radius: var(--radius); cursor: text; }
 .reader h1.doc-title:hover { box-shadow: 0 0 0 4px var(--line-2); background: var(--line-2); }

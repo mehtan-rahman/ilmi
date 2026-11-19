@@ -711,3 +711,38 @@ html[data-theme="dark"] input[type="range"] { color-scheme: dark; }
 .insp .frozen-row:has(> .deck-default) > *, .insp .frozen-row:has(> .opt-action) > * { grid-column: 1; }
 .insp .frozen-row > .deck-default, .insp .frozen-row > .opt-action { display: flex; justify-self: stretch; }
 .insp .deck-default button, .insp .opt-action button { flex: 1 1 0; }
+
+/* ── a device: what is the pane's or the sidebar's stays put under a pull ─────────────────────────────────────────
+   A scroller pulled past its edge takes all its content along (the system's rubber band), a bar sticking to that
+   edge too. So on a device such a bar is not in the scroller: a pane has a row over and a row under what scrolls
+   (`paneSlot.ts`), the sidebar scrolls its rows alone. */
+.pane-over, .pane-under { flex: 0 0 auto; min-width: 0; position: relative; z-index: 2; background: var(--paper); }
+.pane-over:empty, .pane-under:empty { display: none; }
+/* find in a note: the pane's first row, the page's width of words in it */
+.pane-over > .find-bar { position: static; margin: 0; padding: 4px max(16px, env(safe-area-inset-right, 0px)) 4px max(16px, env(safe-area-inset-left, 0px)); align-items: center; }
+.find-bar .fb-acts { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; }
+.find-bar .fb-acts .fb-b { border: 0; min-height: 36px; padding: 0 8px; font-size: var(--t-sm); color: var(--fg-1); }
+.find-bar .fb-acts .fb-b:disabled { color: var(--fg-5); }
+.find-bar .fb-acts .fb-b:active:not(:disabled) { background: var(--line-2); }
+html[data-mobile="1"] .find-bar input { flex: 1 1 60px; min-width: 40px; width: auto; font-size: 16px; }
+html[data-mobile="1"] .find-bar .fb-n { min-width: 0; white-space: nowrap; }
+/* a session's bar: floating over the page's foot as it did (an iPad), the pane's foot on a phone */
+.pane-under > .session-bar { position: absolute; left: 0; right: 0; bottom: 14px; margin: 0 auto; }
+.pane-under:has(> .session-bar) { display: block; height: 0; background: none; }
+html[data-shape="phone"] .pane-under > .session-bar { position: static; margin: 0; }
+html[data-shape="phone"] .pane-under:has(> .session-bar) { height: auto; background: var(--paper); }
+/* the sidebar: its rows scroll, the rest is its own */
+html[data-mobile="1"] .side { display: flex; flex-direction: column; overflow: hidden; padding-top: 0; padding-bottom: 0; }
+.side-top { flex: 0 0 auto; }
+.side-top:empty { display: none; }
+.side-scroll { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--s-4) 0; }
+html[data-shape="phone"] .side-scroll { padding: 6px 0 var(--s-4); }
+.side-top > .tree-select { position: static; margin-bottom: 0; }
+html[data-shape="phone"] .doc-session[data-bar-out="1"] .reader-wrap { padding-bottom: 40px; }
+/* a deck's cards picked under a finger: what is done to them is pressed, a finger's height each; `done` at the row's end */
+html[data-mobile="1"] .deck-bar .db-actions { display: flex; flex-wrap: wrap; align-items: center; }
+html[data-mobile="1"] .deck-bar .db-actions .db-sel { font-variant-numeric: tabular-nums; margin-right: 6px; }
+html[data-mobile="1"] .deck-bar .db-actions button { min-height: 40px; padding: 0 8px; color: var(--fg-1); }
+html[data-mobile="1"] .deck-bar .db-actions button[data-act="delete"] { color: var(--danger); }
+html[data-mobile="1"] .deck-bar .db-actions button[data-act="done"] { margin-left: auto; font-weight: 500; }
+html[data-mobile="1"] .deck-bar .db-actions button:active { background: var(--line-2); }

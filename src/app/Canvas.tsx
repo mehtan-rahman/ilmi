@@ -109,10 +109,15 @@ const POP_MS = 280;
 
 /** A phone's page. Drawn again only when what it shows changes, not when the canvas moves pages about. */
 const Page = memo(function Page({ tab, active }: { tab: Tab; active: boolean }) {
+  // (the rows over and under what scrolls: a bar that is the pane's is drawn there, `paneSlot.ts`)
   return (
-    <div className="pane-body">
-      <Lens key={tab.key} id={tab.id} active={active} onOpen={openIn} />
-    </div>
+    <>
+      <div className="pane-over" />
+      <div className="pane-body">
+        <Lens key={tab.key} id={tab.id} active={active} onOpen={openIn} />
+      </div>
+      <div className="pane-under" />
+    </>
   );
 });
 
@@ -307,11 +312,13 @@ function Panes() {
           >
             <TabBar pane={pane} index={pi} canClosePane={panes.panes.length > 1} />
             {/* the intake is not covered by a menu: uncovered again it takes the focus for its text, from the row a menu's rename has just begun; the menu has every key meanwhile */}
+            {mobile && <div className="pane-over" />}
             <div className="pane-body">
               {tab
                 ? <Lens key={tab.key} id={tab.id} active={pi === panes.active && !covered && !(menuOpen && tab.id !== INTAKE)} onOpen={onOpen} />
                 : <div className="empty center pane-empty"><span>{mobile ? 'nothing open · press a row in the sidebar' : <><kbd>⌘k</kbd> to open · or press a row in the sidebar</>}</span></div>}
             </div>
+            {mobile && <div className="pane-under" />}
           </div>
         );
       })}

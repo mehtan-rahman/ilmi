@@ -6,6 +6,7 @@
 // to name: buttons at its foot, `blank` for ⌘B, front and back, no priority.
 
 import { makeBlank } from '../reader/index.js';
+import { useApp } from './store.js';
 import { FaceField, faceViews, pressIntoFace } from './FaceField.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PRI_MAX, PRI_MIN, clozeParts, mathSpanEnd, nextGroup, parsePri, type CardForm } from '../format/index.js';
@@ -58,6 +59,8 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
   const [gen, setGen] = useState(0);
 
 
+  const mobile = useApp((st) => st.mobile);
+  const phone = useApp((st) => st.phone);
   const spec: CardSpec = form === 'cloze' ? { form, text } : form === 'qa' ? { form, front, back } : { form, left, right };
   const out = cardText(spec);
 
@@ -97,7 +100,11 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
 
   // the passage shows its own blanks; with none yet, how one is made
   const hasBlank = form === 'cloze' && clozeParts(text).some((p) => typeof p !== 'string');
-  const preview: ReactNode = <span className="hint">select the words, then <kbd className="kbd">⌘B</kbd> or right-click · blank</span>;
+  // (under a finger there is no ⌘B and no right-click: the row of blanks is what is pressed, `BlankRow`. A phone's
+  // sheet has the row under its passage, and the row says it all)
+  const preview: ReactNode = mobile
+    ? <span className="hint">select the words, then press blank</span>
+    : <span className="hint">select the words, then <kbd className="kbd">⌘B</kbd> or right-click · blank</span>;
 
   return (
     <div className="composer">
@@ -115,10 +122,10 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
       {form === 'cloze' && (
         <>
           <div className="composer-face" dir="auto" ref={faceRef} onMouseDown={pressIntoFace}>
-            <FaceField key={gen} value={text} placeholder="passage" autoFocus blanks blankRow={quick !== undefined ? 'inline' : undefined} onChange={setText} />
+            <FaceField key={gen} value={text} placeholder="passage" autoFocus blanks blankRow={quick !== undefined || phone ? 'inline' : undefined} onChange={setText} />
           </div>
           {/* (a phone's new card has the row of blanks under its passage, drawn by the field: `blank`, `with N`, `remove blank`) */}
-          {quick === undefined && (hasBlank ? null : <div className="preview">{preview}</div>)}
+          {quick === undefined && !phone && (hasBlank ? null : <div className="preview">{preview}</div>)}
         </>
       )}
       {form !== 'cloze' && (

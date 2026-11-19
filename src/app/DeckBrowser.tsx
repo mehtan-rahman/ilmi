@@ -573,6 +573,10 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const plugins = usePlugins();
   // a phone's `+` is at its foot, and starts on the deck in front (`quick.ts`)
   const phone = useApp((s) => s.phone);
+  const mobile = useApp((s) => s.mobile);
+  // under a finger there is no ⌘-click: the row menu's `select` begins a selection of several (as the tree's does),
+  // a tap then puts a row in or takes it out, `done` ends it
+  const [selecting, setSelecting] = useState(false);
   const mem = useMemo(() => memoryOf(root, home), [root, home]);
   const [q, setQText] = useState(mem.q);
   const setQ = (v: string) => { mem.q = v; setQText(v); };
@@ -797,7 +801,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
         if (chosen.length) { e.preventDefault(); run(chosen.map(refOf), { kind: 'delete' }); }
         else if (at >= 0) { e.preventDefault(); removeOne(shown[at]!); }
       } else if (e.key === 'Escape' && !menu) {
-        if (sel.keys.length || cursorKey) { e.preventDefault(); setSel(NO_SELECTION); point(undefined); }
+        if (sel.keys.length || cursorKey || selecting) { e.preventDefault(); setSelecting(false); setSel(NO_SELECTION); point(undefined); }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -806,7 +810,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
 
   const onRowClick = (r: DeckRow, e: React.MouseEvent) => {
     if (e.shiftKey) e.preventDefault();
-    setSel((s) => clickSelect(s, r.key, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey }, keys));
+    setSel((s) => clickSelect(s, r.key, { shift: e.shiftKey, meta: selecting || e.metaKey || e.ctrlKey }, keys));
     point(r);
   };
 
@@ -819,7 +823,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       e.preventDefault();
       // the row's menu alone: under a folder's lens the press would open the folder's menu too
       e.stopPropagation();
-      if (!selSet.has(r.key)) setSel({ keys: [r.key], anchor: r.key });
+      if (!selSet.has(r.key)) setSel(selecting ? { keys: [...sel.keys, r.key], anchor: r.key } : { keys: [r.key], anchor: r.key });
       point(r);
       setMenu({ x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, key: r.key, sub: false });
     },
@@ -914,10 +918,10 @@ export function DeckBrowser({ home, active }: BrowserProps) {
             <button key={s} type="button" className="chip" data-on={view.states.includes(s) ? '1' : '0'} data-chip={s} onClick={() => setView({ states: toggle(view.states, s) })}>{s}</button>
           ))}
           <span className="chip-gap" />
-          <button type="button" className="chip" data-on={similar ? '1' : '0'} data-chip="similar" title="cards that seem to test the same fact" onClick={() => { setSimilar(!similar); setSel(NO_SELECTION); }}>similar</button>
+          <button type="button" className="chip" data-on={similar ? '1' : '0'} data-chip="similar" title="cards that seem to test the same fact" onClick={() => { setSimilar(!similar); setSelecting(false); setSel(NO_SELECTION); }}>similar</button>
         </div>
-        {!similar && chosen.length > 0 && (
-          <div className="db-row db-actions">
+        {!similar && (chosen.length > 0 || selecting) && (
+          <div className="db-row db-actions" data-selecting={selecting ? '1' : undefined}>
             <span className="db-sel">{chosen.length} selected</span>
             <button type="button" data-act="move" onClick={() => setBulkMenu(bulkMenu === 'move' ? null : 'move')}>move to…</button>
             <button type="button" data-act="delete" onClick={() => run(chosen.map(refOf), { kind: 'delete' })}>delete</button>
@@ -950,6 +954,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
               <button type="button" data-act="pri" onClick={() => { setPriText(''); setBulkMenu('pri'); }}>set priority</button>
             )}
             <button type="button" data-act="study" onClick={() => study(new Set(chosen.map((r) => r.key)))}>study these</button>
+            {selecting && <button type="button" data-act="done" onClick={() => { setSelecting(false); setBulkMenu(null); setSel(NO_SELECTION); }}>done</button>}
             {bulkMenu === 'move' && (
               <div className="db-move sub-scroll">
                 {targets.map((t) => (
@@ -979,6 +984,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
               <div className="ci" onClick={() => { setMenu(null); editIn(menuRow); }}><span className="cg"><Glyph g="✎" /></span>edit<span className="ck">⏎</span></div>
               <div className="ci has-sub" onClick={(e) => { e.stopPropagation(); setMenu({ ...menu, sub: true }); }}><span className="cg"><Glyph g="→" /></span>move to…<span className="ck"><Glyph g="▸" /></span></div>
               <div className="ci" onClick={() => run([refOf(menuRow)], { kind: menuRow.suspended ? 'unsuspend' : 'suspend' })}><span className="cg"><Glyph g="‖" /></span>{menuRow.suspended ? 'unsuspend' : 'suspend'}</div>
+              {mobile && !selecting && <div className="ci" data-act="select" onClick={() => { setMenu(null); setSelecting(true); setSel({ keys: [menuRow.key], anchor: menuRow.key }); }}><span className="cg"><Glyph g="✓" /></span>select</div>}
               <div className="cd" />
               <div className="ci danger" onClick={() => { setMenu(null); removeOne(menuRow); }}><span className="cg"><Glyph g="⌫" /></span>delete card</div>
             </>

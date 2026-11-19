@@ -18,6 +18,8 @@
 // which asking brought which element, and which are not asked after all.
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { usePaneSlot } from './paneSlot.js';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
 import type { CardSchedule, Doc } from '../format/index.js';
@@ -121,12 +123,14 @@ interface BarProps extends NavProps {
   glyph: string;
   /** The walk's length as counted: the tests still to come of cards learnt first are in it. */
   of?: number | undefined;
+  /** On a device, the pane's row under what scrolls: the bar is drawn there (`paneSlot.ts`). */
+  under?: HTMLElement | null;
   children: ReactNode;
 }
 
 /** The control bar at the foot of a reading, writing, or section element. */
-function SessionBar({ idx, total, of, kind, word, pri, what, stands, pace, glyph, children, onPrev, onNext, onOut }: BarProps) {
-  return (
+function SessionBar({ idx, total, of, kind, word, pri, what, stands, pace, glyph, children, onPrev, onNext, onOut, under }: BarProps) {
+  const bar = (
     <div className="session-bar">
       <div className="sb-inner">
         <div className="sb-meta">
@@ -145,6 +149,7 @@ function SessionBar({ idx, total, of, kind, word, pri, what, stands, pace, glyph
       </div>
     </div>
   );
+  return under ? createPortal(bar, under) : bar;
 }
 
 // ── a card ───────────────────────────────────────────────────────
@@ -550,6 +555,7 @@ export function putBackDoc(item: ReadItem | WriteItem | SectionItem, before: Doc
 
 function DocSession({ item, active, onAct, done, onPass, ...nav }: DocProps) {
   const barRef = useRef<HTMLDivElement>(null);
+  const under = usePaneSlot(barRef, 'under');
   const info = useApp((s) => s.docs[item.path]);
   const docs = useApp((s) => s.docs);
   const phone = useApp((s) => s.phone);
@@ -599,9 +605,9 @@ function DocSession({ item, active, onAct, done, onPass, ...nav }: DocProps) {
   const word = note ? 'note' : item.kind === 'read' && item.extract ? 'extract' : item.kind === 'section' && item.passage ? 'passage' : undefined;
   const what = plainMath(section ? `${docs[item.path]?.title ?? sourceLabel(item, docs)} › ${item.heading}` : sourceLabel(item, docs));
   return (
-    <div className="doc-session" ref={barRef} data-el={item.kind} data-book={pages ? '1' : '0'}>
+    <div className="doc-session" ref={barRef} data-bar-out={!pages && under ? '1' : undefined} data-el={item.kind} data-book={pages ? '1' : '0'}>
       {pages ? <Pdf id={pagesId} active={active} session readOn={item.kind === 'read'} onLast={setLast} /> : <Reader id={item.path} active={active} />}
-      <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} pace={paceWords(item, appNow())} glyph={glyphOf(item)} {...nav}>
+      <SessionBar under={pages ? null : under} kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} pace={paceWords(item, appNow())} glyph={glyphOf(item)} {...nav}>
         {done ? (<>
           <span className="sb-done" data-done={done.action}>{done.word}</span>
           <button type="button" data-act="pass" onClick={onPass}><span className="ra-l">next</span><kbd>⏎</kbd></button>

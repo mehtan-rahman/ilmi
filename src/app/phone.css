@@ -270,6 +270,7 @@ html[data-shape="phone"] .reveal-all:active { background: var(--line-2); }
 
 /* a topic in a session: its page, the bar across the foot */
 html[data-shape="phone"] .session-bar { position: sticky; bottom: 0; max-width: none; padding: 0; margin: -150px 0 0; }
+html[data-shape="phone"] .pane-under > .session-bar { max-width: none; padding: 0; }
 html[data-shape="phone"] .session-bar .sb-inner { border-width: 1px 0 0; border-radius: 0; padding: 2px max(10px, var(--safe-r)) calc(10px + var(--safe-b)) max(10px, var(--safe-l)); }
 html[data-shape="phone"] .session-bar .sb-meta { margin-bottom: 2px; gap: 8px; }
 html[data-shape="phone"] .session-bar .sb-count { font-size: var(--t-sm); }
@@ -300,11 +301,10 @@ html[data-shape="phone"] .side[data-sheet="1"] {
 }
 /* the sheet's head: the collection's name, under the clock, staying there as the tree scrolls */
 .side-head {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 2;
   flex-shrink: 0;
-  margin: 0 -10px 6px;
+  margin: 0 -10px 0;
   padding: calc(var(--safe-t) + 4px) 16px 10px;
   background: var(--bg);
   font-family: var(--sans);
@@ -324,11 +324,10 @@ html[data-shape="phone"] .tree .row .away { font-size: var(--t-xs); }
 /* the sheet's foot, under the thumb that opened it: the palette's field, and under it where sync stands (pressed, a
    sync now) and the settings */
 .side-foot {
-  position: sticky;
-  bottom: 0;
+  position: relative;
   z-index: 2;
   flex-shrink: 0;
-  margin: auto -10px 0;
+  margin: 0 -10px 0;
   border-top: 1px solid var(--line-1);
   background: var(--bg);
 }

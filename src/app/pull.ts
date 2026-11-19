@@ -15,7 +15,7 @@ import { syncWord } from './sync.js';
 import { syncAsked } from './TopStrip.js';
 
 /** Whether `el` is a list that can be pulled: a pane showing a queue, the sidebar. */
-const pulls = (el: HTMLElement): boolean => el.matches('.side') || (el.matches('.pane-body') && el.querySelector(':scope > .queue') !== null);
+const pulls = (el: HTMLElement): boolean => el.matches('.side-scroll, .side') || (el.matches('.pane-body') && el.querySelector(':scope > .queue') !== null);
 
 let word: HTMLElement | null = null;
 /** The list being pulled, where its top is on the glass, and whether it is past the threshold. */

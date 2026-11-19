@@ -35,6 +35,25 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "fileAssociations": [
+      { "ext": ["pdf"], "contentTypes": ["com.adobe.pdf"], "name": "PDF", "role": "Viewer", "rank": "Alternate" },
+      { "ext": ["epub"], "contentTypes": ["org.idpf.epub-container"], "name": "EPUB", "role": "Viewer", "rank": "Alternate" },
+      {
+        "ext": ["apkg"],
+        "contentTypes": ["dev.ilmi.apkg"],
+        "name": "Anki package",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "exportedType": { "identifier": "dev.ilmi.apkg", "conformsTo": ["public.data"] }
+      },
+      {
+        "ext": ["md", "markdown", "txt", "text", "html", "htm", "csv", "tsv"],
+        "contentTypes": ["net.daringfireball.markdown", "public.plain-text", "public.html", "public.comma-separated-values-text", "public.tab-separated-values-text"],
+        "name": "Text",
+        "role": "Viewer",
+        "rank": "Alternate"
+      }
+    ],
     "macOS": {
       "minimumSystemVersion": "10.15"
     }

@@ -2,11 +2,39 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- the vaults are cloned into the app's Documents; these two show that folder in the Files app -->
+	<!-- the app's Documents are reachable from a Mac (Finder's file sharing) -->
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<!-- a file opened in ilmi (below) is handed over as a copy, in the app's own Inbox: a plain file it may read,
+	     which the collection takes in and the app then removes (`src/app/opened.ts`). In place, the file would be
+	     another app's, readable only through the one address object the system gave. -->
 	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
+	<false/>
+	<!-- The kinds ilmi is offered for (`open in ilmi` on a share sheet, `open with` in Files) are `fileAssociations`
+	     in tauri.conf.json: the build writes CFBundleDocumentTypes from them, for the Mac's bundle too, and an
+	     array given here is replaced by that one. Anki's package is a type of ilmi's own naming, declared there. -->
+	<!-- a kind the system may have no name of its own for: Markdown -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>net.daringfireball.markdown</string>
+			<key>UTTypeDescription</key>
+			<string>Markdown</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>md</string>
+					<string>markdown</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 	<!-- `scan a code` reads a pairing code off another device's screen (milestone 84) -->
 	<key>NSCameraUsageDescription</key>
 	<string>ilmi uses the camera to scan a pairing code shown by ilmi on another device.</string>

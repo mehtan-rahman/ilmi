@@ -763,8 +763,26 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
 
 // ── open ─────────────────────────────────────────────────────────
 
+/** The openings under way: a collection is in the store before its tree, its documents and its tabs are (below). */
+let opening = 0;
+/**
+ * Whether a collection is open and its opening over: its tree and documents published, its tabs back. What comes
+ * from outside to land in it (a file the system handed over, `opened.ts`) waits for this: landed while the opening
+ * was still going, its document was written and then neither shown nor said.
+ */
+export const vaultSettled = (): boolean => current !== null && opening === 0;
+
 /** Open the collection whose folder is `path` (its database read through the store), watch it, and publish its tree. */
 export async function openVault(path: string): Promise<Vault> {
+  opening += 1;
+  try {
+    return await openVaultNow(path);
+  } finally {
+    opening -= 1;
+  }
+}
+
+async function openVaultNow(path: string): Promise<Vault> {
   // what the open collection has waiting to be saved is written to it first (the same one opened again reads it back)
   await flushSave();
   // the one asked for is opened before the open one is let go: one that does not open leaves the window as it was,

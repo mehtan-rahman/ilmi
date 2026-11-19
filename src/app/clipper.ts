@@ -19,6 +19,7 @@ import { fetchReadable, type PageInfo } from './fetch.js';
 import { folderPaths } from './names.js';
 import { useApp } from './store.js';
 import { currentVault, note, openNode } from './vault.js';
+import { isFileUrl, takeOpened, watchOpened } from './opened.js';
 
 /** A link that came before any vault was open; it lands when one opens. */
 let pending: string | null = null;
@@ -142,9 +143,12 @@ export function listenForClips(): void {
       if (u === last && now - lastAt < 2000) continue;
       last = u;
       lastAt = now;
+      // (a file the system handed over, `open in ilmi`: it lands as a dropped file does, `opened.ts`)
+      if (isFileUrl(u)) { void takeOpened(u).then(toFront); continue; }
       void handleUri(u);
     }
   };
+  watchOpened();
   getCurrent().then(take, () => { /* not under Tauri */ });
   onOpenUrl(take).catch(() => { /* not under Tauri */ });
   useApp.subscribe((s, prev) => {

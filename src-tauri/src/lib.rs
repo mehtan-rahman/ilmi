@@ -95,6 +95,61 @@ fn local_path(given: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(given)
 }
 
+/// Whether `p` is a copy the system left for the app when a file was opened
+/// in it (an iPad's or an iPhone's share sheet, `open in ilmi`): a file
+/// directly in `Inbox` under the app's Documents, or in a folder named
+/// `…-Inbox` under its temporary files. Nothing else is ever removed by
+/// `inbox_forget` and `inbox_sweep`.
+fn inbox_copy(p: &std::path::Path, docs: &std::path::Path, tmp: &std::path::Path) -> bool {
+    let Some(dir) = p.parent() else { return false };
+    if p.file_name().is_none() {
+        return false;
+    }
+    if dir == docs.join("Inbox") {
+        return true;
+    }
+    dir.parent() == Some(tmp) && dir.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with("-Inbox"))
+}
+
+/// The collection has the file: the system's copy of it is removed. True
+/// when a copy was removed; false for anything that is not such a copy (a
+/// Mac's file opened with ilmi is the person's own and stays).
+#[tauri::command]
+fn inbox_forget(app: tauri::AppHandle, path: String) -> bool {
+    if !cfg!(target_os = "ios") {
+        return false;
+    }
+    let (Ok(docs), Ok(tmp)) = (app.path().document_dir(), app.path().temp_dir()) else { return false };
+    let given = local_path(&path);
+    // (the system names the copy through `/private/var/…`, the app's folders through `/var/…`: both are made whole)
+    let whole = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let p = whole(&given);
+    inbox_copy(&p, &whole(&docs), &whole(&tmp)) && p.is_file() && std::fs::remove_file(&p).is_ok()
+}
+
+/// How long a copy never taken in is kept (a file that needed a choice in
+/// the intake, or could not be read), seconds.
+const INBOX_KEEP: u64 = 24 * 60 * 60;
+
+/// The copies in the app's `Inbox` older than a day are removed. The count
+/// removed.
+#[tauri::command]
+fn inbox_sweep(app: tauri::AppHandle) -> usize {
+    if !cfg!(target_os = "ios") {
+        return 0;
+    }
+    let Ok(docs) = app.path().document_dir() else { return 0 };
+    let Ok(dir) = std::fs::read_dir(docs.join("Inbox")) else { return 0 };
+    let mut n = 0;
+    for e in dir.flatten() {
+        let old = e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.elapsed().ok()).is_some_and(|d| d.as_secs() > INBOX_KEEP);
+        if old && e.path().is_file() && std::fs::remove_file(e.path()).is_ok() {
+            n += 1;
+        }
+    }
+    n
+}
+
 /// A file dropped on the window, read as text. The fs scope covers only the
 /// vault; a drop is a gesture on one file, so that file is read here by
 /// path and nothing is added to the scope.
@@ -1338,7 +1393,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_shapes, ink_shown, ink_outlines, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, ink_caps, ink_pinch, ink_surface, ink_surface_do, ink_selection, ink_paste, ink_share, pages_pdf, dev_ink_unshare, dev_ink_pencil, dev_ink_stroke, dev_pdf_info, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, dev_ink_picture, dev_ink_plain, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, inbox_forget, inbox_sweep, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_shapes, ink_shown, ink_outlines, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, ink_caps, ink_pinch, ink_surface, ink_surface_do, ink_selection, ink_paste, ink_share, pages_pdf, dev_ink_unshare, dev_ink_pencil, dev_ink_stroke, dev_pdf_info, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, dev_ink_picture, dev_ink_plain, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // the sign-ins to Dropbox and Google Drive are kept in the app's own folder, not a collection's
             if let Ok(dir) = app.path().app_data_dir() {
@@ -1457,6 +1512,29 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::smoke_json;
+
+    #[test]
+    fn only_the_systems_own_copies_are_inbox_copies() {
+        use super::inbox_copy;
+        use std::path::Path;
+        let docs = Path::new("/var/mobile/Containers/Data/Application/X/Documents");
+        let tmp = Path::new("/var/mobile/Containers/Data/Application/X/tmp");
+        // a file opened in the app: a copy directly in Documents/Inbox
+        assert!(inbox_copy(&docs.join("Inbox/paper.pdf"), docs, tmp));
+        assert!(inbox_copy(&docs.join("Inbox/a name with spaces-2.pdf"), docs, tmp));
+        // or in a folder of the temporary files the system names …-Inbox
+        assert!(inbox_copy(&tmp.join("dev.ilmi.app-Inbox/paper.pdf"), docs, tmp));
+        // a collection's own files are never one, wherever a folder is called Inbox
+        assert!(!inbox_copy(&docs.join("double-major/Inbox/paper.pdf"), docs, tmp));
+        assert!(!inbox_copy(&docs.join("paper.pdf"), docs, tmp));
+        assert!(!inbox_copy(&docs.join("Inbox/deeper/paper.pdf"), docs, tmp));
+        assert!(!inbox_copy(&docs.join("Inbox"), docs, tmp));
+        assert!(!inbox_copy(&tmp.join("paper.pdf"), docs, tmp));
+        assert!(!inbox_copy(&tmp.join("other/dev.ilmi.app-Inbox/paper.pdf"), docs, tmp));
+        // nor a person's own folder of that name anywhere else
+        assert!(!inbox_copy(Path::new("/Users/someone/Inbox/paper.pdf"), docs, tmp));
+        assert!(!inbox_copy(Path::new("/"), docs, tmp));
+    }
 
     #[test]
     fn smoke_json_stands_in_for_the_environment() {

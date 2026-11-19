@@ -21,6 +21,7 @@
 // collection (`pair.ts`, `scan.ts`), and the collection is made here from
 // the remote or the storage the code names, as if its fields had been typed.
 
+import { useOpenedWaiting } from './opened.js';
 import type { DragDropEvent } from '@tauri-apps/api/webview';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ENTRY_GLYPH } from './chrome.js';
@@ -321,6 +322,7 @@ export function Welcome() {
     e.stopPropagation();
   };
 
+  const kept = useOpenedWaiting();
   return (
     <main className="welcome" data-drag={drag ? '1' : '0'}>
       <div className="welcome-panel">
@@ -341,6 +343,8 @@ export function Welcome() {
             {!naming && <span className="welcome-problem">{importing ? 'importing…' : problem ?? ''}</span>}
           </div>
         )}
+        {/* a file the system handed over before any collection is open (`opened.ts`) */}
+        {kept && <div className="welcome-said" data-kept="1" role="status">{kept}</div>}
         {mobile && !connecting && !joining && (pairing || problem) && (
           <div className="welcome-said">{pairing ? 'connecting…' : problem}</div>
         )}

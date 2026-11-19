@@ -155,6 +155,18 @@ choices. `Import…` and the menus' `import a file…` take the picker the same
 way, and an address pasted (⌘V) with no field or editor focused is clipped
 into the active tab's folder and opened.
 
+A file can also be sent to ilmi from outside it. On an iPad or an iPhone,
+`share` on a PDF, an EPUB, an Anki package or a text or Markdown file (in
+Files, in Safari, wherever the system's share sheet comes up) has ilmi in
+its row of apps; on a Mac the same kinds can be dropped on ilmi's icon in
+the Dock or opened with it from the Finder's `Open With`. ilmi comes to the
+front, started if it was not running, and the file lands as a dropped one
+does: in the folder of the document in front (the root when there is none),
+opened, with the notice and its `undo`. ilmi is never the app a kind opens
+in by default. With no collection open the welcome says the file is kept,
+and it comes in when a collection is opened; quit before that and it has to
+be shared again.
+
 ### A PDF
 
 A PDF dropped on the intake lands on its own: the file, in the tree by its
@@ -1006,6 +1018,14 @@ strip of keys at the foot and the key caps beside the buttons are hidden on
 an iPad and a phone. With a keyboard attached the keys are the Mac's, and
 the first key pressed on it brings the strip and the caps back (they go
 again when the keyboard on the glass comes up).
+
+To bring a file in from another app, share it and choose ilmi in the share
+sheet's row of apps (see Bringing things in): a PDF open in Safari or kept
+in Files becomes a source in the collection and opens. Files' own `Open
+With` lists only apps that edit a file where it lies, which ilmi does not:
+it takes a copy. A web page's address shared from Safari is not offered
+ilmi (that would take a share extension); the `ilmi://` link is the way
+for a page.
 
 Reading a book there: a finger scrolls the pages. To box a passage, rest the
 finger on the page a moment and then drag (the Pencil writes on the page,

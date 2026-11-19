@@ -18,10 +18,14 @@ export {
   type QueueItem, type Fold, type CardItem, type ReadItem, type WriteItem, type SectionItem, type GroupKey, type Dir, type Scope, type Counts, type GradeOptions,
 } from './queue.js';
 export {
-  CURVE_GRID, applyScores, between, canonicalLog, crossing, dueOf, indexLog, logKeyOf, recallOf, schedCardOf, scoreKey, slotKeys, slotted,
+  CURVE_GRID, applyScores, canonicalLog, crossing, dueOf, indexLog, logKeyOf, recallOf, schedCardOf, scoreKey, slotKeys, slotted,
   type Outcome, type SchedCard, type SchedContext, type Scheduler, type Score,
 } from './slot.js';
-export { bareLined,withState, stronger, cardsById, partnerOf, linkedWith, buryLinked, copyToPartner, type LinkedCard } from './links.js';
+export {
+  FSRS7_ID, FSRS7_MIN_ITEMS, fitCards, fitItems, fitReviews, fsrs7FitIn, fsrs7Scheduler, fsrs7State, fsrs7Weights, wholeFor, wholeHistory,
+  type FitReview, type Fsrs7Fit, type Fsrs7State,
+} from './fsrs7.js';
+export { bareLined, withState, stronger, cardsById, partnerOf, linkedWith, buryLinked, copyToPartner, type LinkedCard } from './links.js';
 export {
   OPTION_DEFAULTS, OPTION_KEYS, ownersOf, resolveOptions, allowanceOf, meterQueue, spentToday, becomesLeech, isNewItem,
   examNewQuota,

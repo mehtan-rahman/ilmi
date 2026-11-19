@@ -39,6 +39,20 @@ when new ones land the slot asks for a rebuild. A grade goes through
 `built in` chosen none of this runs (`laySlot` returns before it reads an
 item).
 
+The built in is FSRS-6 through ts-fsrs 5.4.2 and stays so. ts-fsrs 6.0.0 is
+installed beside it under the name `ts-fsrs-6` for one thing, its FSRS-7
+model (`ts-fsrs-6/models/fsrs-7`): 6.0.0's own FSRS-6 schedules differently
+from 5.4.2 in places (a `hard` in the learning steps is 5m30s, not 6m; some
+`good` and `easy` intervals in review are a day or two shorter), so
+replacing the one with the other would have moved cards. `src/schedule/fsrs7.ts`
+is FSRS-7 as a scheduler in the slot, each card's memory replayed from the
+review log; `src/plugins/fsrs7.ts` holds its weights and runs the fit.
+`fit to my reviews` sends the log to `fsrs_fit` (`src-tauri/src/fit.rs`, the
+`fsrs` crate 7.0.0, on the CPU, no model file), which builds for iOS.
+`npm run fixture:fit` fits the sample collection's log and writes
+`src/schedule/__tests__/fsrs7-sample-fit.json`, which `fsrs7.test.ts` reads
+as the app reads a fit; run it again after changing `fit.rs` or the crate.
+
 The search index (`search` and `search_grams`, FTS5's trigram tokenizer, in
 the same database) is folded in TypeScript and only there: `src/format/fold.ts`
 is the one rule, for the deck search, find in the page, and the index, and
@@ -67,6 +81,7 @@ npm run fixture:pdf    # regenerate the corpus's PDFs (two-pages.pdf, and alone.
 npm run fixture:anki   # regenerate the two-deck Anki package and its JSON (cargo)
 npm run fixture:epub   # regenerate the three-chapter EPUB and its JSON (cargo)
 npm run plugins        # build the plugins under plugins/ (esbuild) and refresh plugins/ilmi.d.ts
+npm run fixture:fit    # fit FSRS-7 to the sample collection's review log (Rust) and write the weights the tests read
 ```
 
 `npm run plugins` builds the plugins the repo ships under `plugins/`; how a
@@ -1059,14 +1074,14 @@ index.html         Vite entry
 src/app/           renderer: React, Zustand store, tokens.css
 src/format/        parser and serializer, the only code that reads or writes a document's text
 src/vault/         open, walk, read, write, watch, and reshape a vault; pure over an Fs interface. store.ts is a collection's rows as an Fs (tauri-store.ts over the Rust side, mem-store.ts for tests), transfer.ts a folder in and out
-src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query; slot.ts is the scheduler slot's pure side (which cards another scheduler is asked about, its scores laid over the queue)
+src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query; slot.ts is the scheduler slot's pure side (which cards another scheduler is asked about, its scores laid over the queue), fsrs7.ts FSRS-7 as a scheduler in it
 src/import/        text from a paste, a page, a list of cards, an Anki package, a book in EPUB, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts the loader) and its tweaks section; scheduler.ts is the scheduler slot's runtime (what is registered, the collection's choice, the scores), index.ts starts both over the open collection
 src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, the tree and each directory's order from the registers, change files and snapshots in a storage, the PDFs fetched when asked for; src/app/crdt.ts runs it, src/app/storage.ts makes the storages); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins, barcode-scanner on iOS, and ink/, its own: the PencilKit canvases on iOS and a drawing read as strokes; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), cloud.rs Dropbox and Google Drive as storages, oauth.rs the sign-in to them and its tokens, devstore.rs and devcloud.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, cache.rs a plugin's bytes on the device, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
+src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins, barcode-scanner on iOS, and ink/, its own: the PencilKit canvases on iOS and a drawing read as strokes; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), cloud.rs Dropbox and Google Drive as storages, oauth.rs the sign-in to them and its tokens, devstore.rs and devcloud.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, cache.rs a plugin's bytes on the device, fit.rs FSRS-7's weights fitted to a review log, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
 ```
 
 ## The documents

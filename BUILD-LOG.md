@@ -6,6 +6,35 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-19 — FSRS-7 through the slot, fitted to the collection's own reviews
+
+The plan was FSRS-7 as the new built in, with the old one's state migrated. The libraries say otherwise, so it is a scheduler in the slot (`fsrs-7`, carried by the app) and the built in is unchanged.
+
+**What the libraries are** (read from their packages, not from memory).
+- ts-fsrs 6.0.0 (MIT; needs Node 24; depends on `@open-spaced-repetition/srs-kit` 1.0.0, BSD-3-Clause): FSRS-7 is the default of its new `DefaultScheduler`; the old `fsrs()` stays, deprecated, on FSRS-6. FSRS-7 has 34 weights and a memory of three numbers (`stability`, `stabilityFast`, `difficulty`), and counts time in fractions of a day.
+- Its migration notes: "To move learned cards to FSRS-7, use FSRS-7 weights and rebuild memory from complete review history … do not reuse FSRS-6 weights or invent `stabilityFast` … Learned cards without complete history must remain on FSRS-6." So an `sr` line cannot be converted, and a line that held FSRS-7's state would need a field more and sub-day intervals: a format change, which this round was not to make.
+- 6.0.0's own FSRS-6 is not 5.4.2's. Side by side over 200,000 schedules (40,000 reviews of 1,600 cards, each with its four buttons), 11,172 differed: a `hard` in the learning steps is 5m30s where it was 6m, and some `good` and `easy` intervals in review are one or two days shorter. Replacing the package would have moved cards with nothing chosen. So 5.4.2 stays for the built in, and 6.0.0 is installed beside it as `ts-fsrs-6` for its FSRS-7 model alone.
+- `fsrs` (fsrs-rs) 7.0.0, BSD-3-Clause: FSRS-7 with its optimiser, on the CPU. It no longer depends on burn (ndarray, rayon, wide), so it builds for iOS: `cargo check` passes for `aarch64-apple-ios` and `aarch64-apple-ios-sim`. Its defaults are ts-fsrs's 34, digit for digit (a test holds them together). It trains from 64 items (`MIN_ITEMS_TO_TRAIN`; an item is a review of a card that had one before); under that it returns its defaults.
+- `@open-spaced-repetition/binding` 0.6.1 (MIT): the same optimiser through napi and WASI. Not used: the Rust side is already there, off the main thread, with no WASM to ship.
+
+**FSRS-7 as a scheduler** (`src/schedule/fsrs7.ts`). Date-less: each card's memory is replayed from the review log (from its first review, `st` new, or its first since a reset), `recall` is its retrievability now, `curve` the same looked at ahead, `preview` when recall is next at the target after each grade. Nothing is written, so its sub-day intervals need no place in the format: a card comes up when the queue is next scored after its recall has fallen. A card the log does not have whole (no first review in it, or reviewed since the log's last line of it) gets no word and stays on the built in, as the notes ask.
+
+**The fit.** `fit to my reviews` (the `fsrs-7 weights` row under `scheduler` while it is chosen, and the palette) sends the log to `fsrs_fit` (`src-tauri/src/fit.rs`) and keeps the weights in `.ilmi/scheduler.json` under `fsrs7`, with the count of reviews and the day (FORMAT.md §1), to four decimals. Asked for only; offered from 64 items.
+
+**On the sample collection** (`samples/double-major`, 774 lines, 5144 reviews), in `fsrs7.test.ts`:
+- every document is byte for byte what it was after FSRS-7 has scored it; a grade writes the line the built in writes;
+- with the log cut so one notebook's first reviews are missing, its 167 cards are the built in's to the field and the other 531 are scored;
+- with the log as it is all 698 reviewed cards are scored: 198 are due today by the built in, 259 by FSRS-7's defaults. That is the difference between the two models, and going back to `built in` undoes it, since nothing was written;
+- the fit (Rust, 4420 items, 64 ms in a debug build) read here as the app reads it: log loss on the log's own reviews 0.2961 fitted against 0.3248 by the defaults. `npm run fixture:fit` writes the weights the test reads.
+
+**Timed.** FSRS-7 through the slot over the sample's 698 lines: 15 ms; over twenty copies of it (13,960 lines): 161 ms, in pieces of 400 cards.
+
+**Not seen.** No window: the `fsrs-7 weights` row and the palette's command were not looked at, and `fsrs_fit` was not called through the app's own IPC (its Rust is tested on the sample log; the renderer's side against a mocked answer). Nothing on a device or a simulator; iOS is `cargo check` only, so the fit has not run there. The 14,000-line timing was in Node, not in a web view.
+
+**Left.** The built in could be fitted too (the crate fits FSRS-6's 21 weights), and that would change dates in the `sr` lines for every device at once: not done, to be asked. A fit is whole-file state: two devices that fit apart keep the later one.
+
+---
+
 ## 2026-11-19 — a scheduler slot in the plugin API (api 2)
 
 The user wants scheduling algorithms other than FSRS to live in plugins, a neural one above all (it predicts each card's chance of recall now from the whole review history, and has no intervals), with FSRS kept underneath so nothing is lost where the plugin is not.

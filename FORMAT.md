@@ -64,7 +64,7 @@ notes/
   .ilmi/                     app-private state, never required
     order.json               the order chosen for a directory's children
     reading.json             the reading state of the PDFs on their own
-    scheduler.json           the scheduler the collection's cards are studied by, when not the built in
+    scheduler.json           the scheduler the collection's cards are studied by, when not the built in, and FSRS-7's fitted weights
     ink/<sha256>/<page>.pkdrawing   what is written on a PDF's pages
     ink/<id>/<sheet>.pkdrawing      what is written on a written notebook's sheets
     marks/<sha256>.json      what is left on a PDF's pages: bookmarks, marks, highlights, portals, passages
@@ -335,15 +335,37 @@ notes/
   `reviews/2026-12.jsonl` holds both kinds mixed (`readings.test.ts`).
 - **The scheduler** a collection is studied by is app-private too:
   `.ilmi/scheduler.json`, `{ "scheduler": "<id>" }`, the id of a scheduler a
-  plugin registered (`PLUGINS.md`, *a scheduler*). Absent, or without the
-  key, the built in (FSRS) schedules. It only says which: nothing a
-  scheduler works out is stored, and every card's `sr` line (§6.2) holds
-  FSRS's state whatever it says, so a reader that ignores the file loses
-  nothing. An app that does not have the scheduler named uses the built in
-  and leaves the file as it is. The file is written with its keys sorted,
-  two spaces of indent and a newline at the end; a key not known is kept.
-  It syncs as one file: of two devices that change it apart, the later
-  change stands.
+  plugin registered (`PLUGINS.md`, *a scheduler*) or of one the app carries
+  (`fsrs-7`). Absent, or without the key, the built in (FSRS-6) schedules.
+  It only says which: nothing a scheduler works out is stored, and every
+  card's `sr` line (§6.2) holds the built in's state whatever it says, so a
+  reader that ignores the file loses nothing. An app that does not have the
+  scheduler named uses the built in and leaves the file as it is.
+
+  The same file holds FSRS-7's weights once they have been fitted to the
+  collection's reviews (`fit to my reviews`), so every device that schedules
+  with it answers alike:
+
+  ```
+  {
+    "fsrs7": {
+      "fitted": "2026-11-19",
+      "reviews": 5144,
+      "w": [0.1104, 2.2867, 3.754, …]
+    },
+    "scheduler": "fsrs-7"
+  }
+  ```
+
+  `w` the 34 weights of FSRS-7 in the model's order, to four decimals;
+  `reviews` how many reviews of the log they were fitted from; `fitted` the
+  day. Without `fsrs7`, or with a `w` that is not 34 numbers the model can
+  run on, FSRS-7 runs on its defaults. The key is there whichever scheduler
+  is chosen, and choosing another keeps it.
+
+  The file is written with its keys sorted, two spaces of indent and a
+  newline at the end; a key not known is kept. It syncs as one file: of two
+  devices that change it apart, the later change stands.
 - **Not the same** is app-private too: `.ilmi/same.json`,
   `{ "not": ["<key>|<key>", …] }`, the pairs of cards the person said do
   not test the same fact, so the app never offers them again (milestone

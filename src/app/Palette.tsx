@@ -3,7 +3,7 @@
 // esc to close.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { pluginCommands, runPluginCommand, usePlugins } from '../plugins/index.js';
+import { fitOffer, fitToReviews, pluginCommands, runPluginCommand, usePlugins } from '../plugins/index.js';
 import { overflow } from '../schedule/index.js';
 import { ENTRY_GLYPH, buildIndex, contentsRows, placeRows, rankHits, search, searchContents, textEntry, withText, type Command, type Entry } from './chrome.js';
 import { activeTab, closePane, splitPane } from './panes.js';
@@ -29,6 +29,8 @@ const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
   { id: 'study', title: 'study…' },
   { id: 'postpone', title: 'postpone the rest' },
+  // FSRS-7's weights fitted to the collection's own review log (`plugins/fsrs7.ts`), once there is enough of it
+  { id: 'fit-fsrs7', title: 'fit fsrs-7 to my reviews' },
   // the whole collection's year of days and what is coming (`NumbersLens.tsx`)
   { id: 'numbers', title: 'numbers · the whole collection' },
   { id: 'intake', title: 'add from text or a link' },
@@ -118,6 +120,7 @@ function runCommand(id: string): void {
   switch (id) {
     case 'enter': startSession({}, null, useApp.getState().queueFocus); break;
     case 'postpone': void postponeRest().catch(failed('that')); break;
+    case 'fit-fsrs7': void fitToReviews(); break;
     case 'intake': openIntake(tab === undefined || tab.startsWith(':') ? '' : containerOf(tab)); break;
     case 'new-note':
     case 'new-written': {
@@ -213,7 +216,7 @@ export function Palette() {
   // an iPad has one pane and no folder to pick: its commands leave those out (`platform.ts`)
   const mobile = useApp((s) => s.mobile);
   const phone = useApp((s) => s.phone);
-  const commands = useMemo(() => [...sectionCommand(), ...contentsCommand(), ...marksCommands(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
+  const commands = useMemo(() => [...sectionCommand(), ...contentsCommand(), ...marksCommands(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && (c.id !== 'fit-fsrs7' || fitOffer().enough) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   // (one that is not where it was is the welcome's to show, with its `forget`)
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault && !gone.includes(r.path)).map((r) => ({ path: r.path, name: r.name })), [recents, gone, vault]);

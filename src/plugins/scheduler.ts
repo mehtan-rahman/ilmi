@@ -17,7 +17,7 @@
 
 import type { Review } from '../format/index.js';
 import {
-  CURVE_GRID, addDays, between, canonicalLog, crossing, dayOf, dueOf, indexLog, recallOf, scoreKey,
+  CURVE_GRID, addDays, canonicalLog, crossing, dayOf, dueOf, indexLog, recallOf, scoreKey,
   type Grade, type SchedCard, type SchedContext, type Scheduler, type Score,
 } from '../schedule/index.js';
 
@@ -189,6 +189,12 @@ export class SchedulerSlot {
     this.bump();
   }
 
+  /** A scheduler answers by something else than it did (its weights): it is asked again from the top, when it is the one in use. */
+  restart(id: string): void {
+    if (id === this.chosen && this.activeReg()) this.start();
+    this.bump();
+  }
+
   /** Said once a collection's plugins have started: a choice that is not here is told, once. */
   settle(): void {
     const id = this.chosen;
@@ -224,7 +230,9 @@ export class SchedulerSlot {
       this.index = indexLog(this.log);
       this.stale = false;
     }
-    this.ready = reg?.spec.prepare ? this.guard(reg, this.gen, this.prepareTimeout, () => reg.spec.prepare!(canonicalLog(this.log), this.ctx())) : Promise.resolve();
+    // the log as it is at this moment: a review added before `prepare` has run is observed after it, never both
+    const log = this.log;
+    this.ready = reg?.spec.prepare ? this.guard(reg, this.gen, this.prepareTimeout, () => reg.spec.prepare!(canonicalLog(log), this.ctx())) : Promise.resolve();
     this.bridge.changed();
   }
 
@@ -292,7 +300,8 @@ export class SchedulerSlot {
       this.stale = true;
       return;
     }
-    let appended = log.length >= old.length;
+    // a first log is not a thousand reviews added one at a time: it is prepared whole
+    let appended = old.length > 0 && log.length >= old.length;
     for (let i = 0; appended && i < old.length; i++) if (log[i] !== old[i]) appended = false;
     const reg = this.activeReg();
     const gen = this.gen;
@@ -456,11 +465,15 @@ export class SchedulerSlot {
     const coarse = await spec.curve!(c, CURVE_GRID, ctx);
     const span = crossing(CURVE_GRID, coarse, c.retention);
     if (!span) return NEVER;
-    const [a, b] = span;
-    const days = between(a, b);
-    if (!days.length) return b;
-    const fine = await spec.curve!(c, days, ctx);
-    return crossing(days, fine, c.retention)?.[1] ?? b;
+    // over the target on day a, at or under it on day b: halved until they are a day apart
+    let [a, b] = span;
+    while (b - a > 1) {
+      const mid = (a + b) >> 1;
+      const [r] = await spec.curve!(c, [mid], ctx);
+      if (typeof r === 'number' && r <= c.retention) b = mid;
+      else a = mid;
+    }
+    return b;
   }
 
   /** An interval scheduler's date for a line: `next` as of its last review, worked out once per review. */

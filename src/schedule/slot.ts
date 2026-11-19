@@ -166,9 +166,6 @@ export function crossing(days: readonly number[], recall: readonly number[], tar
   return null;
 }
 
-/** The whole days strictly between `a` and `b`. */
-export const between = (a: number, b: number): number[] => Array.from({ length: Math.max(0, b - a - 1) }, (_, i) => a + 1 + i);
-
 // ── over the queue ───────────────────────────────────────────────
 
 /**

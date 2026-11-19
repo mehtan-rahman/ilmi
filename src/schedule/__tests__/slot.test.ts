@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { meta, parse, type Doc, type Review } from '../../format/index.js';
 import {
-  CURVE_GRID, addDays, applyScores, between, canonicalLog, crossing, dayOf, docItems, dueOf, examLeft, examQueue, examsAt, indexLog, isDue, logKeyOf, meterQueue, recallOf, resolveOptions,
+  CURVE_GRID, addDays, applyScores, canonicalLog, crossing, dayOf, docItems, dueOf, examLeft, examQueue, examsAt, indexLog, isDue, logKeyOf, meterQueue, recallOf, resolveOptions,
   schedCardOf, scoreKey, slotKeys, slotted, sortQueue, itemKey,
   type CardItem, type QueueItem, type Score,
 } from '../index.js';
@@ -113,16 +113,10 @@ describe('what a scheduler gave, read', () => {
     expect([null, undefined, NaN, -0.1, 1.2, '0.5'].map(recallOf)).toEqual([null, null, null, null, null, null]);
   });
 
-  it('a falling curve reaches its target between two days of the grid, and the day is found between them', () => {
+  it('a falling curve reaches its target between two days of the grid', () => {
     const curve = (d: number) => 0.5 ** (d / 40);
-    const span = crossing(CURVE_GRID, CURVE_GRID.map(curve), 0.9)!;
-    expect(span).toEqual([6, 7]);
-    expect(between(...span)).toEqual([]);
-    const wide = crossing(CURVE_GRID, CURVE_GRID.map((d) => 0.5 ** (d / 400)), 0.9)!;
-    expect(wide).toEqual([50, 62]);
-    const days = between(...wide);
-    expect(days).toEqual([51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61]);
-    expect(crossing(days, days.map((d) => 0.5 ** (d / 400)), 0.9)).toEqual([60, 61]);
+    expect(crossing(CURVE_GRID, CURVE_GRID.map(curve), 0.9)).toEqual([6, 7]);
+    expect(crossing(CURVE_GRID, CURVE_GRID.map((d) => 0.5 ** (d / 400)), 0.9)).toEqual([50, 62]);
     // there already on the first day; never there
     expect(crossing([1, 2], [0.5, 0.4], 0.9)).toEqual([0, 1]);
     expect(crossing([1, 2], [0.99, 0.98], 0.9)).toBeNull();

@@ -108,7 +108,7 @@ On an iPhone the day is the face: the queue, a card in a session, the tree behin
 
 ## How the day is scheduled
 
-- **Cards** follow FSRS (`ts-fsrs`): one `sr` line under the card holds due,
+- **Cards** follow FSRS-6 (`ts-fsrs`; FSRS-7, fitted to your own reviews, and schedulers from plugins can be chosen over it in the settings): one `sr` line under the card holds due,
   stability, difficulty, reps, and lapses. An exam date on a course brings
   its cards forward so they are seen before it.
 - **A source with reading left** comes back on a cadence by priority: every

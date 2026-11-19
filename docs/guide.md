@@ -762,10 +762,10 @@ above the fold of that kind.
 ### The scheduler
 
 When a card comes back is decided by a scheduler. `scheduler` in the
-settings (⌘,) lists them: `built in` (FSRS), and any a plugin has added. The
-choice is the collection's, so it syncs: every device uses the same one, and
-a device where that plugin is not installed or is off says so once and uses
-the built in.
+settings (⌘,) lists them: `built in` (FSRS-6), `fsrs-7`, and any a plugin
+has added. The choice is the collection's, so it syncs: every device uses
+the same one, and a device where that plugin is not installed or is off
+says so once and uses the built in.
 
 The built in is always underneath. Whatever is chosen, every grade writes
 FSRS's state to the card as before, so going back to `built in`, a device
@@ -780,6 +780,20 @@ are under the built in. The grade buttons say `back in` only what the
 scheduler in use says; one that does not say leaves them bare. If a
 scheduler fails or is too slow, one line says so and the built in schedules
 until the app is opened again.
+
+`fsrs-7` is the newer FSRS, which keeps two memories of a card, a fast one
+and a slow one, and counts time in fractions of a day. It is of the second
+kind: it works out each card's memory from the log of your reviews and
+shows a card once its recall has fallen to its `retention`. A card whose
+first review is not in the log (one imported with its schedule but without
+its history, or reviewed before the log was kept) stays with the built in.
+It starts on the model's own weights. With `fsrs-7` chosen, a second row,
+`fsrs-7 weights`, says `defaults` or `fitted to 5144 reviews, 3d ago`, and
+`fit to my reviews` (also in the palette, `fit fsrs-7 to my reviews`) fits
+the weights to your own log: it takes a moment, nothing is fitted unless
+you ask, and it is offered once the log has 64 reviews of cards seen before,
+the least the fit trains from. The fitted weights are the collection's and
+sync with it. Fit again after some months of reviews.
 
 ### Priority, growth, and the budget
 

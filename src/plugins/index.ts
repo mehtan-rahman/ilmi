@@ -18,19 +18,21 @@ import { activeTab } from '../app/panes.js';
 import { useApp } from '../app/store.js';
 import { note, openNode, optionsAt, refreshQueue } from '../app/vault.js';
 import type { Card, CardSchedule, Review } from '../format/index.js';
-import { applyScores, dayOf, isDay, preview, schedCardOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SchedCard, type Scheduler, type SectionItem, type WriteItem } from '../schedule/index.js';
+import { FSRS7_ID, applyScores, dayOf, isDay, preview, schedCardOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SchedCard, type Scheduler, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import type { Vault } from '../vault/index.js';
 import type * as A from './api.js';
 import { contextOf, keyMatches, parseKey } from './context.js';
 import { PluginHost, readPluginFolder, type Bridge, type InstallResult } from './runtime.js';
 import { SCHEDULER_FILE, SchedulerSlot, chosenIn, formatSchedulerFile, parseSchedulerFile } from './scheduler.js';
+import { fsrs7, readFsrs7 } from './fsrs7.js';
 import { addStyle, closeSurfaces, showModal, showPopover } from './surfaces.js';
 import './plugins.css';
 
 export type { Ilmi, Selection as PluginSelection, BlockContext } from './api.js';
 export { PluginHost, type PluginRow, type PluginCommand, type PluginAction, type SettingControl, type InstallResult, COMMAND_PREFIX } from './runtime.js';
 export { BUILT_IN, SchedulerSlot, type SchedulerRow } from './scheduler.js';
+export { fitOffer, fitToReviews, fsrs7Fit, fsrs7Fitting } from './fsrs7.js';
 
 /** The app's version, as `ilmi.version`; `src-tauri/tauri.conf.json` has the same. */
 export const APP_VERSION = '0.1.0';
@@ -172,7 +174,10 @@ export async function startPlugins(vault: Vault): Promise<PluginHost> {
 
 /** The vault closes: every plugin is deactivated. */
 export function stopPlugins(): void {
-  if (!host) return;
+  if (!host) {
+    stopSlot();
+    return;
+  }
   closeSurfaces();
   host.stop();
   stopSlot();
@@ -185,12 +190,6 @@ export function stopPlugins(): void {
 }
 
 // ── the scheduler slot ──────────────────────────────────────────
-
-/** The schedulers the app carries, registered in every collection's slot beside the plugins'. */
-const carried: ((vault: Vault) => Scheduler)[] = [];
-export function carryScheduler(make: (vault: Vault) => Scheduler): void {
-  carried.push(make);
-}
 
 async function readSchedulerFile(vault: Vault): Promise<Record<string, unknown>> {
   try {
@@ -217,12 +216,6 @@ export async function writeSchedulerFile(change: (data: Record<string, unknown>)
 }
 
 let slotVault: Vault | null = null;
-const fileListeners = new Set<(data: Record<string, unknown>) => void>();
-/** Told `.ilmi/scheduler.json` as it is read: when the collection opens, and when it changes (here, or synced in). */
-export function onSchedulerFile(fn: (data: Record<string, unknown>) => void): () => void {
-  fileListeners.add(fn);
-  return () => { fileListeners.delete(fn); };
-}
 
 async function startSlot(vault: Vault): Promise<SchedulerSlot> {
   const s = new SchedulerSlot({
@@ -238,13 +231,15 @@ async function startSlot(vault: Vault): Promise<SchedulerSlot> {
   const read = async (settle: boolean) => {
     const data = await readSchedulerFile(vault);
     if (slot !== s) return;
-    for (const fn of [...fileListeners]) fn(data);
+    // FSRS-7's weights, fitted here or on another device: it answers by them from now
+    if (readFsrs7(data)) s.restart(FSRS7_ID);
     s.choose(chosenIn(data));
     // a choice synced in may come with its plugin: said missing only if it still is, a little later
     if (settle) setTimeout(() => { if (slot === s) s.settle(); }, 1500);
   };
   await read(false);
-  for (const make of carried) s.register(null, make(vault));
+  // what the app carries beside the plugins': FSRS-7 (`schedule/fsrs7.ts`)
+  s.register(null, fsrs7);
   offSlot.push(vault.subscribe((ev) => { if (ev.kind === 'hidden' && ev.paths.includes(SCHEDULER_FILE)) void read(true); }));
   return s;
 }

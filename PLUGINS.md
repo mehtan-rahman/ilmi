@@ -85,7 +85,8 @@ Notes on a few of them:
 ## A scheduler
 
 `ilmi.scheduler.register(spec)` adds a scheduler to the `scheduler` row in
-tweaks, beside `built in`. One is in use at a time, and which is the
+tweaks, beside `built in` and `fsrs-7` (which the app carries, through this
+same slot: `src/schedule/fsrs7.ts` is a scheduler like any plugin's). One is in use at a time, and which is the
 collection's choice (`.ilmi/scheduler.json`), so every device means the same
 one; a device where it is not installed, or is off, says so once and uses
 the built in.

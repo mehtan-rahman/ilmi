@@ -190,8 +190,8 @@ describe('scores', () => {
     const s = slot.scoreOf('x', undefined, '2026-10-31T12:00:00Z')!;
     expect(s.recall).toBeCloseTo(0.5 ** (10 / 400));
     expect(s.due).toBe('2026-12-31');
-    // the grid, then the days between the two it crossed between
-    expect(calls).toEqual([35, 11]);
+    // the grid, then the days between the two it crossed between (50 and 62), halved: 56, 53, 51
+    expect(calls).toEqual([35, 1, 1, 1]);
   });
 
   it('by a date: `next` as of the last review, from the reviews before it, once a review', async () => {
@@ -270,6 +270,17 @@ describe('the log', () => {
     slot.request(cardsNow());
     await slot.idle();
     expect(told.slice(4)).toEqual(['prepare b@20 b@01 a@02 a@10', 'recall a:2 b:2']);
+  });
+
+  it('the first log a scheduler in use is handed is prepared whole, not observed a review at a time', async () => {
+    const slot = new SchedulerSlot(rig(), fast);
+    const told: string[] = [];
+    slot.register(null, { id: 'a', name: 'a', prepare: (h) => { told.push(`prepare ${h.length}`); }, observe: () => { told.push('observe'); }, recall: () => [] });
+    slot.choose('a');
+    slot.setLog([review('a', '2026-11-02T09:00:00Z'), review('b', '2026-11-03T09:00:00Z')]);
+    await slot.idle();
+    expect(told).toEqual(['prepare 0', 'prepare 2']);
+    expect(slot.histories().size).toBe(2);
   });
 
   it('a log that moved on under the built in is the log a scheduler chosen later is prepared with', async () => {

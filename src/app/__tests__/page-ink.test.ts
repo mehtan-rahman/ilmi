@@ -258,7 +258,7 @@ describe('a book\'s page under the Pencil', () => {
     expect(pending()).toBe(2);
   });
 
-  it('with no canvas (the Mac) a pen boxes as it did, and the page shows what was written elsewhere as a picture', async () => {
+  it('with no canvas (the Mac) a pen boxes as it did, and the page draws what was written elsewhere itself, a path a stroke', async () => {
     useApp.setState({ mobile: false });
     await fire(pageEl(41), ptr('pointerdown', 'pen', 60, 80));
     await fire(window, ptr('pointermove', 'pen', 200, 200));
@@ -267,18 +267,21 @@ describe('a book\'s page under the Pencil', () => {
     // strokes that come by a merge are written through the store's door: the page shows them without being asked
     await act(async () => { await fs.door.run(() => fs.door.apply({ puts: [], removes: [], reviews: [], pairs: null, ink: [{ page: `p.${hash}.41`, add: [stroke(5)], remove: [] }] }, [])); });
     await wait(40);
-    const first = inkOn(41)!;
-    expect(first).not.toBeNull();
-    const was = first.src;
-    expect(pictures.get(was)).toContain('s5');
+    // (one renderer since the gaps after 89: the Mac draws the store's strokes as the iPad does, no picture)
+    expect(drawnOn(41)).toEqual(['s5']);
+    expect(inkOn(41)).toBeNull();
+    const first = pathsOn(41)!.querySelector('[data-n="s5"]')!;
     await act(async () => { await fs.door.run(() => fs.door.apply({ puts: [], removes: [], reviews: [], pairs: null, ink: [{ page: `p.${hash}.41`, add: [stroke(6)], remove: [] }] }, [])); });
     await wait(40);
-    expect(inkOn(41)!.src).not.toBe(was);
-    expect(pictures.get(inkOn(41)!.src)).toContain('s5 s6');
+    expect(drawnOn(41)).toEqual(['s5', 's6']);
+    // (the stroke that was there is the element it was: only what differs is touched)
+    expect(pathsOn(41)!.querySelector('[data-n="s5"]')).toBe(first);
+    // nothing is said to canvases there are none of
+    expect(shown.length).toBe(0);
     // all of it erased elsewhere: the page is the page again
     await act(async () => { await fs.door.run(() => fs.door.apply({ puts: [], removes: [], reviews: [], pairs: null, ink: [{ page: `p.${hash}.41`, add: [], remove: ['s5', 's6'] }] }, [])); });
     await wait(40);
-    expect(inkOn(41)).toBeNull();
+    expect(pathsOn(41)).toBeNull();
   });
   it('what the canvases\' side says a sheet holds is on the page at once, before it is kept: written, unseen while PencilKit shows it, erased (89)', async () => {
     await fs.setPageInk(hash, 41, [stroke(1)]);

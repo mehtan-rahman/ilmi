@@ -2970,8 +2970,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   canWriteRef.current = canWrite && !phone;
   /** The tools' row: an iPad's (a phone's bar is one line). */
   const inkRow = canWrite && !phone && status === 'ok' && toolsShown;
-  /** A PDF's pages where there are canvases (an iPad's): what is written on them is drawn by the page, as paths (89, `pageInk.ts`). */
-  const vectorInk = !written && hasCanvas();
+  /** A PDF's pages: what is written on them is drawn by the page, as paths (89, `pageInk.ts`), on every device: where there are canvases what they say is shown at once, and on a Mac what the store holds. (A notebook's sheets read on a Mac or a phone are pictures still.) */
+  const vectorInk = !written;
   /** The scroller the pages lie in, and the book over them: where the lasso's menu and the overview are drawn. */
   const scrollerEl = wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
   const bookEl = wrapRef.current?.closest<HTMLElement>('.book') ?? null;

@@ -9857,14 +9857,32 @@ sheet ends while it is carried; one edge, a hair's width, round the whole.
 No page count, no overview, `g` goes nowhere; the content ends at the
 foot, so there is no far bottom to bounce against. `share as pdf` cuts it
 into pages of its size, as many as the ink reaches.
-**Not done:** a stroke more than a sheet's height long below its own top
-(drawn to one sheet under it); the lasso over three sheets at once; a
-loop that holds strokes of two sheets is itself a step to undo, which
-shows nothing (they change the sheet they are kept on); the
-long sheet shorter the moment something is erased (decided against);
-the sheets past the writing taken out of `sheets` (they are left: a page
-again when the notebook is paged); a line across the head or the foot;
-a margin's own paper colour. A real Pencil's feel of the growth is the device's to
+**After 88** (the same day): a stroke taller than a sheet is drawn whole
+on an iPad, rubbed out from any sheet it runs over and picked up by a
+loop there (kept on the sheet its top lies on, looked for up to eight
+sheets down; the long sheet asks for each sheet it runs over as the last
+arrives, where it asked for one a stroke). A loop that holds strokes of
+two sheets still brings them onto one, but that is no step to undo and
+nothing kept: it is part of whatever is done next with what is held (one
+step, which undone puts each stroke back on its own sheet), and is put
+back as it was when the lasso lets go with nothing done.
+**Not done:** a stroke taller than a sheet read on a Mac or a phone, or
+passed on as a PDF, is drawn one sheet under its own (their pictures
+reach that far); on an iPad one kept on a sheet not yet near the screen
+since the notebook was opened is not drawn until that sheet comes near;
+the long sheet shorter the moment something is erased (decided against);
+a line across the head or the foot; a margin's own paper colour.
+**Decided, twice:** the sheets past the writing are left in `sheets`.
+They cost nothing while the notebook is pageless (not drawn, not in the
+PDF) and are pages again when it is paged. Taking them out is not safe
+for sync as the list is kept: `sheets` is one field, and "empty" is what
+this device has of the strokes so far. A device that opens the notebook
+before another's strokes on the last sheet have reached it would write
+the shorter list, and where that write wins the merge the other device
+loses the sheet under its hand (the strokes stay in the store and the
+sheet is listed again when the notebook is next opened, `healSheets`,
+but until then they are off the page). It would also be a write for
+having opened a notebook. A real Pencil's feel of the growth is the device's to
 judge.
 
 ### [ ] 89. A written notebook's children as tabs beside its pages

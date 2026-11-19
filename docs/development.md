@@ -391,8 +391,11 @@ or two and never a sheet, the first sheet lies on the same pixels and the
 pages are scrolled as they were, and the next sheet is in the file before
 the foot comes to it, with no notice. A stroke across where two sheets
 meet, one begun below it and run up, the eraser put down below it on a
-stroke kept above, a lasso round a stroke on each side and what it holds
-carried down past it; a sheet in the file past what is written not drawn;
+stroke kept above, a lasso round a stroke on each side (held and let go:
+each on its own sheet in the store and on the surface, and undo takes back
+the stroke written last, the hold being no step) and what it holds
+carried down past it (undo, once: each on its own sheet again); a sheet in
+the file past what is written not drawn;
 the lower strokes taken away (no shorter), another document and back
 (shorter); pages and pageless again with every stroke on its sheet; the
 PDF cut to the pages the ink reaches; dark, and on its side. Before a
@@ -414,6 +417,13 @@ grid closed inside its margins, 85's field read as it was, a pageless
 notebook's column cut
 to the length of a made-up drawing's ink, longer when more is kept on the
 second sheet, shorter only when it is opened again.
+Then a stroke taller than a sheet (`writtenTall`; alone with `"part":
+"tall"`): at half size, from three quarters down a pageless notebook's
+first sheet to a third down its third; one stroke, kept on the first; the
+long sheet given both sheets it runs over; the eraser put down on the third
+sheet takes it; another document and back. A `tall:` line before each
+capture says where it lies, and a script reads down its column for ink on
+every row.
 Last, a notebook's tabs (milestone 89; `writtenTabs`, alone with `"part":
 "tabs"`): `new tab` from `more`, the child's page setup read against the
 parent's, the rail's name field typed into, then `dev_ink_state` asked for
@@ -683,17 +693,71 @@ show the paths; the page says when they are on the glass, two frames on
 twice; there is never a frame with neither. The Pencil down again before the
 canvas could be emptied has the page hide them again. Anything else that
 changes what a sheet holds (the eraser, the lasso, a shape, an undo) shows
-the page's own at once. Pages pinched within that quarter of a second of
-writing carry the canvas with them as before 89 (`Zoom`, the scroller
-followed), for the strokes just written only. 86's pinch is as it was (the
+the page's own at once. The quarter of a second is for writing on, never for
+the pages moving: when two fingers begin a pinch, a host's scroller moves,
+or a sheet is laid out at another size (`InkPlugin.hurry`), whatever the
+canvas still shows is told to the page to show at once, and the canvas goes
+when the page says it has (in a simulator 30 to 200 ms after the pages
+first move; until then the canvas is carried by the stretch as before 89,
+in the transaction that stretches the pages). A stroke PencilKit has not
+yet handed over when the pages move is shown by the page from the moment
+it is. And a canvas is never laid out anew over strokes the page was told
+to show: the page laid itself out after it was told, so the canvas is
+emptied in that turn instead (`settle(force:)`, at least 50 ms after the
+telling). A highlighter's stroke is handed over at once, pause or no:
+PencilKit lays one it has taken over on more heavily than while it was
+written and than the page does (in a simulator's capture its yellow on
+paper goes 72, 19, 63 of 255 in blue: written, taken over, the page's), and
+a quarter of a second of that is seen. 86's pinch is as it was (the
 web view's layer stretched under the fingers): the ink is inside that layer
 now. `dev_ink_state` says of each sheet `vector`, `live` (the strokes still
-on PencilKit's canvas), `said` and `seen`. `ILMI_SMOKE=pdfink` (an iPad's, with `vault`,
+on PencilKit's canvas), `said` and `seen`, `hurriedAfter` and `hurriedFor`
+(the last time the pages moved with strokes on the canvas: ms after the
+lift, and ms until the canvas was away), and `trace` (what happened to what
+was last written, each with its ms from the lift).
+
+A stroke has one name, in hand and in the store (`nameOf`, `native/ink.m`).
+PencilKit writes the even line (`monoline`, the pen as it starts) into a
+drawing's bytes as a pen, and the name is a hash over the ink's kind among
+other things: named in hand a stroke said `monoline`, named from the bytes
+`pen`, and the page drew a stroke just written under a name the store
+never kept. The name takes the even line for the pen it is saved as (the
+store's names, always made from bytes, are what they were). A stroke
+PencilKit's own eraser has masked moves by a hundredth of a point in its
+mask through its first trip to bytes, and so is named anew once; the
+app's eraser cuts strokes and makes no masks. Read back from the store,
+kept again with strokes erased or added, set and set back, every stroke
+keeps its name (run inside a simulator and on the Mac): an erase on a page
+loaded from the store writes the erased rows and nothing else.
+
+What the canvas's compositing filter does could not be shown in a
+simulator: there PencilKit's ink over the web view covers the print under
+it, written or taken over, whatever the filter (and a canvas made a group
+by an opacity under 1 does the same), and the page's own lets the print
+through. `"part": "look"` of the `pdfink` smoke captures a pen's and a
+highlighter's stroke three ways (under the finger; lifted with the
+hand-over held back, `dev_ink_pen` with `keep`; the page's) and
+`scripts/ink-look.py` compares them: on paper the pen is the same to a
+level in 255, on print it is the ink's colour until the page has it. `ILMI_SMOKE=pdfink` (an iPad's, with `vault`,
 under the touch rig, the screen recorded) writes a cross on a page between
 two squares that are the page's own element and pinches, taps, drags and
 flicks; `scripts/ink-scan.swift` reads the recording's frames and
 `scripts/ink-measure.py` says how far the cross lies from where the squares
-put it in each part.
+put it in each part. Its `lift` part is the pages moved before the writing
+has paused: the rig's `wpinch` is a stroke and, a tenth of a second after it
+lifts, two fingers, in one record (a second ask could not be read that
+soon), with `dev_ink_pen`'s `once` making the finger a Pencil for that one
+stroke; the measure says how far the stroke lies from its place on the page
+in every frame from the one the pages first move in, and whether it is ever
+gone or laid on twice. `finger` is `draw with finger` on a PDF's page;
+`share` and `turned` (with `"books"`: `design/books/turned.pdf`, a page
+turned a quarter by `/Rotate`) pass the PDF on with what is written on it,
+and `scripts/ink-export.py` draws the file's page (`scripts/pdfpng.swift`)
+and looks for the ink where it was written. On a phone the same smoke with
+`"part": "most"` needs no rig. Since these gaps were closed a Mac draws a
+PDF's writing the same way, from what the store holds (`vectorInk` in
+`Pdf.tsx`): one renderer; a notebook's sheets read on a Mac or a phone are
+pictures still.
 
 `dev_ink_state` says each surface (`surfaces`: where it lies in the
 screen's pixels, the zoom laid out and the stretch over it, the offset,

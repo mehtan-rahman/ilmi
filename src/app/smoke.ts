@@ -10959,7 +10959,7 @@ export async function smokeTouch(): Promise<void> {
     must(q('.pbox.ghost', book) === null, 'a pen\'s drag boxes nothing here');
     window.dispatchEvent(pen('pointerup', px(2), px(3)));
     await sleep(300);
-    must(pending() === 0 && !q('img.page-ink', book), 'and with nothing written the page is as it was');
+    must(pending() === 0 && !q('.page-ink', book), 'and with nothing written the page is as it was');
 
     // ── the passage boxed by a finger is kept with the PDF, by the bar's button (milestone 81): in no note, nothing opened ──
     type PassageMark = import('../vault/index.js').PassageMark;
@@ -13012,10 +13012,18 @@ export async function smokePageInkMac(vault: Vault): Promise<void> {
       openNode(BOOK);
       const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens', 15000);
       const pageEl = await poll(() => (q(`.pdf-page[data-page="${P}"] canvas`, book) ? q<HTMLElement>(`.pdf-page[data-page="${P}"]`, book) : null), `p. ${P} is drawn`, 30000);
-      const img = await poll(() => { const i = q<HTMLImageElement>(`img.page-ink[data-page="${P}"]`, book); return i && i.complete && i.naturalWidth === (wide / 2) * Number(i.dataset.fine) ? i : null; }, 'the page shows its writing as a picture over it, as fine as the screen', 20000);
+      // (since the gaps after 89 the Mac draws a PDF's writing as the iPad does: the page's own paths, a stroke each, from what the store holds)
+      void wide;
+      const held = (await fs.pageInk(hash, P)).map((x) => x.stroke);
+      const img = await poll(() => { const i = q<SVGSVGElement>(`svg.page-ink[data-page="${P}"]`, book); return i && qa<SVGElement>('[data-n]', i).map((x) => x.dataset.n).join() === held.join() ? i : null; }, `the page draws its writing itself, a path a stroke: the ${held.length} the store holds, by their names and in their order`, 20000);
       const [a, b] = [img.getBoundingClientRect(), pageEl.getBoundingClientRect()];
       must(Math.abs(a.left - b.left) < 1.5 && Math.abs(a.top - b.top) < 1.5 && Math.abs(a.width - b.width) < 1.5 && Math.abs(a.height - b.height) < 1.5, 'laid exactly over the page');
-      must(qa('.pdf-page[data-page] ~ .pdf-ink img.page-ink', book).length === 1 && getComputedStyle(img).pointerEvents === 'none', 'on that page alone, and it takes no press: a drag there still boxes');
+      must(qa('.pdf-page[data-page] ~ .pdf-ink .page-ink', book).length === 1 && !q('img.page-ink', book) && getComputedStyle(img).pointerEvents === 'none', 'on that page alone, no picture of it, and it takes no press: a drag there still boxes');
+      {
+        // each path lies on the page, where its stroke's points are
+        const paths = qa<SVGGraphicsElement>('[data-n]', img).map((x) => x.getBoundingClientRect());
+        must(paths.every((r) => r.width > 0 && r.left >= b.left - 2 && r.right <= b.right + 2 && r.top >= b.top - 2 && r.bottom <= b.bottom + 2), 'every stroke drawn within the page');
+      }
       return { book, img };
     };
     // the page's size in points, from the book itself
@@ -19569,8 +19577,13 @@ export async function smokeSharp(path: string | null): Promise<void> {
 // the same stroke captured under the finger, lifted and still PencilKit's,
 // and as the page draws it (`look:` says where; `scripts/ink-look.py`
 // compares the captures). `"part"` runs some alone (`slow`, `quick`, `tap`,
-// `scroll`, `write`, `lift`, `look`, `most` (a capture at 400%), `tools`, by
-// commas).
+// `scroll`, `write`, `lift`, `look`, `finger` (`draw with finger`: one finger
+// writes, two scroll), `share` (the PDF passed on with its writing: `export:`
+// says where the cross must lie, `scripts/ink-export.py` reads the file),
+// `turned` (with `books`: a page turned a quarter by /Rotate, written on and
+// passed on), `most` (a capture at 400%), `tools`, by commas). On a phone
+// (no rig) `"part": "most"` is what there is: the page draws what the store
+// holds.
 // ─────────────────────────────────────────────────────────────────────────
 export async function smokePdfInk(path: string | null): Promise<void> {
   let last = { at: Date.now(), what: 'start' };
@@ -19912,6 +19925,61 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       tools.setTool('pen');
       await poll(async () => (await state()).tool?.kind === 'pen', 'the pen again', 8000);
     }
+    if (want('finger')) {
+      // `draw with finger` on a PDF's page: one finger writes, two scroll; off, a finger scrolls and writes nothing
+      phase('a finger writes');
+      setBookZoom(PAGEINK_BOOK, 1);
+      await sleep(1500);
+      await toPage();
+      await invoke('dev_ink_pen', { on: false });
+      tools.setTool('pen');
+      tools.setRecent('pen', '#2060c0');
+      tools.setFinger(true);
+      await poll(async () => (await state()).finger === true, 'draw with finger', 8000);
+      const r = page();
+      const P3 = (x: number, y: number): [number, number] => [fx(r.left + (x / W) * r.width), fy(r.top + (y / H) * r.height)];
+      const n0 = (await there())?.strokes ?? 0;
+      const paths = () => qa<SVGGraphicsElement>(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb);
+      ask('drag', ...P3(60, 60), ...P3(200, 60), 0.02);
+      await poll(async () => { const c = await there(); return c && c.strokes === n0 + 1 && c.live === 0 && !c.shown && paths().length === n0 + 1; }, 'a finger writes a stroke, and the page draws it', 30000);
+      {
+        const k = paths()[paths().length - 1]!.getBoundingClientRect();
+        const want = [r.left + (60 / W) * r.width, r.top + (60 / H) * r.height, r.left + (200 / W) * r.width];
+        log(`finger: the stroke at ${k.left.toFixed(1)}, ${((k.top + k.bottom) / 2).toFixed(1)} to ${k.right.toFixed(1)}; the finger went ${want[0]!.toFixed(1)}, ${want[1]!.toFixed(1)} to ${want[2]!.toFixed(1)}`);
+        must(Math.abs(k.left - want[0]!) < 12 && Math.abs((k.top + k.bottom) / 2 - want[1]!) < 8 && Math.abs(k.right - want[2]!) < 12, 'where the finger went');
+      }
+      const top0 = sc.scrollTop;
+      ask('pinch', 0.42, 0.75, 0.58, 0.75, 0.42, 0.5, 0.58, 0.5, 0.5);
+      await poll(() => sc.scrollTop > top0 + 80, 'two fingers scroll the pages', 30000);
+      await sleep(1200);
+      must(((await there())?.strokes ?? 0) === n0 + 1, 'and write nothing');
+      tools.setFinger(false);
+      await poll(async () => (await state()).finger === false, 'draw with finger off', 8000);
+      await toPage();
+      const top1 = sc.scrollTop;
+      ask('drag', 0.5, 0.75, 0.5, 0.5, 0.1);
+      await poll(() => sc.scrollTop > top1 + 80, 'off, a finger scrolls the pages', 30000);
+      await sleep(1200);
+      must(((await there())?.strokes ?? 0) === n0 + 1, 'and writes nothing');
+      await poll(async () => { const c = await there(); return c && !c.dirty; }, 'kept', 25000);
+      await toPage();
+    }
+    if (want('share')) {
+      // the PDF passed on with what is written on it: the cross on p. 23, where it lies on the page (`export:` says
+      // where, as fractions of the page; `scripts/ink-export.py` reads the file)
+      phase('shared as a pdf');
+      const pageTools = await import('./PageTools.js');
+      await toPage();
+      q<HTMLElement>('.meta [data-tool="more"]', pb)!.click();
+      (await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-share"]'), 'more has share as pdf', 5000)).click();
+      await poll(async () => (await state()).sharing, 'shared as a PDF', 30000);
+      const [n, pw, ph] = await invoke<[number, number, number, number]>('dev_pdf_info', { path: pageTools.lastShared! });
+      const first = Number(q<HTMLElement>('.pdf-page', pb)?.dataset.page ?? PAGEINK_PAGE);
+      log(`export: ${JSON.stringify({ pdf: pageTools.lastShared, page: PAGEINK_PAGE - first + 1, pages: n, size: [pw, ph], red: [A[0] / W, A[1] / H, B[0] / W, B[1] / H] })}`);
+      must(n >= 1 && Math.abs(pw - W) < 1 && Math.abs(ph - H) < 1, `${n} pages of the book's own size, ${pw} × ${ph} points`);
+      await invoke('dev_ink_unshare');
+      await poll(async () => !(await state()).sharing, 'closed', 10000);
+    }
     if (want('most')) {
       // at the most the pages zoom to, where a page is drawn with fewer pixels than the screen has: the writing is paths still
       setBookZoom(PAGEINK_BOOK, 4);
@@ -20031,6 +20099,60 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       const fsNow = currentVault()!.fs as import('../vault/index.js').StoreFs;
       const held = (await fsNow.pageInk(hash, PAGEINK_PAGE)).map((k) => k.stroke).sort().join(' ');
       must(held === paths().map((x) => x.dataset.n!).sort().join(' '), 'the store holds the strokes the page draws, by their names');
+    }
+    if (want('turned')) {
+      // a page turned a quarter by the PDF's own /Rotate (smoke.json: `books`, the folder with `turned.pdf`): a
+      // stroke lies where the finger went on the page as it is shown, and in the PDF passed on
+      const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+      if (!books) throw new Error('ILMI_BOOKS (smoke.json: "books") names the folder with turned.pdf');
+      phase('a turned page');
+      const { importPdfNode } = await import('./vault.js');
+      const pageTools = await import('./PageTools.js');
+      const T = 'library/turned.pdf';
+      if (!useApp.getState().docs[T]) await importPdfNode('library', { title: 'turned', bytes: new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/turned.pdf` })), text: '' });
+      await poll(() => useApp.getState().docs[T], 'a paper with a turned page is in the collection', 30000);
+      openNode(T);
+      const tb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === T); return x && x.getClientRects().length && q('.pdf-page[data-page="2"] canvas', x) ? x : null; }, 'it opens, its second page drawn', 60000);
+      const tview = q<HTMLElement>('.pdf-view', tb)!;
+      const thash = await poll(() => tview.dataset.hash, 'its hash known', 10000);
+      const tsc = q<HTMLElement>('.book-pages', tb)!;
+      const p2 = q<HTMLElement>('.pdf-page[data-page="2"]', tb)!;
+      p2.scrollIntoView({ block: 'start' });
+      tsc.scrollTop -= 24;
+      await sleep(1200);
+      const r = p2.getBoundingClientRect();
+      const p1 = q<HTMLElement>('.pdf-page[data-page="1"]', tb)!.getBoundingClientRect();
+      log(`turned: the first page ${p1.width.toFixed(0)} × ${p1.height.toFixed(0)} px, the turned one ${r.width.toFixed(0)} × ${r.height.toFixed(0)}`);
+      const tsheet = `p.${thash}.2`;
+      const tthere = async () => (await state()).sheets.find((x) => x.id === tsheet) ?? null;
+      await poll(tthere, 'the turned page can be written on', 20000);
+      tools.setTool('pen');
+      tools.setSize('pen', 2);
+      tools.setRecent('pen', '#ff0000');
+      await invoke('dev_ink_pen', { on: true });
+      await sleep(400);
+      // a level stroke a quarter of the way down the page as it is shown, from a fifth across to three fifths
+      const F = [0.2, 0.25, 0.6, 0.25] as const;
+      ask('drag', fx(r.left + F[0] * r.width), fy(r.top + F[1] * r.height), fx(r.left + F[2] * r.width), fy(r.top + F[3] * r.height), 0.02);
+      const path = await poll(async () => { const c = await tthere(); const k = q<SVGGraphicsElement>('svg.page-ink[data-page="2"] [data-n]', tb); return c && c.strokes === 1 && c.live === 0 && !c.shown && k ? k : null; }, 'a stroke on the turned page, drawn by the page', 30000);
+      {
+        const k = path.getBoundingClientRect();
+        const now = p2.getBoundingClientRect();
+        const got = [(k.left - now.left) / now.width, ((k.top + k.bottom) / 2 - now.top) / now.height, (k.right - now.left) / now.width];
+        log(`turned: the stroke from ${got[0]!.toFixed(3)} to ${got[2]!.toFixed(3)} across the page, ${got[1]!.toFixed(3)} down it; the finger went ${F[0]} to ${F[2]}, ${F[1]} down`);
+        must(Math.abs(got[0]! - F[0]) < 0.02 && Math.abs(got[2]! - F[2]) < 0.02 && Math.abs(got[1]! - F[1]) < 0.012, 'where the finger went on the page as it is shown');
+      }
+      await invoke('dev_ink_pen', { on: false });
+      await poll(async () => { const c = await tthere(); return c && !c.dirty; }, 'kept', 25000);
+      await shot('pdfink-turned');
+      q<HTMLElement>('.meta [data-tool="more"]', tb)!.click();
+      (await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-share"]'), 'more has share as pdf', 5000)).click();
+      await poll(async () => (await state()).sharing, 'shared as a PDF', 30000);
+      const [n, pw, ph] = await invoke<[number, number, number, number]>('dev_pdf_info', { path: pageTools.lastShared! });
+      log(`export: ${JSON.stringify({ pdf: pageTools.lastShared, page: 2, pages: n, size: [pw, ph], red: [F[0], F[1] - 0.02, F[2], F[3] + 0.02], only: true })}`);
+      await invoke('dev_ink_unshare');
+      await poll(async () => !(await state()).sharing, 'closed', 10000);
+      openNode(PAGEINK_BOOK);
     }
     phase('done');
     finished = true;

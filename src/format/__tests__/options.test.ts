@@ -64,8 +64,8 @@ describe('the review log', () => {
     const b = R({ at: '2026-10-30T08:16:00Z', card: 'voc-dayf', key: 'c2', g: 1, st: 'relearning', s: 1.2 });
     const text = [formatReview(a), '', 'not json', '{"at":"2026-10-30T08:17:00Z","doc":"x.md","card":"c","g":5,"st":"review","elapsed":0,"ivl":0,"next":0}', `${formatReview(b)}`, formatReview(a).slice(0, 40)].join('\n');
     expect(parseReviews(text)).toEqual([a, b]);
-    // a newer app's extra keys are ignored, not fatal
-    expect(parseReviews(JSON.stringify({ ...a, device: 'phone' }))).toEqual([a]);
+    // a newer app's extra keys are not fatal: the line is the same grade, the keys kept beside it (`reviews.test.ts`)
+    expect(parseReviews(JSON.stringify({ ...a, device: 'phone' }))).toEqual([{ ...a, extra: { device: 'phone' } }]);
     expect(parseReviews('\r\n')).toEqual([]);
   });
 

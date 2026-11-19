@@ -285,8 +285,32 @@ notes/
   minute, when known; `src` where the line came from when not a session in
   the app (`anki` for an imported revlog); `over` on a grade given again in
   the session it was first given in (‹ back to a card already graded), the
-  `at` of the line it replaces, of the same `card` and `key`. Keys are
-  written in that order; unknown keys are ignored on read. It is built for
+  `at` of the line it replaces, of the same `card` and `key`. After these,
+  what only the moment of the grade knew, each absent when it was not known
+  (every line written before they were kept, and an imported one), so a
+  model of memory fed from the log need not suppose them:
+
+  ```
+  {"at":"2026-11-20T21:40:11Z","doc":"arabic/vocabulary.md","card":"voc-karam","key":"r","g":1,"st":"review","elapsed":21,"ivl":26,"next":0,"s":4.1,"d":5.3,"ms":60000,"tz":60,"time":94210,"form":"bidir","did":"3fa9c0d17b2e","n":14,"ret":0.85,"by":"fsrs-7"}
+  ```
+
+  `tz` the device's offset from UTC when graded, in minutes east (`60` in
+  Paris in winter, `-300` in New York; `0` is UTC, not unknown), which with
+  `at` gives the local day and hour the review fell in; `time` the time on
+  the card as it was measured, in milliseconds, written only when `ms` was
+  capped below it (`ms` stays what counts as time on the card); `form` the
+  card's form then (`cloze` `qa` `bidir`; with `key`, which blank or
+  direction); `did` the document's own id then, the first twelve characters
+  of its row's in a collection, the same through a rename or a move where
+  `doc` is not (absent over plain files, which have none); `n` which grade
+  of its session it was, from 1 (a card asked again in the session has a
+  later one); `ret` the retention it was studied at, when not 0.9; `by` the
+  scheduler in use, when not the built in (`.ilmi/scheduler.json`); `step`
+  the learning step it stood on before the grade, when it was in its steps.
+  None of them says anything of what the card holds. One that is not what
+  it should be is left out and the line still counts. Keys are written in
+  that order; a key the app does not know is ignored, kept, and written
+  back after the others where a line is written again. It is built for
   sync: lines are only appended, never rewritten, so two devices add theirs
   to the same month;
   every `.jsonl` in the directory is read (a sync tool's conflict copy

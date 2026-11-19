@@ -518,6 +518,9 @@ describe('53\'s merge cases, for rows and text', () => {
     const line = (card: string, at: string): string => formatReview({ at, doc: 'german.md', card, g: 3, st: 'review', elapsed: 1, ivl: 1, next: 2, s: 2, d: 5 } as Review);
     await a.fs.appendText!(join(ROOT, '.ilmi/reviews/2026-11.jsonl'), `${line('one', '2026-11-05T09:00:00Z')}\n`);
     await b.fs.appendText!(join(ROOT, '.ilmi/reviews/2026-11.jsonl'), `${line('two', '2026-11-05T09:00:01Z')}\n`);
+    // a grade with what its moment knew, and a key of a newer app's: carried as the line it is
+    const rich = `${line('three', '2026-11-05T09:00:04Z').slice(0, -1)},"tz":60,"time":94210,"form":"qa","did":"3fa9c0d17b2e","n":3,"mood":"tired"}`;
+    await a.fs.appendText!(join(ROOT, '.ilmi/reviews/2026-11.jsonl'), `${rich}\n`);
     // what was read is a line of the same file, and one taken back another: synced as any line is
     const readA = '{"at":"2026-11-05T09:00:02Z","doc":"papers/maxwell.md","read":"pass","to":3}';
     const readB = '{"at":"2026-11-05T09:00:03Z","doc":"papers/maxwell.md","read":"undo","of":"2026-11-05T09:00:02Z"}';
@@ -538,7 +541,8 @@ describe('53\'s merge cases, for rows and text', () => {
     const log = text(fa.get('.ilmi/reviews/2026-11.jsonl'));
     expect(log).toContain('"card":"one"');
     expect(log).toContain('"card":"two"');
-    expect(log.split('\n')).toEqual(expect.arrayContaining([readA, readB]));
+    expect(log.split('\n')).toEqual(expect.arrayContaining([readA, readB, rich]));
+    expect(text((await b.files()).get('.ilmi/reviews/2026-11.jsonl')).split('\n')).toContain(rich);
     expect(text((await b.files()).get('.ilmi/reviews/2026-11.jsonl')).split('\n').filter((l) => l.includes('"read"')).sort()).toEqual([readA, readB]);
     expect([...Buffer.from(fa.get('papers/figure.png')!, 'base64')]).toEqual([9, 8, 7, 255, 254]);
     // a pair taken back on one is taken back on both

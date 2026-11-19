@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { usePaneSlot } from './paneSlot.js';
-import { emitDocAction, emitGrade, runBlockHooks, usePlugins, useSlotGaps } from '../plugins/index.js';
+import { emitDocAction, emitGrade, runBlockHooks, schedulerSlot, usePlugins, useSlotGaps } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
 import type { CardSchedule, Doc } from '../format/index.js';
 import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, neverTested, nextGap, owesLearning, metElsewhere, itemOwesLearning, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, whenToDate, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
@@ -858,7 +858,8 @@ export function Session({ active, onOpen }: Props) {
       const s = useApp.getState().session;
       const live = s?.seq === seq ? s?.items[place] : undefined;
       const item = live?.kind === 'card' && live.path === shown.path && live.block === shown.block ? live : shown;
-      const loaded = await gradeCard(item, g, now, ms, over, (w) => { told = w; }, before?.line.at);
+      const by = schedulerSlot()?.active()?.id;
+      const loaded = await gradeCard(item, g, now, ms, over, (w) => { told = w; }, before?.line.at, { n: place + 1, ...(by ? { by } : {}) });
       return { item, loaded };
     }).then(({ item, loaded }) => {
       if (!loaded) return;

@@ -46,7 +46,31 @@ export interface Review {
   src?: string;
   /** A grade given again in the session it was given in: the `at` of the line it replaces (the same `card` and `key`, an earlier instant). */
   over?: string;
+  /**
+   * What only the moment of the grade knows, each absent on a line written before it was kept (and on an imported one):
+   * `tz` the device's offset from UTC then, in minutes east (60 in Paris in winter), so the local day and hour the
+   * review fell in can be told; `time` the time on the card as measured, in milliseconds, only when `ms` was capped
+   * below it; `form` the card's form then; `did` the document's own id then (the first twelve characters of its row's:
+   * the same through a rename or a move, where `doc` is not); `n` which grade of its session it was, from 1; `ret`
+   * the retention it was studied at, when not 0.9; `by` the scheduler in use, when not the built in; `step` the
+   * learning step it stood on before, when it was in its steps.
+   */
+  tz?: number;
+  time?: number;
+  form?: 'cloze' | 'qa' | 'bidir';
+  did?: string;
+  n?: number;
+  ret?: number;
+  by?: string;
+  step?: number;
+  /** Keys of the line this app does not know (a newer app's), kept as they were and written back after the known ones. */
+  extra?: Record<string, unknown>;
 }
+
+const FORMS = ['cloze', 'qa', 'bidir'] as const;
+/** The keys of a grade's line, in the order they are written. */
+const KNOWN = new Set(['at', 'doc', 'card', 'key', 'g', 'st', 'elapsed', 'ivl', 'next', 's', 'd', 'ms', 'src', 'over', 'tz', 'time', 'form', 'did', 'n', 'ret', 'by', 'step']);
+const int = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 
 const STATES: readonly SrState[] = ['new', 'learning', 'review', 'relearning'];
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
@@ -74,12 +98,14 @@ export function formatReview(r: Review): string {
   if (r.ms !== undefined) o.ms = r.ms;
   if (r.src !== undefined) o.src = r.src;
   if (r.over !== undefined) o.over = r.over;
+  for (const k of ['tz', 'time', 'form', 'did', 'n', 'ret', 'by', 'step'] as const) if (r[k] !== undefined) o[k] = r[k];
+  if (r.extra) for (const [k, v] of Object.entries(r.extra)) if (!KNOWN.has(k) && k !== 'read' && v !== undefined) o[k] = v;
   return JSON.stringify(o);
 }
 
 const num = (v: unknown, min = 0): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min;
 
-/** A line as a review, or null when it is not one. Unknown keys are ignored. */
+/** A line as a review, or null when it is not one. Unknown keys are kept (`extra`) and otherwise ignored. */
 function readLine(line: string): Review | null {
   let o: unknown;
   try { o = JSON.parse(line); } catch { return null; }
@@ -98,6 +124,18 @@ function readLine(line: string): Review | null {
   if (num(x.ms)) r.ms = x.ms;
   if (typeof x.src === 'string') r.src = x.src;
   if (typeof x.over === 'string' && INSTANT.test(x.over) && x.over < x.at) r.over = x.over;
+  // what the moment knew: each read when it is what it should be, else left out (never a reason to drop the line)
+  if (int(x.tz, -840, 840)) r.tz = x.tz;
+  if (num(x.time)) r.time = x.time;
+  if (FORMS.includes(x.form as (typeof FORMS)[number])) r.form = x.form as (typeof FORMS)[number];
+  if (typeof x.did === 'string' && /^[0-9a-z-]{1,40}$/.test(x.did)) r.did = x.did;
+  if (int(x.n, 1, 1e6)) r.n = x.n;
+  if (typeof x.ret === 'number' && x.ret > 0 && x.ret < 1) r.ret = x.ret;
+  if (typeof x.by === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(x.by)) r.by = x.by;
+  if (int(x.step, 0, 1e4)) r.step = x.step;
+  let extra: Record<string, unknown> | null = null;
+  for (const k of Object.keys(x)) if (!KNOWN.has(k) && k !== 'read') (extra ??= {})[k] = x[k];
+  if (extra) r.extra = extra;
   return r;
 }
 

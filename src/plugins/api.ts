@@ -305,6 +305,25 @@ export interface Review {
   src?: string;
   /** On a grade given again in its session: the `at` of the line it replaced (which is not in the history). */
   over?: string;
+  /**
+   * What only the moment of the grade knows, each absent on a line written before it was kept (and on an imported one):
+   * `tz` the device's offset from UTC then, in minutes east (60 in Paris in winter), so the local day and hour the
+   * review fell in can be told; `time` the time on the card as measured, in milliseconds, only when `ms` was capped
+   * below it; `form` the card's form then; `did` the document's own id then (the first twelve characters of its row's:
+   * the same through a rename or a move, where `doc` is not); `n` which grade of its session it was, from 1; `ret`
+   * the retention it was studied at, when not 0.9; `by` the scheduler in use, when not the built in; `step` the
+   * learning step it stood on before, when it was in its steps.
+   */
+  tz?: number;
+  time?: number;
+  form?: 'cloze' | 'qa' | 'bidir';
+  did?: string;
+  n?: number;
+  ret?: number;
+  by?: string;
+  step?: number;
+  /** Keys of the line this app does not know, as they were. */
+  extra?: Record<string, unknown>;
 }
 
 /** A card as a scheduler is handed it: one line of it, a cloze group or a direction being a line of its own. */

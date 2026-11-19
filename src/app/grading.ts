@@ -13,8 +13,22 @@ export const REVIEW_MS_CAP = 60_000;
 
 const round = (n: number, places: number) => Math.round(n * 10 ** places) / 10 ** places;
 
+/** What only the moment of a grade knows of it, for its log line (FORMAT.md §1): each left out when not known. */
+export interface Moment {
+  /** The card's form. */
+  form?: Review['form'];
+  /** The document's own id (its row's, in a collection): the same through a rename or a move. */
+  did?: string;
+  /** Which grade of its session it is, from 1. */
+  n?: number;
+  /** The retention it is studied at. */
+  retention?: number;
+  /** The scheduler in use, when not the built in. */
+  by?: string;
+}
+
 /** The log's line for one grade. */
-export function reviewOf(path: string, id: string, key: string | undefined, g: Grade, prev: CardSchedule | undefined, next: CardSchedule, now: Date, ms?: number): Review {
+export function reviewOf(path: string, id: string, key: string | undefined, g: Grade, prev: CardSchedule | undefined, next: CardSchedule, now: Date, ms?: number, moment?: Moment): Review {
   const r: Review = {
     at: instantOf(now), doc: path, card: id, g, st: prev?.state ?? 'new',
     elapsed: prev?.last ? Math.max(0, Math.floor(daysBetween(whenToDate(prev.last), now))) : 0,
@@ -24,6 +38,16 @@ export function reviewOf(path: string, id: string, key: string | undefined, g: G
   if (next.stability !== undefined) r.s = round(next.stability, 4);
   if (next.difficulty !== undefined) r.d = round(next.difficulty, 4);
   if (ms !== undefined) r.ms = Math.min(REVIEW_MS_CAP, Math.max(0, Math.round(ms)));
+  // what only now knows; `ms` stays as it was (what counts as time on the card), the time measured is beside it when it was more
+  const tz = -now.getTimezoneOffset();
+  if (Number.isInteger(tz) && Math.abs(tz) <= 840) r.tz = tz === 0 ? 0 : tz;
+  if (ms !== undefined && Number.isFinite(ms) && Math.round(ms) > REVIEW_MS_CAP) r.time = Math.round(ms);
+  if (moment?.form) r.form = moment.form;
+  if (moment?.did) r.did = moment.did.slice(0, 12);
+  if (moment?.n !== undefined && Number.isInteger(moment.n) && moment.n >= 1) r.n = moment.n;
+  if (moment?.retention !== undefined && moment.retention > 0 && moment.retention < 1 && moment.retention !== 0.9) r.ret = moment.retention;
+  if (moment?.by) r.by = moment.by;
+  if (prev?.steps) r.step = prev.steps;
   return r;
 }
 
@@ -92,12 +116,20 @@ export interface Graded {
  * the card counts once. `told` hears the grade as written. `after`: the
  * instant of the line the card's grade before this one in the session was
  * logged at (a card asked again): this one's is after it, so two grades of
- * one card in one second stay two lines (`reviewKey`).
+ * one card in one second stay two lines (`reviewKey`). `session`: what the
+ * session knows of the grade for its line (which of its grades it is, the
+ * scheduler in use).
  */
-export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number, over?: Graded | null, told?: (graded: Graded) => void, after?: string | null): Promise<Loaded | null> {
+export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number, over?: Graded | null, told?: (graded: Graded) => void, after?: string | null, session?: Pick<Moment, 'n' | 'by'>): Promise<Loaded | null> {
   const vault = currentVault();
   if (!vault) return null;
   const { opts } = optionsAt(item.path);
+  const moment: Moment = { form: item.form, ...(opts.retention !== undefined ? { retention: opts.retention } : {}), ...session };
+  // the document's own id, where the collection gives its documents one
+  if ('rowAt' in vault.fs) {
+    const row = await (vault.fs as StoreFs).rowAt(vault.abs(item.path)).catch(() => null);
+    if (row) moment.did = row.id;
+  }
   // studied toward an exam ahead: an interval past its last week is cut into it
   const exam = activeExamAt(item.path, now);
   // over a store the grade's line goes into the log in the transaction that writes its schedule
@@ -106,7 +138,7 @@ export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number
   let line: Review | null = null;
   const unstage = () => { if (line) dropReview(line); line = null; };
   const logLine = (r: { id: string; key?: string; prev?: CardSchedule; next: CardSchedule }): Review => {
-    const l = reviewOf(item.path, r.id, r.key, g, r.prev, r.next, now, ms);
+    const l = reviewOf(item.path, r.id, r.key, g, r.prev, r.next, now, ms, moment);
     // asked again: its line is after the one its last asking wrote
     if (after) l.at = overAt(l.at, after);
     // given again: the line replaces the one before it, logged after it

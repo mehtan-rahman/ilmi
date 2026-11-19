@@ -26,7 +26,9 @@ through it, the app does through the same functions.
 to run on deactivate. Every registration returns a disposer; the runtime
 calls them all when the plugin is turned off, the vault closes, or the
 plugin's files change on disk (it is then reloaded, with a notice). The
-types are in [`plugins/ilmi.d.ts`](plugins/ilmi.d.ts); `api` is `1`.
+types are in [`plugins/ilmi.d.ts`](plugins/ilmi.d.ts); `api` is `2`. A plugin
+whose `plugin.json` says `1` runs as it did: 2 only added `scheduler` and
+`cache`.
 
 ```
 ilmi.version, ilmi.api, ilmi.manifest
@@ -44,6 +46,9 @@ ilmi.lens.active()  lens.open(path)  lens.on('open' | 'selection', fn)
 ilmi.ui.notice(text)  ui.popover(rect, el)  ui.modal(el)  ui.settings(fn(s))
 ilmi.net.fetch(url, init?)                           through the app, no CORS
 ilmi.store.load() save(data) get(key) on('change', fn)   data.json
+ilmi.scheduler.register({ id, name, recall? | next?, preview?, curve?, prepare?, observe? })
+                                                     a scheduler for the cards (below)
+ilmi.cache.get(key) put(key, bytes) remove(key)      bytes on this device, outside the collection
 ilmi.format.parse serialize cardForm cardFields setField meta
 ilmi.onDeactivate(fn)
 ```
@@ -77,6 +82,90 @@ Notes on a few of them:
 - Paths are vault-relative with `/`; one that climbs out of the vault is
   refused.
 
+## A scheduler
+
+`ilmi.scheduler.register(spec)` adds a scheduler to the `scheduler` row in
+tweaks, beside `built in`. One is in use at a time, and which is the
+collection's choice (`.ilmi/scheduler.json`), so every device means the same
+one; a device where it is not installed, or is off, says so once and uses
+the built in.
+
+The built in (FSRS) is always underneath. Every grade still writes its
+state to the card's `sr` line, whatever is chosen, and nothing a scheduler
+says is written anywhere: it is asked again, from the review log, on each
+device. So a device without the plugin, a session where it failed, and any
+other app reading the files schedule from FSRS with nothing lost.
+
+A scheduler is one of two kinds, and may be async throughout:
+
+- `recall(cards, ctx)` gives each card's chance of recall now, 0 to 1. A
+  card is due when that is at or under the retention it is studied at
+  (`card.retention`), and among the cards it scored the lowest recall
+  against its target comes first. There are no dates. `null` for a card
+  leaves it to the built in.
+- `next(card, grade, ctx)` gives `{ due }` after a grade. It is asked as of
+  the card's last review (`card.history` is the reviews before it, `ctx.now`
+  when it was given), so the same date comes out of the log everywhere.
+
+And, optionally: `preview(card, ctx)`, the four grades' `{ due }` for the
+buttons' `back in` words (without it they say nothing, never FSRS's days);
+`curve(card, days, ctx)`, recall that many days from now, which is what the
+upcoming list, the forecast and an exam's count read for a date-less
+scheduler (without it they read FSRS's day); `prepare(history, ctx)`, the
+whole review log, oldest first, when the scheduler is chosen and whenever
+the log changes other than by a review added at its end (a sync);
+`observe(review, ctx)` for each review added.
+
+```ts
+import type { Ilmi, SchedulerCard } from '../ilmi.js';
+
+const DAY = 86_400_000;
+// each review passed doubles the days recall takes to halve; `again` starts over
+const halfLife = (c: SchedulerCard) => c.history.reduce((h, r) => (r.g === 1 ? 1 : h * 2), 1);
+const recallAt = (c: SchedulerCard, at: number) => {
+  const last = c.history[c.history.length - 1];
+  return last ? 0.5 ** ((at - Date.parse(last.at)) / DAY / halfLife(c)) : null;
+};
+
+export function activate(ilmi: Ilmi) {
+  ilmi.scheduler.register({
+    id: 'recall-sample',
+    name: 'recall sample',
+    recall: (cards, { now }) => cards.map((c) => recallAt(c, now.getTime())),
+    curve: (card, days, { now }) => days.map((d) => recallAt(card, now.getTime() + d * DAY) ?? 0),
+  });
+}
+```
+
+What it is handed, and when:
+
+- A card is one line of a card: a cloze group and a both-ways card's
+  reverse are cards of their own, named by `id` and `key` as the review log
+  names them. With it come its document (`path`), the retention it is
+  studied at, its own reviews oldest first (`history`), and FSRS's state
+  from its `sr` line (`fsrs`).
+- It is asked about cards that have a review and are out of their learning
+  steps. A new card, and a card minutes from due in its steps (`again`, a
+  first `good`), are the app's: the day's new cards, learnt once, asked
+  again before the session ends. Suspended cards are never asked about.
+  What holds a card back for a day holds as before: the day's allowances,
+  one direction of a both-ways card and one of two linked cards a day, an
+  exam's days.
+- It is asked a moment after the queue is built, after each grade, and
+  every ten minutes while a date-less one is in use. Nothing waits for it:
+  a grade is written first, and until new scores are in the queue shows the
+  last ones; a card graded since its score is FSRS's until the next comes.
+- A throw, an answer for other cards than were asked, or more than ten
+  seconds on one call (two minutes on `prepare`) fails the plugin as any
+  throw does: one notice, the plugin off for the session, and the built in
+  schedules.
+
+`ilmi.cache` keeps bytes (`Uint8Array`) for the plugin on this device, for
+this collection, under the app's data directory: not in the collection, not
+synced, not exported. It is for what is costly to make again and can be: a
+model's state over the review log, say, stamped with how much of the log it
+covers. 64 MB a plugin at most.
+
 ## Writing one
 
 The repo carries its plugins under `plugins/<id>/` as TypeScript or ES
@@ -104,6 +193,8 @@ collection in memory and a bridge that remembers its notices and fetches.
 ## The ones here
 
 - `hello`: the sample, one of everything.
+- `recall-sample`: a sample scheduler, a few lines (the ones above, and the
+  buttons' outcomes): a demo of the slot, not a memory model.
 - `dictionary`: `look up` on the selection cue (key `d`) normalizes the
   word (Arabic: tashkeel and tatweel stripped, then the clitics `و` `ف` `ب`
   `ك` `ل` `ال` `لل` `س` tried off the front, one at a time and in that

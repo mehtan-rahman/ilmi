@@ -1,0 +1,9 @@
+{
+  "id": "recall-sample",
+  "name": "recall sample",
+  "version": "0.1.0",
+  "api": 2,
+  "description": "a sample scheduler for the slot: recall halves every half-life, which doubles with each review passed. a demo, not a memory model",
+  "author": "ilmi",
+  "repo": "https://github.com/mehtan-rahman/ilmi"
+}

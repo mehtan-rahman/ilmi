@@ -6,6 +6,28 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-19 — a scheduler slot in the plugin API (api 2)
+
+The user wants scheduling algorithms other than FSRS to live in plugins, a neural one above all (it predicts each card's chance of recall now from the whole review history, and has no intervals), with FSRS kept underneath so nothing is lost where the plugin is not.
+
+**The slot.** `ilmi.scheduler.register({ id, name, … })` (`src/plugins/api.ts`, api 2; a manifest that says 1 still runs, 2 only adds). A scheduler has `recall(cards, ctx)` (the date-less kind: a card is due when its recall is at or under the retention it is studied at) or `next(card, grade, ctx)` (a date), and optionally `preview` (the four buttons), `curve` (recall some days on, for what is ahead), `prepare(history)` and `observe(review)`. A card arrives with its document, its id and the line's key as the log names it, its target retention, its own reviews, and FSRS's state from its `sr` line. `ilmi.cache.get/put/remove` keeps bytes for a plugin on the device, outside the collection (`src-tauri/src/cache.rs`: `plugin-cache/<collection>/<plugin>/<key>` under the app's data, 64 MB a plugin).
+
+**How it sits in the app.** `src/schedule/slot.ts` is pure: which queue items a scheduler is asked about, and `applyScores` and `slotKeys`, which lay its scores over the queue. `src/plugins/scheduler.ts` (`SchedulerSlot`) is the runtime. `buildQueue` stays synchronous: it hands the slot the log and the cards (`laySlot`), lays whatever scores are held, and goes on to the exams, the links and the day's allowance as before; the slot scores a moment later and asks for a rebuild when something changed. A score is kept with the line's last review, so a card graded since its score is the built in's until the next score comes (a card just graded does not sit in the day on a stale number). `grading.ts` is not touched: the `sr` line is always FSRS's.
+
+**Decided on the way.**
+- A scheduler is asked only about cards with a review that are out of their learning steps. New cards and steps stay the app's: the day's new cards, learnt once, and a card asked again before the session ends all hang on them, and a scheduler that owned them would have to own the session too.
+- Nothing a scheduler says is stored. An interval scheduler's date is worked out again from the log (`next` as of the card's last review), so every device has the same date without a field for it in the `sr` line. The format is unchanged; `.ilmi/scheduler.json` (`{ "scheduler": "<id>" }`) is new and says only which (FORMAT.md §1).
+- The day's order: the cards a date-less scheduler scored keep, between them, the places cards have in the day's order, and which card takes which place goes by recall against its target. So reading and writing sit among the cards as they did, and a card's own priority no longer orders it against other scored cards.
+- A grade that puts a card into its steps says the step on its button (`10m`) under any scheduler; the other buttons say the scheduler's `preview` or nothing.
+- `null` from `recall` or `next` leaves that card to the built in.
+- A failing scheduler fails its plugin, as any throw in a plugin does: one notice, off for the session.
+
+**Seen in tests only.** `slot.test.ts` (the pure side), `scheduler.test.ts` (the runtime, and through the plugin host: the sample from the corpus, an api 1 plugin, a throwing one, the cache), `scheduler-queue.test.ts` (the real `vault.ts` over a collection in memory: the queue by recall, the choice kept, a grade writing FSRS's line, the buttons, a choice that is not on the device). The whole suite passes with the built in (nothing chosen runs none of it). `cargo test` and `cargo check` for the Mac and for `aarch64-apple-ios`.
+
+**Not seen.** No window was opened: the `scheduler` row in tweaks and the buttons in a session were not looked at, and the cache's commands were not called through the app (their Rust is tested, the renderer's side is mocked). Nothing was run on a device or a simulator.
+
+---
+
 ## 2026-11-19 — a file shared to ilmi: the share sheet on an iPad and an iPhone, `Open With` and the Dock on a Mac
 
 The user: "it'd be nice if i can go to a pdf and press share and have ilmi pop up as an option".

@@ -759,6 +759,28 @@ on `focus stays within daily budget` in the settings (⌘,): the
 narrowed list then folds where the day's does, and ⏎ walks only what is
 above the fold of that kind.
 
+### The scheduler
+
+When a card comes back is decided by a scheduler. `scheduler` in the
+settings (⌘,) lists them: `built in` (FSRS), and any a plugin has added. The
+choice is the collection's, so it syncs: every device uses the same one, and
+a device where that plugin is not installed or is off says so once and uses
+the built in.
+
+The built in is always underneath. Whatever is chosen, every grade writes
+FSRS's state to the card as before, so going back to `built in`, a device
+without the plugin, and an export all carry on with nothing lost. Another
+scheduler works from the history of your reviews, and says of each card
+with a review either a date, or how likely you are to recall it now; in the
+second kind there are no dates: a card is due once its recall has fallen to
+its `retention`, and of those the least likely to be recalled come first.
+New cards, the learning steps (a card back within the session), the day's
+`new-per-day` and `reviews-per-day`, exams, and suspended cards are as they
+are under the built in. The grade buttons say `back in` only what the
+scheduler in use says; one that does not say leaves them bare. If a
+scheduler fails or is too slow, one line says so and the built in schedules
+until the app is opened again.
+
 ### Priority, growth, and the budget
 
 The inspector sets a priority, 0 first and 100 last, on a document or on the
@@ -1233,6 +1255,8 @@ Plugins live in a vault's `.ilmi/plugins/` and are turned on in settings (throug
 storage, each one on or off on its own, so two devices that each turn one on
 both keep both); the
 API, how to write one, and how to package one are in `PLUGINS.md`. The repo
-ships two under `plugins/`: the sample, and a dictionary that looks a selected
+ships three under `plugins/`: the sample, a dictionary that looks a selected
 word up (Wiktionary by default, Arabic clitics stripped on the way) and adds
-it to a vocab deck from the popover.
+it to a vocab deck from the popover, and a sample scheduler. A plugin may
+bring a scheduler of its own for the cards; it is then on the `scheduler`
+row in the settings (see *The scheduler* under *The day*).

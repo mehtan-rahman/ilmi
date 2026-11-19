@@ -11,7 +11,7 @@
 // the review.
 
 import type { Doc } from '../format/index.js';
-import { buryLinked, cardsById, docItems, examQueue, isDue, sortQueue, stepsAhead, type CardItem, type ExamAt, type LinkedCard } from '../schedule/index.js';
+import { buryLinked, cardsById, docItems, examQueue, isDue, itemKey as dayKey, slotKeys, sortQueue, stepsAhead, type CardItem, type ExamAt, type LinkedCard, type QueueItem } from '../schedule/index.js';
 
 export interface StudyOptions {
   /** `include not due`: every unsuspended card, new ones last. */
@@ -24,6 +24,8 @@ export interface StudyOptions {
   exams?: (path: string) => readonly ExamAt[];
   /** Every card in the collection by id (`cardsById`), for a linked card's other side outside the deck; absent, the deck's own. */
   linked?: ReadonlyMap<string, LinkedCard>;
+  /** Another scheduler's word laid over the cards, in place (`schedule/slot.ts`), before the exams and the links; absent, the built in's days. */
+  lay?: (items: CardItem[], now: Date) => void;
 }
 
 /** A card item's place in the queue: its card and the line it asks. */
@@ -40,11 +42,17 @@ export function studyItems(docs: Iterable<[string, Doc]>, now: Date, opts: Study
       if (i.kind === 'card' && (!opts.only || opts.only.has(`${i.path}#${i.block}`))) all.push(i);
     }
   }
+  opts.lay?.(all, now);
   if (opts.exams) examQueue(all, now, opts.exams);
   // of two linked cards, one a day, unless cramming (asked for)
   if (!opts.cram) buryLinked(all, opts.linked ?? cardsById(list), now);
   // what is due, then the cards in their steps due later today: asked at the end, as a card graded into its steps here is
-  if (!opts.cram) return [...(sortQueue(all.filter((i) => isDue(i, now) && !opts.held?.(i)), now) as CardItem[]), ...stepsAhead(all, now)];
+  if (!opts.cram) {
+    const due = all.filter((i) => isDue(i, now) && !opts.held?.(i));
+    // by recall where a date-less scheduler scored them (`slotKeys`); no card it scored, the day's order as it is
+    const places = slotKeys(due, now);
+    return [...(sortQueue(due, now, places.size ? (i: QueueItem, day: string) => places.get(i) ?? dayKey(i, day) : undefined) as CardItem[]), ...stepsAhead(all, now)];
+  }
   const fresh = all.filter(isNew);
   const rest = sortQueue(all.filter((i) => !fresh.includes(i)), now) as CardItem[];
   return [...rest, ...fresh];

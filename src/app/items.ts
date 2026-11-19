@@ -122,6 +122,15 @@ export function gapLabel(next: CardSchedule, now: Date): string {
   return `${Math.max(1, Math.round(ms / 60000))}m`;
 }
 
+/** How far off a due is, as a grade's button says it: minutes and hours within a day, then days (`fmtDays`). For a scheduler's own dates (`schedule/slot.ts`). */
+export function gapOfDue(due: string, now: Date): string {
+  if (due.length === 10) return fmtDays(Math.max(1, Math.round((dayStart(due).getTime() - dayStart(dayOf(now)).getTime()) / 86400000)));
+  const m = Math.max(1, Math.round((whenToDate(due).getTime() - now.getTime()) / 60000));
+  if (m < 60) return `${m}m`;
+  if (m < 1440) return `${Math.round(m / 60)}h`;
+  return fmtDays(m / 1440);
+}
+
 /** What each of the four grades would schedule, for the buttons; under an exam ahead, as the grade will write it (`capForExam`). */
 export function gapLabels(sched: CardSchedule | undefined, now: Date, retention?: number, exam?: { exam: Exam; key: string }): Record<Grade, string> {
   const p = preview(sched, now, retention !== undefined ? { request_retention: retention } : undefined);
@@ -264,6 +273,8 @@ export function paceWords(item: QueueItem, now: Date): string {
 
 /** A scheduled card's interval, under its due; nothing for a new one. */
 export function intervalLabel(item: CardItem): string {
+  // another scheduler's day is over it: the built in's interval is not what brings it back
+  if (item.slot) return '';
   return item.sched?.ivl && item.sched.ivl >= 1 ? fmtDays(item.sched.ivl) : '';
 }
 

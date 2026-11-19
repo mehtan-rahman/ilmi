@@ -1,5 +1,6 @@
 // Generated from src/plugins/api.ts by `npm run plugins`; edit that file.
-// The plugin API, version 1: what `activate(ilmi)` is handed. Types only;
+// The plugin API, version 2 (1, and the scheduler slot and the cache; a
+// plugin written for 1 runs as it did): what `activate(ilmi)` is handed. Types only;
 // this file is copied verbatim to `plugins/ilmi.d.ts` by `npm run plugins`,
 // so a plugin's TypeScript sees the same names the app does. Everything a
 // plugin can do through this handle, the app does through the same
@@ -7,8 +8,8 @@
 // disposer when the plugin is turned off, the vault closes, or its files
 // change on disk.
 
-/** The API version this file describes. A plugin's manifest names the one it was written for. */
-export type ApiVersion = 1;
+/** The API version this file describes. A plugin's manifest names the one it was written for: this one, or 1 (2 only adds to it). */
+export type ApiVersion = 2;
 
 /** `plugin.json`. */
 export interface PluginManifest {
@@ -16,8 +17,8 @@ export interface PluginManifest {
   id: string;
   name: string;
   version: string;
-  /** The API version the plugin was written against; must be the app's. */
-  api: ApiVersion;
+  /** The API version the plugin was written against: the app's, or one before it that the app still runs. */
+  api: ApiVersion | 1;
   description?: string;
   author?: string;
   repo?: string;
@@ -256,6 +257,121 @@ export interface NetApi {
   fetch(url: string, init?: RequestInit): Promise<Response>;
 }
 
+// ── a scheduler ──────────────────────────────────────────────────
+
+/** One grade as the review log (`.ilmi/reviews/`, FORMAT.md §1) has it. */
+export interface Review {
+  /** When, a UTC instant to the second (`2026-10-30T08:15:02Z`). */
+  at: string;
+  /** The card's document when it was graded. */
+  doc: string;
+  /** The card's `^id`. */
+  card: string;
+  /** The line graded: `cN` a cloze group, `r` a both-ways card's reverse; absent, the bare line. */
+  key?: string;
+  /** again hard good easy. */
+  g: Grade;
+  /** The built in's state before the grade. */
+  st: 'new' | 'learning' | 'review' | 'relearning';
+  /** Whole days since the review before; 0 for a new card. */
+  elapsed: number;
+  /** The built in's interval before and after, in days. */
+  ivl: number;
+  next: number;
+  /** The built in's stability and difficulty after. */
+  s?: number;
+  d?: number;
+  /** Time on the card, in milliseconds, when known. */
+  ms?: number;
+  /** Where the line came from when not a session here (`anki`). */
+  src?: string;
+  /** On a grade given again in its session: the `at` of the line it replaced (which is not in the history). */
+  over?: string;
+}
+
+/** A card as a scheduler is handed it: one line of it, a cloze group or a direction being a line of its own. */
+export interface SchedulerCard {
+  /** Its document (its deck), collection-relative. */
+  path: string;
+  /** Its `^id`. */
+  id: string;
+  /** The line asked, as the review log names it (`Review.key`). `id` and `key` together name the line. */
+  key?: string;
+  /** Its block index in the document. */
+  block: number;
+  /** The retention it is studied at: `retention` where it is set over the card, 0.9 where nowhere. */
+  retention: number;
+  /** Its own reviews, oldest first. */
+  history: readonly Review[];
+  /** The built in's (FSRS) state, as the card's `sr` line holds it now. Absent where `next` is asked as of a past review. */
+  fsrs?: CardSchedule;
+}
+
+export interface SchedulerContext {
+  now: Date;
+}
+
+/** When a card comes back: a `Date`, an instant, or a day (`2026-12-01`). */
+export interface SchedulerOutcome {
+  due: Date | string;
+}
+
+/**
+ * A scheduler: `recall` (the date-less kind) or `next` (the interval kind), and whatever else of the rest it has.
+ * It is asked about cards that have a review and are out of their learning steps; new cards and steps are the
+ * app's. The built in keeps writing its own state to every card's `sr` line under it, so a device without the
+ * plugin, or a session where it threw or took over ten seconds, schedules from that with nothing lost. Every
+ * function may be async; none is ever waited on by a grade.
+ */
+export interface SchedulerSpec {
+  /** Lowercase letters, digits, and hyphens; what a collection remembers the choice by. */
+  id: string;
+  /** As the tweaks row lists it: lowercase, terse. */
+  name: string;
+  /**
+   * Each card's chance of recall now, 0 to 1, in the order given; `null` for a card left to the built in. A card
+   * is due when its recall is at or under `card.retention`, and the lowest recall against its target comes first.
+   */
+  recall?(cards: readonly SchedulerCard[], ctx: SchedulerContext): readonly (number | null)[] | Promise<readonly (number | null)[]>;
+  /**
+   * When a card comes back after `grade` given at `ctx.now`; `null` leaves it to the built in. Nothing of it is
+   * stored: it is asked as of the card's last review (`card.history` the reviews before it, `card.fsrs` absent),
+   * so every device works out the same date from the log. Not asked when `recall` is there.
+   */
+  next?(card: SchedulerCard, grade: Grade, ctx: SchedulerContext): SchedulerOutcome | null | Promise<SchedulerOutcome | null>;
+  /** What each of the four grades would do now, for the buttons' `back in` words; without it they say nothing. */
+  preview?(card: SchedulerCard, ctx: SchedulerContext): Record<Grade, SchedulerOutcome> | null | Promise<Record<Grade, SchedulerOutcome> | null>;
+  /**
+   * The card's chance of recall `days` from now, one for each, falling as the days go. With `recall`, what is
+   * ahead (upcoming, the forecast, an exam's count) reads the day this reaches the target; without it, the built in's day.
+   */
+  curve?(card: SchedulerCard, days: readonly number[], ctx: SchedulerContext): readonly number[] | Promise<readonly number[]>;
+  /**
+   * The whole review log, oldest first (by instant, then card, line and grade: the same on every device): when
+   * it is chosen or the collection opens, and when the log changes other than by a review added at its end (a sync).
+   */
+  prepare?(history: readonly Review[], ctx: SchedulerContext): void | Promise<void>;
+  /** One review added at the log's end, after `prepare` has finished. */
+  observe?(review: Review, ctx: SchedulerContext): void | Promise<void>;
+}
+
+export interface SchedulerApi {
+  /** Add a scheduler to the tweaks row `scheduler`; it runs once the collection chooses it. One is in use at a time. */
+  register(spec: SchedulerSpec): Dispose;
+}
+
+/**
+ * Bytes kept on this device for this collection, outside it: not synced, not exported. For what is costly to make
+ * again and can be (a model's state over the log). 64 MB a plugin at most, over all its keys; a key is lowercase
+ * letters, digits, `-`, `_` and `.`.
+ */
+export interface CacheApi {
+  /** What was kept under `key`; null when nothing was. */
+  get(key: string): Promise<Uint8Array | null>;
+  put(key: string, bytes: Uint8Array): Promise<void>;
+  remove(key: string): Promise<void>;
+}
+
 /** The handle `activate` receives. */
 export interface Ilmi {
   /** The app's version. */
@@ -273,6 +389,10 @@ export interface Ilmi {
   ui: UiApi;
   net: NetApi;
   store: StoreApi;
+  /** Since api 2. */
+  scheduler: SchedulerApi;
+  /** Since api 2. */
+  cache: CacheApi;
   format: Format;
   /** Runs when the plugin is turned off, the vault closes, or the plugin reloads. */
   onDeactivate(fn: () => void): Dispose;

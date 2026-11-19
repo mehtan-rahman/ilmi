@@ -18,6 +18,7 @@ import { FORECAST_WEEKS, READ_WORD, dayLabel, linesDue, linesOf, numbersOf, rate
 import type { Reading, Review } from '../format/index.js';
 import { useApp } from './store.js';
 import { docsOf, openCard, openNode, optionsAt } from './vault.js';
+import { slotDues, useScheduler } from '../plugins/index.js';
 import './numbers.css';
 import { appNow } from './clock.js';
 
@@ -266,17 +267,19 @@ export function NumbersView({ home }: { home: string }) {
   const layer = useApp((s) => s.numbersLayer);
   const phone = useApp((s) => s.phone);
   const day = dayOf(appNow());
+  const scores = useScheduler()?.version;
   const { n, lines, mine, under } = useMemo(() => {
     const now = appNow();
     const under = docsUnder(tree, home, order, files);
-    const lines = linesOf(docsOf(under));
+    // what is ahead by the scheduler in use, where another than the built in is (`slotDues`)
+    const lines = slotDues(linesOf(docsOf(under)), now);
     const mine = reviewsUnder(log, lines, new Set(files));
     const cache = new Map<string, Resolved>();
     const optionsOf = (p: string) => { let r = cache.get(p); if (!r) { r = optionsAt(p); cache.set(p, r); } return r; };
     return { n: numbersOf(lines, mine, now, optionsOf, log.length ? dayOf(whenToDate(log[0]!.at)) : undefined), lines, mine, under };
     // `docs` changes whenever a document under the lens does
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tree, order, files, docs, log, home, day]);
+  }, [tree, order, files, docs, log, home, day, scores]);
   // what was read under the lens, counted on its own
   const { rn, reads } = useMemo(() => {
     const reads = readingsUnder(readLog, home, new Set(under));

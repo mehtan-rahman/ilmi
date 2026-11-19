@@ -10,7 +10,8 @@ import { SESSION, itemsLabel, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
 import { itemKey, studyItems, type StudyOptions } from './study.js';
-import { allDocs, currentVault, docsOf, examsAtPath, note, openNode } from './vault.js';
+import { allDocs, currentVault, docsOf, examsAtPath, note, openNode, reviewLog } from './vault.js';
+import { laySlot } from '../plugins/index.js';
 import { appNow } from './clock.js';
 import { cardsById } from '../schedule/index.js';
 
@@ -77,7 +78,7 @@ export function studyNodes(ids: readonly string[], back: string, opts: StudyOpti
   // what the day's allowance holds back in the queue is held back here too, unless the cards were picked by hand
   const held = new Set(s.queue.filter((i) => i.kind === 'card' && i.held).map((i) => itemKey(i as import('../schedule/index.js').CardItem)));
   const paths = [...new Set(ids.flatMap((one) => docsUnder(s.tree, one, s.order, s.files)))];
-  const items = studyItems(docsOf(paths), appNow(), { exams: examsAtPath, linked: cardsById(allDocs()), ...(opts.only ? opts : { held: (i: import('../schedule/index.js').CardItem) => held.has(itemKey(i)), ...opts }) });
+  const items = studyItems(docsOf(paths), appNow(), { exams: examsAtPath, linked: cardsById(allDocs()), lay: (cards, now) => { laySlot(cards, reviewLog(), now, false); }, ...(opts.only ? opts : { held: (i: import('../schedule/index.js').CardItem) => held.has(itemKey(i)), ...opts }) });
   const title = ids.length === 1 ? titleOf(id, s.docs, s.vault) : itemsLabel(ids.length);
   if (!items.length) {
     notify(`${opts.cram ? 'no cards' : 'nothing due'} · ${title}`);

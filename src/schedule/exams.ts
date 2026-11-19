@@ -233,7 +233,8 @@ export function examLeft(items: readonly QueueItem[], exam: Exam, under: (path: 
     if (!under(i.path)) continue;
     if (i.kind === 'card') {
       out.cards++;
-      if (recallAt(i.sched, exam.day) < retentionOf(i.path)) out.unready++;
+      // under another scheduler (`slot.ts`): due again by the exam's day, where it says the day
+      if (i.slot?.reaches !== undefined ? i.slot.reaches <= exam.day : recallAt(i.sched, exam.day) < retentionOf(i.path)) out.unready++;
     } else if (i.kind === 'read') {
       if (i.note || i.pdf) {
         const from = i.sched.due && i.sched.ivl !== undefined ? addDays(dayOf(whenToDate(i.sched.due)), -i.sched.ivl) : undefined;

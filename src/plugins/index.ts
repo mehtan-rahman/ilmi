@@ -3,33 +3,41 @@
 // network, the key map for what plugins register, and the small functions
 // the lenses call to hand a selection or a drawn block to the plugins.
 // `runtime.ts` is the pure side; this file is the only one that knows the
-// store and Tauri.
+// store and Tauri. The scheduler slot (`scheduler.ts`) is started here with
+// the plugins, since a plugin may fill it: the collection's choice read
+// from `.ilmi/scheduler.json`, the scores laid over the queue as it is
+// built (`laySlot`), and a card's `back in` words for the session.
 
 import { invoke } from '@tauri-apps/api/core';
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
-import { useSyncExternalStore } from 'react';
-import { dueToday } from '../app/items.js';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { appNow } from '../app/clock.js';
+import { dueToday, gapLabel, gapOfDue } from '../app/items.js';
 import { cardsPath, kindOf, tabKindOf } from '../app/names.js';
 import { activeTab } from '../app/panes.js';
 import { useApp } from '../app/store.js';
-import { note, openNode } from '../app/vault.js';
-import type { Card } from '../format/index.js';
-import type { CardItem, Grade, QueueItem, ReadItem, SectionItem, WriteItem } from '../schedule/index.js';
+import { note, openNode, optionsAt, refreshQueue } from '../app/vault.js';
+import type { Card, CardSchedule, Review } from '../format/index.js';
+import { applyScores, dayOf, isDay, preview, schedCardOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SchedCard, type Scheduler, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import type { Vault } from '../vault/index.js';
 import type * as A from './api.js';
 import { contextOf, keyMatches, parseKey } from './context.js';
 import { PluginHost, readPluginFolder, type Bridge, type InstallResult } from './runtime.js';
+import { SCHEDULER_FILE, SchedulerSlot, chosenIn, formatSchedulerFile, parseSchedulerFile } from './scheduler.js';
 import { addStyle, closeSurfaces, showModal, showPopover } from './surfaces.js';
 import './plugins.css';
 
 export type { Ilmi, Selection as PluginSelection, BlockContext } from './api.js';
 export { PluginHost, type PluginRow, type PluginCommand, type PluginAction, type SettingControl, type InstallResult, COMMAND_PREFIX } from './runtime.js';
+export { BUILT_IN, SchedulerSlot, type SchedulerRow } from './scheduler.js';
 
 /** The app's version, as `ilmi.version`; `src-tauri/tauri.conf.json` has the same. */
 export const APP_VERSION = '0.1.0';
 
 let host: PluginHost | null = null;
+let slot: SchedulerSlot | null = null;
+let offSlot: (() => void)[] = [];
 let offHost: (() => void) | null = null;
 let offLens: (() => void) | null = null;
 let tick = 0;
@@ -139,7 +147,8 @@ export function onPluginAction(fn: () => void): () => void {
 /** Start the runtime over `vault`: the enable list is read, what is on runs. Called by `openVault`. */
 export async function startPlugins(vault: Vault): Promise<PluginHost> {
   stopPlugins();
-  const h = new PluginHost(vault, bridge);
+  const s = await startSlot(vault);
+  const h = new PluginHost(vault, { ...bridge, scheduler: { register: (plugin, spec) => s.register(plugin, spec as unknown as Scheduler) }, cache: cacheOf(vault) });
   host = h;
   offHost = h.subscribe(bumpUi);
   let lastLens = lensOf()?.path;
@@ -155,6 +164,8 @@ export async function startPlugins(vault: Vault): Promise<PluginHost> {
     keysOn = true;
   }
   await h.start();
+  // what is on has registered: a choice that is still not here is said, once
+  if (slot === s) s.settle();
   bumpUi();
   return h;
 }
@@ -164,12 +175,213 @@ export function stopPlugins(): void {
   if (!host) return;
   closeSurfaces();
   host.stop();
+  stopSlot();
   offHost?.();
   offLens?.();
   offHost = null;
   offLens = null;
   host = null;
   bumpUi();
+}
+
+// ── the scheduler slot ──────────────────────────────────────────
+
+/** The schedulers the app carries, registered in every collection's slot beside the plugins'. */
+const carried: ((vault: Vault) => Scheduler)[] = [];
+export function carryScheduler(make: (vault: Vault) => Scheduler): void {
+  carried.push(make);
+}
+
+async function readSchedulerFile(vault: Vault): Promise<Record<string, unknown>> {
+  try {
+    const abs = vault.abs(SCHEDULER_FILE);
+    const st = await vault.fs.stat(abs);
+    return parseSchedulerFile(st && !st.isDir ? await vault.fs.readText(abs) : null);
+  } catch {
+    return {};
+  }
+}
+
+/** `.ilmi/scheduler.json` as the open collection has it, for whoever keeps something there (the choice here, a fit's weights). */
+export async function schedulerFile(): Promise<Record<string, unknown>> {
+  return slotVault ? readSchedulerFile(slotVault) : {};
+}
+
+/** Change `.ilmi/scheduler.json`: `change` gets what it holds and gives what it should; unknown keys stay. */
+export async function writeSchedulerFile(change: (data: Record<string, unknown>) => Record<string, unknown>): Promise<void> {
+  const vault = slotVault;
+  if (!vault) return;
+  const next = change({ ...(await readSchedulerFile(vault)) });
+  await vault.fs.mkdir(vault.abs('.ilmi'));
+  await vault.fs.writeText(vault.abs(SCHEDULER_FILE), formatSchedulerFile(next));
+}
+
+let slotVault: Vault | null = null;
+const fileListeners = new Set<(data: Record<string, unknown>) => void>();
+/** Told `.ilmi/scheduler.json` as it is read: when the collection opens, and when it changes (here, or synced in). */
+export function onSchedulerFile(fn: (data: Record<string, unknown>) => void): () => void {
+  fileListeners.add(fn);
+  return () => { fileListeners.delete(fn); };
+}
+
+async function startSlot(vault: Vault): Promise<SchedulerSlot> {
+  const s = new SchedulerSlot({
+    notice: (text) => note(text),
+    // never inside the queue's own build, or a store update
+    changed: () => queueMicrotask(() => { if (slot === s) refreshQueue(); }),
+    now: appNow,
+    fail: (owner, e) => host?.failed(owner, e),
+  });
+  slot = s;
+  slotVault = vault;
+  offSlot.push(s.subscribe(bumpUi));
+  const read = async (settle: boolean) => {
+    const data = await readSchedulerFile(vault);
+    if (slot !== s) return;
+    for (const fn of [...fileListeners]) fn(data);
+    s.choose(chosenIn(data));
+    // a choice synced in may come with its plugin: said missing only if it still is, a little later
+    if (settle) setTimeout(() => { if (slot === s) s.settle(); }, 1500);
+  };
+  await read(false);
+  for (const make of carried) s.register(null, make(vault));
+  offSlot.push(vault.subscribe((ev) => { if (ev.kind === 'hidden' && ev.paths.includes(SCHEDULER_FILE)) void read(true); }));
+  return s;
+}
+
+function stopSlot(): void {
+  for (const off of offSlot) off();
+  offSlot = [];
+  slot?.stop();
+  slot = null;
+  slotVault = null;
+}
+
+/** A plugin's cache on this device (`cache.rs`): under the app's data directory, by the collection's folder name. */
+function cacheOf(vault: Vault): NonNullable<Bridge['cache']> {
+  const collection = vault.root;
+  const enc = encodeURIComponent;
+  return {
+    get: async (plugin, key) => {
+      // a byte before what was kept says that something was
+      const got = new Uint8Array(await invoke<ArrayBuffer>('plugin_cache_get', { collection, plugin, key }));
+      return got.length ? got.slice(1) : null;
+    },
+    put: (plugin, key, bytes) => invoke<void>('plugin_cache_put', bytes, { headers: { collection: enc(collection), plugin: enc(plugin), key: enc(key) } }),
+    remove: (plugin, key) => invoke<void>('plugin_cache_remove', { collection, plugin, key }),
+  };
+}
+
+/** The slot of the open collection, or null. */
+export function schedulerSlot(): SchedulerSlot | null {
+  return slot;
+}
+
+/** The slot, re-rendering the caller when its schedulers or the choice change. */
+export function useScheduler(): SchedulerSlot | null {
+  usePlugins();
+  return slot;
+}
+
+/** The collection's choice made here: kept in `.ilmi/scheduler.json`, so every device means the same one. */
+export async function chooseScheduler(id: string | null): Promise<void> {
+  if (!slot) return;
+  slot.choose(id, true);
+  await writeSchedulerFile((data) => {
+    if (id === null) delete data.scheduler;
+    else data.scheduler = id;
+    return data;
+  }).catch((e: unknown) => note(`could not keep that: ${e instanceof Error ? e.message : String(e)}`));
+}
+
+/** Whether another scheduler than the built in is in use: the queue then lays its scores over its own copies of the cards. */
+export function slotInUse(): boolean {
+  return !!slot?.active();
+}
+
+/**
+ * The scheduler in use over a queue being built, in place (`items` are the
+ * caller's copies): it is told the log as it is, asked about these cards
+ * for next time, and what it has said so far is laid over them
+ * (`applyScores`). Nothing waits: cards it has not scored yet are the built
+ * in's. False when nothing was laid. `ask` false: a part of the queue (a
+ * deck's session), laid with what the whole queue's asking has brought.
+ */
+export function laySlot(items: QueueItem[], log: readonly Review[], now: Date, ask = true): boolean {
+  const s = slot;
+  if (!s) return false;
+  try {
+    s.setLog(log);
+    if (!s.active()) return false;
+    const retentionOf = (path: string) => optionsAt(path).opts.retention;
+    const index = s.histories();
+    const cards: SchedCard[] = [];
+    const by = new Map<QueueItem, SchedCard>();
+    for (const i of items) {
+      const c = schedCardOf(i, index, retentionOf(i.path));
+      if (c) { cards.push(c); by.set(i, c); }
+    }
+    if (ask) s.request(cards);
+    if (!s.scored()) return false;
+    return applyScores(items, (i) => { const c = by.get(i); return c && s.scoreOf(c.id, c.key, i.sched.last); }, retentionOf, now) > 0;
+  } catch (e) {
+    console.error('scheduler', e);
+    return false;
+  }
+}
+
+/**
+ * Schedule lines (the numbers' `Line`s) with the day the scheduler in use
+ * brings each back in place of the built in's, where it says one: what is
+ * ahead (the forecast) then counts its days. The lines themselves where
+ * the built in is in use.
+ */
+export function slotDues<T extends { path: string; card: { id?: string }; key?: string; sched?: CardSchedule }>(lines: T[], now: Date): T[] {
+  const s = slot;
+  if (!s?.active() || !s.scored()) return lines;
+  const today = dayOf(now);
+  return lines.map((l) => {
+    if (l.card.id === undefined || !l.sched) return l;
+    const score = s.scoreOf(l.card.id, l.key, l.sched.last);
+    if (!score) return l;
+    const due = score.recall !== undefined && score.recall <= optionsAt(l.path).opts.retention ? today : score.due;
+    return due === undefined ? l : { ...l, sched: { ...l.sched, due } };
+  });
+}
+
+const GRADES: readonly Grade[] = [1, 2, 3, 4];
+
+/**
+ * The four buttons' `back in` words for a session's card when another
+ * scheduler than the built in has it: what its `preview` says, nothing
+ * while that is on its way or where it has none (never the built in's
+ * days under another's dates). A grade that puts the card into its
+ * learning steps says the step, whoever schedules: the steps are the
+ * app's, and the card is back in the session by them. Undefined when the
+ * card is the built in's: no scheduler in use, a new card, one in its
+ * steps, one it has no word on.
+ */
+export function useSlotGaps(item: CardItem, sched: CardSchedule | undefined, now: Date): Record<Grade, string> | undefined {
+  const s = useScheduler();
+  const card = s?.active() && sched ? schedCardOf({ ...item, sched }, s.histories(), optionsAt(item.path).opts.retention) : null;
+  const key = card && s!.scoreOf(card.id, card.key, sched?.last) ? `${s!.version}\n${card.id}\n${card.key ?? ''}\n${sched?.last ?? ''}` : null;
+  const [got, setGot] = useState<{ key: string; dues: Record<Grade, string> | null } | null>(null);
+  useEffect(() => {
+    if (!key || !card || !s) return;
+    let live = true;
+    void s.preview(card).then((dues) => { if (live) setGot({ key, dues }); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  if (!key || !card) return undefined;
+  const dues = got?.key === key ? got.dues : null;
+  const steps = preview(sched, now, { request_retention: card.retention });
+  const out = {} as Record<Grade, string>;
+  for (const g of GRADES) {
+    const step = steps[g];
+    out[g] = step.due && !isDay(step.due) ? gapLabel(step, now) : dues ? gapOfDue(dues[g], now) : '';
+  }
+  return out;
 }
 
 // ── what the lenses hand over ───────────────────────────────────

@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { usePaneSlot } from './paneSlot.js';
-import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
+import { emitDocAction, emitGrade, runBlockHooks, usePlugins, useSlotGaps } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
 import type { CardSchedule, Doc } from '../format/index.js';
 import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, neverTested, nextGap, owesLearning, metElsewhere, itemOwesLearning, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, whenToDate, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
@@ -240,7 +240,9 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
   const exam = activeExamAt(item.path, now);
   // a grade given again is given from before the one it replaces: so are its hints
   const from = given?.written ? regradeFrom(sched, given.written) : sched;
-  const gaps = gapLabels(from, now, optionsAt(item.path).opts.retention, exam && { exam, key: lineKey(card?.id ?? item.id, text, item.group, item.dir) });
+  // another scheduler than the built in has this card (`schedule/slot.ts`): its own words on the buttons, or none
+  const slotGaps = useSlotGaps(item, from, now);
+  const gaps = slotGaps ?? gapLabels(from, now, optionsAt(item.path).opts.retention, exam && { exam, key: lineKey(card?.id ?? item.id, text, item.group, item.dir) });
   // the answer shown, felt under the finger where the device can (`haptics.ts`)
   const reveal = () => { if (!revealed) hapticReveal(); setRevealed(true); };
   const grade = (g: Grade) => { if (revealed) onGrade(g, sched); else reveal(); };

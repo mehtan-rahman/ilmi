@@ -11,7 +11,9 @@ import { cardFields, meta, parse, serialize, setField, type Doc as FDoc, type Fi
 import { baseOf, dirOf, isDoc, nameOf, type Vault, type VaultEvent } from '../vault/index.js';
 import type * as A from './api.js';
 
-export const API: A.ApiVersion = 1;
+export const API: A.ApiVersion = 2;
+/** The versions a plugin may be written for: 2 only added to 1. */
+export const APIS: readonly number[] = [1, 2];
 export const PLUGINS_DIR = '.ilmi/plugins';
 export const ENABLED_FILE = '.ilmi/plugins.json';
 export const MANIFEST = 'plugin.json';
@@ -42,6 +44,14 @@ export interface Bridge {
   modal(el: HTMLElement): A.Popover;
   /** A plugin's `style.css` on the page; the disposer takes it off. */
   addStyle(id: string, css: string): A.Dispose;
+  /** The scheduler slot (`scheduler.ts`): a plugin's scheduler goes in under its id. */
+  scheduler?: { register(plugin: string, spec: A.SchedulerSpec): A.Dispose };
+  /** A plugin's bytes on this device, outside the collection. */
+  cache?: {
+    get(plugin: string, key: string): Promise<Uint8Array | null>;
+    put(plugin: string, key: string, bytes: Uint8Array): Promise<void>;
+    remove(plugin: string, key: string): Promise<void>;
+  };
 }
 
 export type PluginState = 'on' | 'off' | 'failed' | 'refused' | 'broken';
@@ -323,7 +333,7 @@ export class PluginHost {
     if (this.instances.has(id)) return;
     const f = this.found.get(id);
     if (!f?.manifest) return;
-    if (f.manifest.api !== API) {
+    if (!APIS.includes(f.manifest.api)) {
       this.states.set(id, { state: 'refused', error: `written for api ${f.manifest.api}, this is api ${API}` });
       this.bridge.notice(`${f.manifest.name} was written for api ${f.manifest.api}, this is api ${API}`);
       this.bump();
@@ -413,6 +423,11 @@ export class PluginHost {
     this.states.set(id, { state: 'failed', error: msg });
     this.bridge.notice(`${this.nameOf(id)}: ${msg}`);
     this.bump();
+  }
+
+  /** Something of `id`'s that the runtime does not call itself failed (its scheduler, run by the slot): the plugin's failure all the same. */
+  failed(id: string, e: unknown): void {
+    if (this.instances.has(id)) this.fail(id, e);
   }
 
   /** Wrap a plugin's callback so a throw, sync or async, fails the plugin instead of the app. */
@@ -941,6 +956,23 @@ export class PluginHost {
       ui,
       net: { fetch: (url, init) => this.bridge.fetch(url, init) },
       store,
+      scheduler: {
+        register: (spec) => {
+          live();
+          if (!this.bridge.scheduler) throw new Error('no scheduler slot here');
+          return keep(this.bridge.scheduler.register(id, spec));
+        },
+      },
+      cache: {
+        get: async (key) => { live(); return (await this.bridge.cache?.get(id, key)) ?? null; },
+        put: async (key, bytes) => {
+          live();
+          if (!this.bridge.cache) throw new Error('no cache here');
+          if (!(bytes instanceof Uint8Array)) throw new Error('a cache keeps bytes (a Uint8Array)');
+          await this.bridge.cache.put(id, key, bytes);
+        },
+        remove: async (key) => { live(); await this.bridge.cache?.remove(id, key); },
+      },
       format,
       onDeactivate: (fn) => keep(fn),
     };

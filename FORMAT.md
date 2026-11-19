@@ -64,6 +64,7 @@ notes/
   .ilmi/                     app-private state, never required
     order.json               the order chosen for a directory's children
     reading.json             the reading state of the PDFs on their own
+    scheduler.json           the scheduler the collection's cards are studied by, when not the built in
     ink/<sha256>/<page>.pkdrawing   what is written on a PDF's pages
     ink/<id>/<sheet>.pkdrawing      what is written on a written notebook's sheets
     marks/<sha256>.json      what is left on a PDF's pages: bookmarks, marks, highlights, portals, passages
@@ -332,6 +333,17 @@ notes/
   names one line. Nothing is derived for the days before the first line:
   the reading's history starts when it is first logged. The corpus month
   `reviews/2026-12.jsonl` holds both kinds mixed (`readings.test.ts`).
+- **The scheduler** a collection is studied by is app-private too:
+  `.ilmi/scheduler.json`, `{ "scheduler": "<id>" }`, the id of a scheduler a
+  plugin registered (`PLUGINS.md`, *a scheduler*). Absent, or without the
+  key, the built in (FSRS) schedules. It only says which: nothing a
+  scheduler works out is stored, and every card's `sr` line (§6.2) holds
+  FSRS's state whatever it says, so a reader that ignores the file loses
+  nothing. An app that does not have the scheduler named uses the built in
+  and leaves the file as it is. The file is written with its keys sorted,
+  two spaces of indent and a newline at the end; a key not known is kept.
+  It syncs as one file: of two devices that change it apart, the later
+  change stands.
 - **Not the same** is app-private too: `.ilmi/same.json`,
   `{ "not": ["<key>|<key>", …] }`, the pairs of cards the person said do
   not test the same fact, so the app never offers them again (milestone

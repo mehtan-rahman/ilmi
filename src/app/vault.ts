@@ -10,10 +10,10 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { REVIEWS_DIR, meta, replaces, setField, type Doc, type Meta, type NodeType, type ReadKind, type Reading, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
-import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examKey, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, sameItem, spentToday, stepsAhead, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
+import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examKey, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, sameItem, slotKeys, spentToday, stepsAhead, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
 import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, isPdfPath, joinRel, normRel, ordered, placeEntry, rekey, relFrom, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TextHit, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { createCollection, listCollections } from '../vault/tauri-store.js';
-import { startPlugins, stopPlugins } from '../plugins/index.js';
+import { laySlot, slotInUse, startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
 import { collectionFs, importCollection } from './collections.js';
 import { cleanViews, type DeckView } from './deck.js';
@@ -247,11 +247,13 @@ function buildQueue(now: Date): QueueItem[] {
   // (tagged, brought forward), a card due that an allowance may hold, and with a link anywhere any card (its twin may be buried)
   const from = new Map<QueueItem, QueueItem>();
   const examOf = (p: string) => activeExam(examsAtPath(p), now);
+  // another scheduler than the built in (`schedule/slot.ts`) may say of any card when it is due
+  const slotted = slotInUse();
   for (const d of all) {
     if (!d.items.length) continue;
     const under = examOf(d.items[0]!.path) !== undefined;
     for (const base of d.items) {
-      const marked = under || (base.kind === 'read' && base.finish !== undefined) || (base.kind === 'card' && (links > 0 || base.dueAt.getTime() <= t));
+      const marked = under || (base.kind === 'read' && base.finish !== undefined) || (base.kind === 'card' && (slotted || links > 0 || base.dueAt.getTime() <= t));
       if (!marked) { out.push(base); continue; }
       const item = { ...base };
       from.set(item, base);
@@ -272,10 +274,15 @@ function buildQueue(now: Date): QueueItem[] {
     if (k === undefined) { k = itemKey(base, on); keys.set(base, k); }
     return k;
   };
+  // the scheduler in use, where there is one, says first; the exams, the links and the day's allowance then hold as they do
+  const laid = laySlot(out, reviews, now);
   examQueue(out, now, examsAtPath);
   // of two linked cards, one a day (after the exams have brought theirs forward)
   if (links) buryLinked(out, cardsById(bodies), now);
-  return meterQueue(out, now, { optionsOf: optionsAt, spent: spentToday(reviewsToday(now), now, optionsAt, examOf), examOf, keyOf });
+  // by recall, the cards it scored take the places cards have in the day's order between them (`slotKeys`)
+  const places = laid ? slotKeys(out, now, keyOf) : null;
+  const key = places?.size ? (item: QueueItem, on: string): number => places.get(item) ?? keyOf(item, on) : keyOf;
+  return meterQueue(out, now, { optionsOf: optionsAt, spent: spentToday(reviewsToday(now), now, optionsAt, examOf), examOf, keyOf: key });
 }
 
 /** Each document's `due` as the metered queue has it: a card held for tomorrow is not due today. */

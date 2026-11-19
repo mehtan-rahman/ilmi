@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from 'react';
 import { PluginsSection } from '../plugins/PluginsSection.js';
+import { SchedulerRow } from '../plugins/SchedulerRow.js';
 import { folderPaths, titleOf } from './names.js';
 import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './store.js';
 import { notify } from './land.js';
@@ -398,6 +399,7 @@ export function Tweaks() {
           <button type="button" data-active={learnNew ? '0' : '1'} onClick={() => useApp.getState().setLearnNew(false)}>test</button>
         </div>
       </div>
+      {vault !== null && <SchedulerRow />}
       {canHaptics && (
         <div className="tw-row" data-tw="haptics">
           <span className="tw-lbl">haptics</span>

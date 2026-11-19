@@ -89,6 +89,16 @@ export interface CardItem extends ItemBase {
    * shown a day (`buryLinked`), and a grade is written to both.
    */
   link?: string;
+  /**
+   * Another scheduler than the built in says when this card is due
+   * (`slot.ts`): its chance of recall now and that against its target (the
+   * date-less kind), and the day it comes up by it, which `due` and `dueAt`
+   * then read; `reaches`, the day it is known to be due by (today for one
+   * due by recall, its curve's day, a date's day; absent where a date-less
+   * scheduler gave no curve). Nothing on disk says so: the `sr` line is
+   * the built in's.
+   */
+  slot?: { recall?: number; ratio?: number; due: string; reaches?: string };
 }
 
 export interface ReadItem extends ItemBase {

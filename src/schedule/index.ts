@@ -17,7 +17,11 @@ export {
   fold, overflow, postponeOverflow, isBacklog, itemSeed, itemKey,
   type QueueItem, type Fold, type CardItem, type ReadItem, type WriteItem, type SectionItem, type GroupKey, type Dir, type Scope, type Counts, type GradeOptions,
 } from './queue.js';
-export { bareLined, withState, stronger, cardsById, partnerOf, linkedWith, buryLinked, copyToPartner, type LinkedCard } from './links.js';
+export {
+  CURVE_GRID, applyScores, between, canonicalLog, crossing, dueOf, indexLog, logKeyOf, recallOf, schedCardOf, scoreKey, slotKeys, slotted,
+  type Outcome, type SchedCard, type SchedContext, type Scheduler, type Score,
+} from './slot.js';
+export { bareLined,withState, stronger, cardsById, partnerOf, linkedWith, buryLinked, copyToPartner, type LinkedCard } from './links.js';
 export {
   OPTION_DEFAULTS, OPTION_KEYS, ownersOf, resolveOptions, allowanceOf, meterQueue, spentToday, becomesLeech, isNewItem,
   examNewQuota,

@@ -96,6 +96,16 @@ Arabic with two typeset books, to open and try.
 | ![A draft with its schedule](docs/screenshots/draft.png) | ![The book in the dark theme](docs/screenshots/dark.png) |
 | A draft that comes back until it is done | The dark theme; there is an e-ink one too |
 
+On an iPad, a book's pages with the notes on them beside, and the tools to write on either with the Pencil:
+
+![An iPad on its side: a chapter's pages on the left, the notes on them on the right](docs/screenshots/ipad.png)
+
+![An iPad upright: a written notebook with the pen's panel open, and the day's queue in the dark theme](docs/screenshots/ipad-upright.png)
+
+On an iPhone the day is the face: the queue, a card in a session, the tree behind one button, a note.
+
+![An iPhone: the day's queue, a card with its four grades, the tree, and a note in the dark theme](docs/screenshots/iphone.png)
+
 ## How the day is scheduled
 
 - **Cards** follow FSRS (`ts-fsrs`): one `sr` line under the card holds due,

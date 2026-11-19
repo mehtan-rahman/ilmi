@@ -173,11 +173,16 @@ describe('the strips', () => {
 });
 
 describe('a topic on the day', () => {
-  it('has ⏎ p d as buttons, and a card has none', async () => {
+  it('has ⏎ as its button, p and d behind a swipe and in its menu, and a card has none', async () => {
     useApp.setState({ queue: items() });
     await draw(createElement(Queue, { scope: 'today', active: true }));
     const row = q('.qlist li[data-el="read"]')!;
-    expect(Array.from(row.querySelectorAll('.topic-acts button')).map((b) => (b as HTMLElement).dataset.act)).toEqual(['on', 'postpone', 'done']);
+    expect(Array.from(row.querySelectorAll('.topic-acts button')).map((b) => (b as HTMLElement).dataset.act)).toEqual(['on']);
+    expect(Array.from(row.querySelectorAll('.swipe-acts button')).map((b) => (b as HTMLElement).dataset.act)).toEqual(['done', 'postpone']);
+    // held, the row's menu has the two
+    await act(async () => { row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 200 })); });
+    expect(qa('.pop-menu .ci').map((i) => [(i as HTMLElement).dataset.act, i.textContent])).toEqual([['postpone', 'later'], ['done', 'dismiss']]);
+    await act(async () => { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); });
     expect(row.querySelector('[data-act="postpone"]')?.textContent).toBe('later');
     expect(row.querySelector('[data-act="done"]')?.textContent).toBe('dismiss');
     expect(q('.qlist li[data-el="card"] .topic-acts')).toBeNull();

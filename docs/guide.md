@@ -1075,8 +1075,9 @@ to the day. The day's row of words (`all · recall · read · write`) narrows it
 to one thing to do, and the middle button then enters that, with its count. There are no tabs, no inspector, no second pane, and no keys named.
 
 A row of the day opens the session there. A topic's row (a source, a section,
-a note revisited) has its three on the row: `next`, `later`, `dismiss`, acting
-without opening it, and the notice can take any of them back. The session is
+a note revisited) has `next` on the row, acting without opening it; `later`
+and `dismiss` are a swipe left on the row, or a long press on it, which lists
+the two. The notice can take any of them back. The session is
 the whole screen: a card shows `reveal` across the foot and then, in the same
 place, the four grades; a topic shows its page with the three at the foot. `×`
 at the top goes back to the day.

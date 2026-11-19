@@ -1356,7 +1356,7 @@ textarea[dir="auto"] { unicode-bidi: plaintext; }
 html[data-scanning], html[data-scanning] body { background: transparent !important; }
 html[data-scanning] #root { visibility: hidden; }
 .scan { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; font-family: var(--sans); }
-.scan-frame { width: min(64vw, 280px); aspect-ratio: 1; border: 2px solid #fff; border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45); }
+.scan-frame { width: min(64vw, 280px); aspect-ratio: 1; border: 2px solid #fff; border-radius: var(--radius); box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45); }
 .scan-foot { position: absolute; left: 16px; right: 16px; bottom: calc(28px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .scan-line { color: #fff; font-size: 14px; text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
 .scan-cancel { font: inherit; font-size: 15px; min-height: 44px; padding: 0 24px; color: #fff; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.5); border-radius: var(--radius); }

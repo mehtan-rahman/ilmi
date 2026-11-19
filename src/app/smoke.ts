@@ -11657,7 +11657,7 @@ export async function smokePhone(): Promise<void> {
 
     // ── a topic's row: its three as buttons, acting from the row ──
     const row = await poll(() => q<HTMLElement>('.qlist li[data-el="read"] .topic-acts, .qlist li[data-el="section"] .topic-acts')?.closest('li'), 'a topic\'s row in the day');
-    must(tall('.topic-acts button') && qa('.topic-acts button', row).length === 3, 'it has its three as buttons');
+    must(tall('.topic-acts button') && qa('.topic-acts button', row).length === 1 && qa('.swipe-acts button', row).length === 2, 'it has `next` as its button, and later and dismiss behind a swipe');
     must(!q('.qlist li[data-el="card"] .topic-acts'), 'a card\'s row has none: a card is graded');
     row.scrollIntoView({ block: 'center' });
     await sleep(500);
@@ -11676,8 +11676,14 @@ export async function smokePhone(): Promise<void> {
     // haptics (milestone 83): a simulator does not shake, so what the page asked for is read (`hapticsAsked`, a dev build's)
     await poll(() => useApp.getState().canHaptics && useApp.getState().haptics, 'the phone says it can tap back, and haptics are on');
     hapticsAskedClear();
-    await tap(q('[data-act="postpone"]', row)!, () => there() === before - 1, 'later, tapped on the row: the topic leaves the day, nothing opened');
-    must(hapticsAsked().join(' ') === 'tick', `and is felt as a tick (${hapticsAsked().join(' ')})`);
+    // held, the row's menu has later and dismiss (a swipe left has them too, where things move)
+    ask('press', ...mid(q('.body', row)!), 0.9);
+    const later = await poll(() => q<HTMLElement>('.pop-menu [data-act="postpone"]'), 'a long press on the row brings later and dismiss', 20000);
+    must(tall('.pop-menu .ci') && qa('.pop-menu .ci').length === 2, 'two rows, each a finger\'s size');
+    await shot('phone-topic-menu', 300);
+    await tap(later, () => there() === before - 1, 'later, from the row\'s menu: the topic leaves the day, nothing opened');
+    // (one for the menu a long press opened, one for the topic's later)
+    must(hapticsAsked().join(' ') === 'tick tick', `and is felt as a tick, as the menu's opening was (${hapticsAsked().join(' ')})`);
     must(at() === TODAY, 'and the day is still in front');
     const undo = await poll(() => qa<HTMLElement>('.notice .na').find((b) => b.textContent === 'undo'), 'the notice can take it back', 8000);
     // (a short capture: the notice goes on its own after twelve seconds, and a touch asked of the rig can take several to land)
@@ -11693,7 +11699,8 @@ export async function smokePhone(): Promise<void> {
     const row2 = await poll(() => qa<HTMLElement>('.qlist li[data-el]').find((li) => rowKey(li) === theKey), 'the row is there again');
     row2.scrollIntoView({ block: 'center' });
     await sleep(400);
-    await tap(q('[data-act="postpone"]', row2)!, () => there() === before - 1, 'later again, for good');
+    ask('press', ...mid(q('.body', row2)!), 0.9);
+    await tap(await poll(() => q<HTMLElement>('.pop-menu [data-act="postpone"]'), 'its menu again', 20000), () => there() === before - 1, 'later again, for good');
     scroller.scrollTo({ top: 0 });
     await sleep(400);
 

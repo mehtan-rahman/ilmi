@@ -33,7 +33,7 @@ export const REST_MS = 200;
 const UNPRESS_MS = 400;
 
 /** Where right-click was: on these a long press is the menu's, not the system's to select text with. */
-export const MENUS = '.side, .tab-rail, .folder-view, .deck-row, .dd-h';
+export const MENUS = '.side, .tab-rail, .folder-view, .deck-row, .dd-h, .qlist li[data-swipe="1"]';
 
 /** When a press on a page starts a box: at once under a mouse (or a pen that does not write), after a hold under a finger. */
 export function boxStart(pointerType: string): 'now' | 'hold' {

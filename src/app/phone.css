@@ -35,6 +35,8 @@ html[data-shape="phone"] .canvas { position: relative; }
 html[data-shape="phone"] .pane + .pane { border-left: 0; }
 html[data-shape="phone"] .pane-top { position: absolute; inset: 0; z-index: 1; box-shadow: -1px 0 0 var(--line-1); }
 html[data-shape="phone"] .pane-top[data-pop="1"] { pointer-events: none; }
+/* a notebook's page setup is in its pane, which ends at the bar: it ends a little above that, and scrolls */
+html[data-shape="phone"] .page-setup { top: calc(var(--safe-t) + 58px); max-height: calc(100% - var(--safe-t) - 70px); }
 /* a session is the whole screen, over the bar, which is there under it as it comes in and as it is pulled away */
 html[data-shape="phone"] .pane-top[data-full="1"] { position: fixed; inset: 0 0 auto 0; height: var(--shell-h, 100dvh); z-index: 54; }
 
@@ -141,7 +143,8 @@ html[data-shape="phone"] .queue { overflow-x: clip; }
 .ra-when { display: block; margin-top: 1px; font-family: var(--sans); font-size: var(--t-xs); color: var(--fg-3); }
 
 /* a topic's row: ⏎ p d as buttons */
-.topic-acts { grid-area: acts; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 6px; margin-top: 10px; }
+.topic-acts { grid-area: acts; display: flex; margin-top: 10px; }
+.topic-acts button { flex: 0 1 220px; }
 .topic-acts button {
   appearance: none;
   min-height: var(--finger);

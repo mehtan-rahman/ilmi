@@ -26,6 +26,7 @@ import { actOnDoc, actionWords, atEndOf, docLine, putBackDoc, twoLines, type Doc
 import { failed, notify } from './land.js';
 import { passageOf, putPassage } from './passages.js';
 import type { ReadItem, SectionItem, WriteItem } from '../schedule/index.js';
+import { popMenu } from './popMenu.js';
 import './queue.css';
 import { appNow } from './clock.js';
 import { Glyph } from './icons.js';
@@ -91,6 +92,23 @@ export function QueuePath({ item, docs, by }: { item: QueueItem; docs: Record<st
   );
 }
 
+/**
+ * A topic's row held under a finger (`touch.ts` makes the long press a right-click): `later` and `dismiss` as a menu
+ * where the finger is, so neither is reached only by a swipe. They are the row's own two, pressed for it.
+ */
+function rowMenu(e: MouseEvent<HTMLLIElement>): void {
+  const li = e.currentTarget;
+  const pick = (act: string) => li.querySelector<HTMLElement>(`.swipe-acts [data-act="${act}"]`);
+  const later = pick('postpone');
+  const done = pick('done');
+  if (!later || !done) return;
+  e.preventDefault();
+  popMenu({ left: e.clientX, top: e.clientY, bottom: e.clientY }, [
+    { label: later.textContent ?? 'later', act: 'postpone', run: () => later.click() },
+    { label: done.textContent ?? 'dismiss', act: 'done', run: () => done.click() },
+  ]);
+}
+
 /** A topic's row on a phone (milestone 56): ⏎ `p` `d` as buttons, acting from the row. What was written can be undone from the notice. */
 function TopicActs({ item, now }: { item: ReadItem | WriteItem | SectionItem; now: Date }) {
   const pages = useApp((s) => !!s.docs[item.path]?.pdf);
@@ -116,10 +134,9 @@ function TopicActs({ item, now }: { item: ReadItem | WriteItem | SectionItem; no
   };
   return (
     <>
+      {/* the one a row is usually for; `later` and `dismiss` are a swipe left (below) and the row's menu, a long press (`rowMenu`) */}
       <span className="topic-acts">
         <button type="button" data-act="on" onClick={(e) => act(e, atEnd ? 'done' : 'on')}>{twoLines(words.on)}</button>
-        <button type="button" data-act="postpone" onClick={(e) => act(e, 'postpone')}>{words.postpone}</button>
-        <button type="button" data-act="done" onClick={(e) => act(e, 'done')}>{words.done}</button>
       </span>
       {/* the same two again past the row's right end, where a swipe left finds them (`rowSwipe.ts`); `later` the outer one, which a swipe right across is */}
       <span className="swipe-acts" aria-hidden="true">
@@ -276,6 +293,7 @@ export function Queue({ scope, active }: Props) {
             data-fresh={isFresh(item) ? '1' : '0'}
             data-below={i >= foldAt ? '1' : '0'}
             data-swipe={phone && item.kind !== 'card' ? '1' : undefined}
+            onContextMenu={phone && item.kind !== 'card' ? rowMenu : undefined}
             onMouseEnter={phone ? undefined : () => setCursor(i)}
             onClick={(e) => open(item, clickOpts(e))}
           >

@@ -25,7 +25,7 @@
 .inkbar .ib-btn, .ink-pop .ib-btn {
   position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
   width: 44px; height: 44px; margin: 0; padding: 0;
-  border: 0; border-radius: 6px; background: none; color: var(--fg-3);
+  border: 0; border-radius: var(--radius); background: none; color: var(--fg-3);
   font: inherit; cursor: default; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent;
   touch-action: manipulation; --ic: 22px;
   transition: background-color 120ms ease, color 120ms ease;
@@ -40,7 +40,7 @@
 /* what is chosen: full ink on a plate of the paper */
 .inkbar .ib-btn[aria-pressed="true"], .ink-pop .ib-btn[aria-pressed="true"] { color: var(--fg-1); }
 .inkbar .ib-btn[aria-pressed="true"]:not(.ib-sw), .ink-pop .ib-btn[aria-pressed="true"]:not(.ib-sw) {
-  background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-1, var(--line-2)), 0 1px 2px rgb(0 0 0 / 0.06);
+  background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-1, var(--line-2));
 }
 /* a pen and a highlighter carry their colour: a short bar under the icon, full where the tool is the one held */
 .inkbar .ib-tool .ic { transform: translateY(-2px); }
@@ -83,7 +83,7 @@
 /* ── a tool's settings, under the row from the tool ── */
 .ink-pop {
   position: fixed; z-index: 60; box-sizing: border-box; width: 296px; max-width: calc(100vw - 16px); padding: 12px 12px 10px;
-  background: var(--paper); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow-float);
+  background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow-float);
   font-family: var(--sans); font-size: var(--t-sm); line-height: 1.2; color: var(--fg-2);
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   animation: ink-pop-in 120ms ease-out;
@@ -93,18 +93,21 @@
 .ink-pop .ib-group { display: flex; align-items: center; gap: 2px; }
 
 /* one of a few: the pen's inks, the eraser's ways */
-.ink-pop .ip-seg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--line-3); }
+.ink-pop .ip-seg { display: flex; border: 1px solid var(--line-1); border-radius: var(--radius); }
+.ink-pop .ip-seg .ip-opt + .ip-opt { border-left: 1px solid var(--line-2); }
 .ink-pop .ip-opt {
   flex: 1 1 0; min-width: 0; height: 52px; margin: 0; padding: 4px 2px 5px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  border: 0; border-radius: 6px; background: none; color: var(--fg-3); font: inherit; font-size: var(--t-xs); cursor: default;
+  border: 0; border-radius: var(--radius); background: none; color: var(--fg-3); font: inherit; font-size: var(--t-xs); cursor: default;
   -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
 }
 .ink-pop .ip-opt svg { width: 26px; height: 22px; }
 .ink-pop .ip-opt.ip-wide { height: 44px; font-size: var(--t-sm); }
-.ink-pop .ip-opt[aria-pressed="true"] { background: var(--paper); color: var(--fg-1); box-shadow: 0 0 0 1px var(--line-2), 0 1px 2px rgb(0 0 0 / 0.08); }
+.ink-pop .ip-opt { border-radius: 0; }
+.ink-pop .ip-opt[aria-pressed="true"] { background: var(--line-3); color: var(--fg-1); }
+.ink-pop .ip-opt:active { background: var(--line-2); }
 
 /* the stroke as it is set, on a slip of paper */
-.ink-pop .ip-preview { display: block; width: 100%; height: 60px; margin: 10px 0 4px; border-radius: 6px; background: #fff; box-shadow: inset 0 0 0 1px var(--line-2); }
+.ink-pop .ip-preview { display: block; width: 100%; height: 60px; margin: 10px 0 4px; border-radius: var(--radius); background: #fff; box-shadow: inset 0 0 0 1px var(--line-2); }
 .ink-pop .ip-preview .ip-words { stroke: #8a8f98; stroke-width: 2.4; stroke-linecap: round; }
 .ink-pop .ip-preview .ip-line { stroke: #1c1c1e; stroke-width: 2.6; stroke-linecap: round; }
 .ink-pop .ip-preview .ip-reach { fill: rgb(120 120 120 / 0.14); stroke: #6b6b70; stroke-width: 1; }
@@ -135,10 +138,14 @@
 }
 .ink-pop .ip-check .ic { width: 18px; height: 18px; color: var(--fg-3); }
 .ink-pop .ip-ct { flex: 1 1 auto; }
-.ink-pop .ip-sw { position: relative; flex: 0 0 38px; height: 22px; border-radius: 11px; background: var(--fg-5); transition: background-color 140ms ease; }
-.ink-pop .ip-sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.3); transition: transform 140ms ease; }
-.ink-pop .ip-check[aria-checked="true"] .ip-sw { background: var(--accent); }
-.ink-pop .ip-check[aria-checked="true"] .ip-sw::after { transform: translateX(16px); }
+/* on or off: the settings' two-choice row, the one that holds tinted (the words are the control's own, drawn) */
+.ink-pop .ip-sw { flex: 0 0 auto; display: inline-flex; height: 32px; border: 1px solid var(--line-1); border-radius: var(--radius); font-size: var(--t-xs); }
+.ink-pop .ip-sw::before, .ink-pop .ip-sw::after { display: inline-flex; align-items: center; justify-content: center; width: 40px; color: var(--fg-3); }
+.ink-pop .ip-sw::before { content: "on"; }
+.ink-pop .ip-sw::after { content: "off"; border-left: 1px solid var(--line-2); color: var(--fg-1); background: var(--line-3); }
+.ink-pop .ip-check[aria-checked="true"] .ip-sw::before { color: var(--fg-1); background: var(--line-3); }
+.ink-pop .ip-check[aria-checked="true"] .ip-sw::after { color: var(--fg-3); background: none; }
+.ink-pop .ip-check:active .ip-sw { background: var(--line-2); }
 
 /* over a typed note that holds ink (`Reader.tsx`): the row stays at the pane's top as the note scrolls, on the note's
    paper. It starts where the text does and, being wider than the text's column, runs on past it as far as the pane

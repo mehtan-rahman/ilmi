@@ -703,7 +703,25 @@ impl Store {
         let mut st = self.conn.prepare("SELECT data FROM ink WHERE page = ?1 ORDER BY at, stroke").map_err(err)?;
         let strokes: Vec<Vec<u8>> = st.query_map([page], |r| r.get(0)).map_err(err)?.collect::<rusqlite::Result<_>>().map_err(err)?;
         let refs: Vec<&[u8]> = strokes.iter().map(Vec::as_slice).collect();
-        if what == "drawing" { tauri_plugin_ink::join(&refs) } else { tauri_plugin_ink::page_picture(&refs, w, h, if scale.is_finite() { scale.clamp(1.0, 6.0) } else { 2.0 }) }
+        if what == "drawing" {
+            return tauri_plugin_ink::join(&refs);
+        }
+        let mut scale = if scale.is_finite() { scale.clamp(1.0, 6.0) } else { 2.0 };
+        // (a height under nothing: a sheet of a pageless notebook, that much at the least and as far down as its ink
+        // reaches, a stroke on it being kept there however far it runs; nine sheets at the most, and never more
+        // pixels than a picture should hold)
+        let mut tall = h;
+        if h < 0.0 {
+            tall = -h;
+            if let Some([_, y, _, ink]) = tauri_plugin_ink::bounds(&tauri_plugin_ink::join(&refs)?)? {
+                tall = tall.max((y + ink + 4.0).ceil()).min(-h * 9.0);
+            }
+            let most = 48_000_000.0;
+            if w * tall * scale * scale > most {
+                scale = (most / (w * tall)).sqrt().max(1.0);
+            }
+        }
+        tauri_plugin_ink::page_picture(&refs, w, tall, scale)
     }
 
     /// A page of ink as a file, made from its strokes: `drawing` is the `PKDrawing` PencilKit opens, `picture` a PNG at 2× of what they cover (empty when there are none).

@@ -3,7 +3,7 @@
 
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import type { StoreFs } from '../vault/index.js';
-import { askOutlines, carryOf, drawInk, inkNow, learnShapes, liveOf, onLive, shapeOf, shownNames, shownSoon, storeRead } from './pageInk.js';
+import { askOutlines, carryOf, drawInk, inkNow, learnShapes, liveOf, onLive, shapeOf, shownNames, shownSoon, signalDrawn, signalReady, storeRead } from './pageInk.js';
 import { currentVault } from './vault.js';
 
 interface Rect { left: number; top: number; width: number; height: number }
@@ -20,6 +20,7 @@ const inkStore = (): StoreFs | null => {
  */
 export function PageInkSvg({ hash, page, at, w, h, rev, rect, sheet, onShown }: { hash: string; page: number; /** Its place in the column. */ at: number; w: number; h: number; rev: number; rect: Rect; sheet: string; onShown(page: number): void }) {
   const ref = useRef<SVGSVGElement>(null);
+  const under = useRef<SVGSVGElement>(null);
   const [store, setStore] = useState<readonly string[] | null>(null);
   const [, again] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -36,16 +37,27 @@ export function PageInkSvg({ hash, page, at, w, h, rev, rect, sheet, onShown }: 
     return () => { live = false; };
   }, [hash, page, rev, sheet]);
   useEffect(() => onLive(sheet, again), [sheet]);
+  useEffect(() => signalReady(), []);
   useLayoutEffect(() => {
     const svg = ref.current;
     if (!svg) return;
     const live = liveOf(sheet);
     // (told of strokes whose outlines are not here: they are asked for, and what is drawn stays as it is until they come)
     if (live && live.names.some((n) => !shapeOf(n))) { askOutlines(sheet, live.names); return; }
-    const missing = drawInk(svg, shownNames(live, store), carryOf(sheet), live?.hide);
+    const missing = drawInk(svg, shownNames(live, store), carryOf(sheet), live?.hide, under.current);
     // drawn: PencilKit's own copy of what was just written can leave the glass
+    // (first in the page's own commit, which is what takes the canvas's copy off the glass in the same frame; and by
+    // a message two frames on, for a web view that hears no commit)
+    if (live && !live.kept && !missing && live.stamp !== undefined) signalDrawn(live.stamp);
     if (live && !live.kept && !missing) shownSoon(sheet, live.seq);
     if (!missing && (live || store)) onShown(page);
   });
-  return <svg ref={ref} className="page-ink" data-vector="1" data-page={at} data-sheet={page} data-rev={rev} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />;
+  // two drawings a page: a pen's strokes lie over the print as they are, a highlighter's are multiplied onto it (`pdf.css`)
+  const place = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+  return (
+    <>
+      <svg ref={ref} className="page-ink" data-vector="1" data-page={at} data-sheet={page} data-rev={rev} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={place} />
+      <svg ref={under} className="page-ink page-ink-under" data-page={at} data-under={at} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={place} />
+    </>
+  );
 }

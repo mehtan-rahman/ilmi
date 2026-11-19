@@ -1022,22 +1022,26 @@ describe('how far down a pageless notebook\'s long sheet its writing reaches', (
     expect(bounded).toEqual([]);
   });
 
-  it('a stroke kept on one sheet may run on over the next: the last two sheets written on are looked at, and no more', async () => {
+  it('a stroke kept on one sheet may run on over those after it, however many: the last nine sheets written on are looked at', async () => {
     await clear();
     await mem.setPageInk(FOOT, 1, [stroke(1)]);
     await mem.setPageInk(FOOT, 2, [stroke(2)]);
     await mem.setPageInk(FOOT, 3, [stroke(3)]);
     // sheet 2's stroke begins low on it and ends 300 points down sheet 3; sheet 3's own is near its head
     boxes = { s1: [0, 0, 10, 5000], s2: [40, 700, 100, 392], s3: [40, 20, 100, 60] };
-    expect(await written.inkFoot(FOOT, [1, 2, 3], H)).toBe(H + 1092);
-    expect(bounded.map((d) => d.split('\n')[1]!.split(' ')[0])).toEqual(['s3', 's2']);
+    // (and sheet 1's is taller than the sheets after it together: it is the lowest thing written)
+    expect(await written.inkFoot(FOOT, [1, 2, 3], H)).toBe(5000);
+    expect(bounded.map((d) => d.split('\n')[1]!.split(' ')[0])).toEqual(['s3', 's2', 's1']);
     // bare sheets after them are passed over
     bounded.length = 0;
-    expect(await written.inkFoot(FOOT, [1, 2, 3, 5, 9], H)).toBe(H + 1092);
-    expect(bounded.length).toBe(2);
-    // the lower of the two, whichever it is
+    expect(await written.inkFoot(FOOT, [1, 2, 3, 5, 9], H)).toBe(5000);
+    expect(bounded.length).toBe(3);
+    // without the tall one: the lower of the other two, whichever it is
+    boxes = { ...boxes, s1: [0, 0, 10, 50] };
+    expect(await written.inkFoot(FOOT, [1, 2, 3], H)).toBe(H + 1092);
     boxes = { ...boxes, s3: [40, 20, 100, 500] };
     expect(await written.inkFoot(FOOT, [1, 2, 3], H)).toBe(2 * H + 520);
+    boxes = { ...boxes, s1: [0, 0, 10, 5000] };
     // in the order of the sheets as they lie
     expect(await written.inkFoot(FOOT, [3, 2, 1], H)).toBe(2 * H + 5000);
   });

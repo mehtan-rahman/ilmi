@@ -803,6 +803,8 @@ struct PdfPage {
     margin: Option<String>,
     at: Option<f64>,
     above: Option<String>,
+    /// The pages of ink on the sheets before that one, the sheet two up first (a stroke taller than a sheet).
+    further: Option<Vec<String>>,
     /// The paper's colour and its lines' (`#rrggbb`) where the notebook's page setup chose them, and whether the paper is dark (87).
     color: Option<String>,
     line: Option<String>,
@@ -827,7 +829,11 @@ fn pages_pdf(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, roo
     for p in &pages {
         let strokes = match &p.ink { Some(key) => stores.ink_strokes(&dir, key)?, None => Vec::new() };
         let above = match &p.above { Some(key) => stores.ink_strokes(&dir, key)?, None => Vec::new() };
-        made.push(tauri_plugin_ink::PdfPage { w: p.w, h: p.h, paper: p.paper.clone(), source: p.source, strokes, rule: p.rule, left: p.left, right: p.right, top: p.top, bottom: p.bottom, lines: p.lines.clone().unwrap_or_default(), margin: hex_colour(&p.margin), at: p.at, above, color: hex_colour(&p.color), line: hex_colour(&p.line), dark: p.dark.unwrap_or(false) });
+        let mut further = Vec::new();
+        for key in p.further.iter().flatten() {
+            further.push(stores.ink_strokes(&dir, key)?);
+        }
+        made.push(tauri_plugin_ink::PdfPage { w: p.w, h: p.h, paper: p.paper.clone(), source: p.source, strokes, rule: p.rule, left: p.left, right: p.right, top: p.top, bottom: p.bottom, lines: p.lines.clone().unwrap_or_default(), margin: hex_colour(&p.margin), at: p.at, above, further, color: hex_colour(&p.color), line: hex_colour(&p.line), dark: p.dark.unwrap_or(false) });
     }
     let folder = app.path().temp_dir().map_err(|e| e.to_string())?.join("ilmi-share");
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
@@ -871,11 +877,11 @@ async fn dev_ink_pencil(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>
 
 /// A dev run's: a stroke through `points` of a sheet's drawing in the ink held, ended with the Pencil resting or not.
 #[tauri::command]
-async fn dev_ink_stroke(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, points: serde_json::Value, rest: bool) -> Result<(), String> {
+async fn dev_ink_stroke(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, points: serde_json::Value, rest: bool, hand: Option<bool>) -> Result<(), String> {
     if !cfg!(debug_assertions) {
         return Err("a dev run's".to_string());
     }
-    ink.stroke(&sheet, points, rest).await
+    ink.stroke(&sheet, points, rest, hand.unwrap_or(false)).await
 }
 
 /// A dev run's: how many pages a PDF file has, and its first page's size in points; what `pages_pdf` wrote is read back with it.

@@ -124,7 +124,7 @@ import {
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
-import { addSurface, afterScene, covered, fillSheet, forgetSheet, hasCanvas, holdScenes, inContent, onFingers, onLayout, onSurface, pagePaper, pinchSheets, portOf, sceneSoon, settleSheets, type Box as InkBox, type PenEvent, type SheetSpec, type Surface } from './ink.js';
+import { addSurface, afterScene, covered, fillSheet, restSheet, forgetSheet, hasCanvas, holdScenes, inContent, onFingers, onLayout, onSurface, pagePaper, pinchSheets, portOf, sceneSoon, settleSheets, type Box as InkBox, type PenEvent, type SheetSpec, type Surface } from './ink.js';
 import { PageInkSvg } from './PageInkSvg.js';
 import { onLiveSheet } from './pageInk.js';
 import { dropSurface, hexOf, holesOver, paperArgs, sendSurface, surfaceGo, surfacePicture, surfaceZoom, type SurfaceMark } from './surface.js';
@@ -426,7 +426,7 @@ const inkStore = (): StoreFs | null => {
 };
 
 /** What is written on a page, laid over it: a picture of the whole page made from its strokes, on nothing. `rev` moves when the strokes change. */
-function PageInk({ hash, page, at, w, h, rev, rect, live: canvasOn, paper, dark, onShown }: { /** A notebook's sheet: its paper, and whether that is dark, so its ink is drawn the dark way (87); a PDF's page goes by the theme. */ paper?: string | undefined; dark?: boolean; hash: string; /** The page as the store knows it: a PDF's page, a notebook's sheet. */ page: number; /** Its place in the column. */ at: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
+function PageInk({ hash, page, at, w, h, rev, rect, live: canvasOn, paper, dark, run, onShown }: { /** A pageless notebook's sheet: its picture is as tall as its ink reaches (a stroke is kept on the sheet its top lies on, however far down it runs), `h` at the least. */ run?: boolean; /** A notebook's sheet: its paper, and whether that is dark, so its ink is drawn the dark way (87); a PDF's page goes by the theme. */ paper?: string | undefined; dark?: boolean; hash: string; /** The page as the store knows it: a PDF's page, a notebook's sheet. */ page: number; /** Its place in the column. */ at: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
   const [url, setUrl] = useState<string | null>(null);
   // as fine as the screen shows it at the size the page is drawn (85): zoomed into, the writing stays sharp
   const fine = inkScale(w, h, rect.width / w, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
@@ -437,7 +437,8 @@ function PageInk({ hash, page, at, w, h, rev, rect, live: canvasOn, paper, dark,
     // while a canvas shows the writing no picture of it is made: one is, again, when the canvas goes
     if (!fs || (canvasOn && shown.current)) return;
     let live = true;
-    fs.pageInkFile(hash, page, 'picture', w, h, fine).then((bytes) => {
+    // (a height under nothing asks for a picture as tall as the ink: `ink_page`)
+    fs.pageInkFile(hash, page, 'picture', w, run ? -h : h, fine).then((bytes) => {
       if (!live || !bytes.length) return;
       const made = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/png' }));
       const was = shown.current;
@@ -447,9 +448,9 @@ function PageInk({ hash, page, at, w, h, rev, rect, live: canvasOn, paper, dark,
       if (was) setTimeout(() => URL.revokeObjectURL(was), 1500);
     }, console.error);
     return () => { live = false; };
-  }, [hash, page, w, h, rev, fine, canvasOn]);
+  }, [hash, page, w, h, rev, fine, canvasOn, run]);
   useEffect(() => () => { if (shown.current) URL.revokeObjectURL(shown.current); }, []);
-  return url ? <img className="page-ink" data-page={at} data-sheet={page} data-rev={rev} data-fine={fine} data-paper={paper} data-ink-dark={dark ? '1' : undefined} data-live={canvasOn ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
+  return url ? <img className="page-ink" data-page={at} data-sheet={page} data-rev={rev} data-fine={fine} data-paper={paper} data-ink-dark={dark ? '1' : undefined} data-live={canvasOn ? '1' : undefined} data-run={run ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: run ? 'auto' : rect.height }} /> : null;
 }
 
 /** A notebook's pages, as many as it has sheets. */
@@ -696,8 +697,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const filled = new Map<number, number>();
     const fill = (n: number) => {
       const rev = inkedRef.current[n];
-      if (rev === undefined || filled.get(n) === rev) return;
-      filled.set(n, rev);
+      // (a phone's pageless notebook is read from its pictures: nothing is written there, and a picture is as tall
+      // as its sheet's ink reaches, where a canvas ends a sheet under its own. Its canvases rest.)
+      const shown = !(sheetsRef.current && runRef.current && useApp.getState().phone);
+      const as = rev === undefined ? undefined : shown ? rev : -1 - rev;
+      if (rev === undefined || filled.get(n) === as) return;
+      filled.set(n, as!);
+      if (!shown) {
+        setLiveInk((s) => { if (!s.has(n)) return s; const next = new Set(s); next.delete(n); return next; });
+        void restSheet(sheetOf(n));
+        return;
+      }
       // the canvas stays on the screen with what the page holds (85): the writing is drawn from its strokes at rest as it
       // is while written, at whatever size the page is; the picture of it stands aside once the canvas has it
       afterScene(() => void fillSheet(sheetOf(n), pagePaper(fs, hash, n), () => fs.pageInkFile(hash, n, 'drawing'), true)
@@ -3136,9 +3146,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                   const r = page !== null && (inked[page] !== undefined || (vectorInk && liveInk.has(page))) && (sheets ? isNear(n) : rendered.current.has(n)) ? pageRect(n) : null;
                   // (89) where there are canvases a PDF's page draws its writing itself, a path a stroke: it goes wherever the page goes
                   if (vectorInk) return r && page !== null && <PageInkSvg key={page} hash={hash} page={page} at={n} w={s.w} h={s.h} rev={inked[page] ?? 0} rect={r} sheet={`p.${hash}.${page}`} onShown={pictureShown} />;
-                  // (a pageless sheet's picture reaches past its foot, as its canvas does)
-                  const over = pageless ? 1 + RUN_OVER : 1;
-                  return r && page !== null && <PageInk key={page} hash={hash} page={page} at={n} w={s.w} h={s.h * over} rev={inked[page]!} rect={over === 1 ? r : { ...r, height: r.height * over }} live={liveInk.has(page)} paper={written?.paper} dark={inkDark} onShown={pictureShown} />;
+                  // (a pageless sheet's picture reaches past its foot, as far as its ink does)
+                  return r && page !== null && <PageInk key={page} hash={hash} page={page} at={n} w={s.w} h={s.h} run={pageless} rev={inked[page]!} rect={r} live={liveInk.has(page)} paper={written?.paper} dark={inkDark} onShown={pictureShown} />;
                 })}
               </div>
             )}

@@ -61,8 +61,9 @@ function inkOf(): Pick<StoreFs, 'pageInk' | 'setPageInk'> | null {
  * written on it reaches, in points from its top (milestone 88): 0 with
  * nothing written. Each sheet is `h` of the long one, in the order of
  * `sheets`; what its strokes cover is asked of the drawing itself
- * (`ink_bounds`). The last two sheets written on are looked at: a stroke is
- * kept on the sheet its top lies on and runs on over the next at most.
+ * (`ink_bounds`). The last nine sheets written on are looked at: a stroke is
+ * kept on the sheet its top lies on, and one taller than a sheet runs on
+ * over those after it (as far as it is drawn: eight).
  */
 export async function inkFoot(id: string, sheets: readonly number[], h: number): Promise<number> {
   const fs = currentVault()?.fs as Partial<StoreFs> | undefined;
@@ -70,7 +71,7 @@ export async function inkFoot(id: string, sheets: readonly number[], h: number):
   const inked = new Set(await fs.inkedPages(id));
   let foot = 0;
   let seen = 0;
-  for (let i = sheets.length - 1; i >= 0 && seen < 2; i--) {
+  for (let i = sheets.length - 1; i >= 0 && seen < 9; i--) {
     if (!inked.has(sheets[i]!)) continue;
     seen++;
     const bytes = await fs.pageInkFile(id, sheets[i]!, 'drawing');

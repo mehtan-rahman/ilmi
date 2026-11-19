@@ -125,22 +125,30 @@ export let lastShared: string | null = null;
  * A notebook's paper and a PDF's own pages are drawn as they are, the ink
  * over them (`pages_pdf`).
  */
-export async function sharePages(of: PagesOf, at: { x: number; y: number; w: number; h: number }): Promise<string | null> {
-  const vault = currentVault();
-  if (!vault) return null;
-  const mobile = useApp.getState().mobile;
+/** The pages `pages_pdf` is asked for: a notebook's sheets as its page setup has them, or a PDF's pages, each with the page of ink on it. */
+export async function pdfPagesOf(of: PagesOf) {
   // a pageless notebook is cut into pages of its size, as many as what is written on it reaches (88): never the bare sheets under it
   const reach = of.written?.pageless ? Math.max(1, Math.ceil((await inkFoot(of.hash, of.written.sheets, sheetSize(of.written).h)) / sheetSize(of.written).h - 1e-9)) : Infinity;
-  const pages = of.written
+  return of.written
     ? of.written.sheets.slice(0, reach).map((s, i, all) => {
       // each sheet as its page setup has it; a pageless notebook is cut into its sheets, and what was written past
       // the foot of the one before is drawn at the head of this one
       const spec = paperOf(of.written!, i);
       const before = of.written!.pageless && i > 0 && of.inked.has(all[i - 1]!) ? pageKey(of.hash, all[i - 1]!) : null;
+      // (and past the foot of the sheets before that, the sheet two up first: a stroke may be taller than a sheet)
+      const further = of.written!.pageless ? all.slice(Math.max(0, i - 8), Math.max(0, i - 1)).reverse().map((k) => (of.inked.has(k) ? pageKey(of.hash, k) : '')) : [];
+      while (further.length && further[further.length - 1] === '') further.pop();
       // its colours as a light theme shows them: the paper's chosen one (none: white), the ruling's, and whether ink on it is drawn the dark way (87)
-      return { w: spec.w, h: spec.h, paper: spec.kind, rule: spec.rule, left: spec.left, right: spec.right, top: spec.top, bottom: spec.bottom, lines: spec.lines, margin: spec.marginColor, at: spec.run ? spec.at : null, ink: of.inked.has(s) ? pageKey(of.hash, s) : null, above: before, color: spec.color, line: spec.line, dark: paperLook(spec, 'light').dark };
+      return { w: spec.w, h: spec.h, paper: spec.kind, rule: spec.rule, left: spec.left, right: spec.right, top: spec.top, bottom: spec.bottom, lines: spec.lines, margin: spec.marginColor, at: spec.run ? spec.at : null, ink: of.inked.has(s) ? pageKey(of.hash, s) : null, above: before, ...(further.length ? { further } : {}), color: spec.color, line: spec.line, dark: paperLook(spec, 'light').dark };
     })
     : (of.pages ?? []).map((p) => ({ w: p.w, h: p.h, source: p.page, ink: of.inked.has(p.page) ? pageKey(of.hash, p.page) : null }));
+}
+
+export async function sharePages(of: PagesOf, at: { x: number; y: number; w: number; h: number }): Promise<string | null> {
+  const vault = currentVault();
+  if (!vault) return null;
+  const mobile = useApp.getState().mobile;
+  const pages = await pdfPagesOf(of);
   if (!pages.length) return null;
   let out: string | null = null;
   if (!mobile) {

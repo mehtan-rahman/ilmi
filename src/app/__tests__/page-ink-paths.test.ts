@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => '[]') }));
 
 import { invoke } from '@tauri-apps/api/core';
-import { askOutlines, carryOf, drawInk, forgetLive, heardLive, inkHeard, inkKept, inkNow, learnInk, learnShapes, liveOf, onLive, onLiveSheet, resetInk, shapeOf, shownNames, shownSoon, storeRead, type Shape } from '../pageInk.js';
+import { askOutlines, carryOf, drawInk, forgetLive, heardLive, inkHeard, inkKept, inkNow, learnInk, learnShapes, liveOf, onLive, onLiveSheet, resetInk, shapeOf, shownNames, shownSoon, signalDrawn, SIGNAL_BASE, storeRead, type Shape } from '../pageInk.js';
 
 const pen = (n: string, c = '#112233'): Shape => ({ n, k: 'p', d: `M0 0L1 1L1 0z`, c });
 const marker = (n: string): Shape => ({ n, k: 'm', d: 'M0 0L4 0L4 2L0 2z', c: '#ffee00', r: 1.2, o: 0.75 });
@@ -201,5 +201,38 @@ describe('telling the canvases\' side what is drawn', () => {
     vi.advanceTimersByTime(2000);
     expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
+  });
+});
+
+describe('the gaps after 89', () => {
+  it('a highlighter\'s strokes go to a drawing of their own where one is given: it is laid on the page another way than a pen\'s', () => {
+    learnInk([pen('a'), marker('m'), pen('b')]);
+    const [over, under] = [svg(), svg()];
+    expect(drawInk(over, ['a', 'm', 'b'], null, ['b'], under)).toBe(0);
+    expect(drawn(over)).toEqual(['over:a', 'over:b']);
+    expect(drawn(under)).toEqual(['under:m']);
+    expect(over.querySelector('[data-n="b"]')!.getAttribute('visibility')).toBe('hidden');
+    // erased, it leaves its own drawing; the pen's strokes are the elements they were
+    const a = over.querySelector('[data-n="a"]');
+    expect(drawInk(over, ['a', 'b'], null, [], under)).toBe(0);
+    expect(drawn(under)).toEqual([]);
+    expect(over.querySelector('[data-n="a"]')).toBe(a);
+  });
+
+  it('a telling that shows what the canvas still shows carries a ticket, which the page puts into its own commit: the height of what a tiny scroller holds, only ever higher', () => {
+    expect(heardLive(undefined, { kind: 'ink', sheet: 's', seq: 3, names: ['a'], stamp: 7 }, 1)?.stamp).toBe(7);
+    expect(heardLive(undefined, { kind: 'ink', sheet: 's', seq: 3, names: ['a'] }, 1)?.stamp).toBeUndefined();
+    const height = () => (document.querySelector<HTMLElement>('.ink-signal')?.firstElementChild as HTMLElement | null)?.style.height;
+    signalDrawn(0);
+    const el = document.querySelector<HTMLElement>('.ink-signal')!;
+    expect([el.style.width, el.style.height, el.style.position, el.style.pointerEvents]).toEqual(['3px', '5px', 'fixed', 'none']);
+    expect(height()).toBe(`${SIGNAL_BASE}px`);
+    signalDrawn(4);
+    expect(height()).toBe(`${SIGNAL_BASE + 4}px`);
+    signalDrawn(2);
+    expect(height()).toBe(`${SIGNAL_BASE + 4}px`);
+    signalDrawn(9);
+    expect(height()).toBe(`${SIGNAL_BASE + 9}px`);
+    expect(document.querySelectorAll('.ink-signal').length).toBe(1);
   });
 });

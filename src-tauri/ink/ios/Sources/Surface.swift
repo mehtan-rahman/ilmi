@@ -1045,7 +1045,12 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       if f.maxY >= near.minY, f.minY <= near.maxY {
         if !l.loaded, !l.asked { l.asked = true; want.append(l.id) }
         refresh(l, vis: vis)
-      } else if f.maxY < far.minY || f.minY > far.maxY {
+      } else {
+        // (a pageless notebook's stroke is kept on the sheet its top lies on and may run down into the view from a
+        // sheet well above it: those sheets are given their strokes, no pictures, so what runs on from them is drawn)
+        if paper.run, !l.loaded, !l.asked, f.maxY < near.minY, f.maxY >= near.minY - CGFloat(NoteSurface.runsOver) * pageH { l.asked = true; want.append(l.id) }
+      }
+      if f.maxY < far.minY || f.minY > far.maxY {
         if l.rest.contents != nil || !l.patches.isEmpty || l.fine.contents != nil {
           CATransaction.begin()
           CATransaction.setDisableActions(true)
@@ -1388,6 +1393,16 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     }
   }
 
+  /// A dev run's: a stroke of a sheet (its points) given to the canvas as if PencilKit had just taken it from the
+  /// Pencil there: it comes to the sheet the way a written one does (`canvasViewDrawingDidChange`), pressure and all.
+  func hand(_ l: Leaf, _ k: PKStroke) {
+    let o = scroll.contentOffset
+    var m = k
+    m.transform = k.transform.concatenating(CGAffineTransform(translationX: (l.frame.minX - o.x) / s, y: (l.frame.minY - o.y) / s))
+    lastActive = l
+    canvas.drawing = PKDrawing(strokes: canvas.drawing.strokes + [m])
+  }
+
   func wipe(_ l: Leaf) { put(l, [], dirty: box(of: l.model)) }
 
   /// The surface as it is shown now, as a JPEG: what the page shows in its place while it stands aside.
@@ -1621,7 +1636,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     let at = CGPoint(x: first.x * s + o.x, y: first.y * s + o.y)
     guard let l = active ?? lastActive ?? leaf(at: at) else { return }
     let by = CGAffineTransform(translationX: -(l.frame.minX - o.x) / s, y: -(l.frame.minY - o.y) / s)
-    let moved = strokes.map { k -> PKStroke in var m = sensed(k); m.transform = k.transform.concatenating(by); return m }
+    let moved = strokes.map { k -> PKStroke in var m = plugin.sensed(k); m.transform = k.transform.concatenating(by); return m }
     let before = l.model
     let on = commit(l, from: before, to: before + moved, moved: Array(before.count..<before.count + moved.count), dirty: box(of: moved)).leaf
     if let w = snap, w.leaf === l {
@@ -1636,43 +1651,6 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
         }
       }
     }
-  }
-
-  /// A stroke as the pen's `pressure` and its thinness have it. Pressure: each point's width follows the hand's force
-  /// against the stroke's mean (and what the ink varies by itself is kept, less or more), none of it at 0; thinness:
-  /// a pen set thinner than PencilKit's thinnest is thinned by what is missing.
-  private func sensed(_ k: PKStroke) -> PKStroke {
-    guard plugin.tool.kind == "pen" else { return k }
-    let type = k.ink.inkType
-    var fountain = false, even = false
-    if #available(iOS 17.0, *) { fountain = type == .fountainPen; even = type == .monoline }
-    let follows = type == .pen || fountain
-    let q = plugin.thin
-    let points = Array(k.path)
-    guard follows || q < 0.999, points.count > 1 else { return k }
-    let g = CGFloat(min(max(plugin.tool.sense ?? 1, 0), 2))
-    let n = CGFloat(points.count)
-    // a round nib's width is twice the point's size less four (`stroke.m`): the line is changed by its width, not its size
-    let round = type == .pen || even
-    let wide: (PKStrokePoint) -> CGFloat = { round ? max(0.05, 2 * $0.size.width - 4) : $0.size.width }
-    let mw = points.reduce(0) { $0 + wide($1) } / n
-    let mh = points.reduce(0) { $0 + $1.size.height } / n
-    let mf = points.reduce(0) { $0 + $1.force } / n
-    let made = points.enumerated().map { (i, p) -> PKStrokePoint in
-      var w = wide(p), h = p.size.height
-      if follows {
-        // (the force evened over its neighbours: no lump where one reading jumps)
-        let a = points[max(i - 1, 0)].force, b = points[min(i + 1, points.count - 1)].force
-        let r = mf > 0.001 ? (a + 2 * p.force + b) / 4 / mf : 1
-        let by = min(max(1 + g * 0.85 * (r - 1), 0.3), 2.4)
-        w = max(mw * 0.2, (mw + (w - mw) * g) * by)
-        if !round { h = max(mh * 0.2, (mh + (h - mh) * g) * by) }
-      }
-      w *= q
-      if !round { h *= q }
-      return PKStrokePoint(location: p.location, timeOffset: p.timeOffset, size: CGSize(width: round ? (w + 4) / 2 : w, height: h), opacity: p.opacity, force: p.force, azimuth: p.azimuth, altitude: p.altitude)
-    }
-    return PKStroke(ink: k.ink, path: PKStrokePath(controlPoints: made, creationDate: k.path.creationDate), transform: k.transform, mask: k.mask)
   }
 
   /// PencilKit's own copy of what is ours already taken off the glass (ours is there first: never a frame with neither).

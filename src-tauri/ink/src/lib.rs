@@ -197,6 +197,8 @@ pub struct PdfPage {
     pub at: Option<f64>,
     /// What is written on the sheet before, which may run past its foot onto this one.
     pub above: Vec<Vec<u8>>,
+    /// And on the sheets before that, the one two up first: a stroke may be taller than a sheet.
+    pub further: Vec<Vec<Vec<u8>>>,
     /// The paper's colour and its lines', as 0xrrggbb, where they were chosen (87); `dark` when the paper is dark, and
     /// ink is drawn on it as PencilKit shows it on a dark canvas.
     pub color: Option<u32>,
@@ -228,8 +230,15 @@ pub fn pages_pdf(pages: &[PdfPage], source: Option<&str>, out: &str) -> Result<(
         for v in [paper, p.source.unwrap_or(0), recs.len() as u32, above.len() as u32, colour(p.color), colour(p.line), u32::from(p.dark), colour(p.margin)] {
             spec.extend_from_slice(&v.to_le_bytes());
         }
+        spec.extend_from_slice(&(p.further.len() as u32).to_le_bytes());
         spec.extend_from_slice(&recs);
         spec.extend_from_slice(&above);
+        for sheet in &p.further {
+            let up: Vec<&[u8]> = sheet.iter().map(Vec::as_slice).collect();
+            let recs = records(&up);
+            spec.extend_from_slice(&(recs.len() as u32).to_le_bytes());
+            spec.extend_from_slice(&recs);
+        }
     }
     let src = source.unwrap_or("");
     // SAFETY: the pointers are to bytes that live through the call
@@ -421,8 +430,8 @@ impl<R: Runtime> Ink<R> {
         self.call::<_, serde_json::Value>("pencilDev", serde_json::json!({ "what": what })).await.map(|_| ())
     }
     /// A dev run's: a stroke of the ink held through `points` of a sheet's drawing, ended resting (`rest`) or not.
-    pub async fn stroke(&self, sheet: &str, points: serde_json::Value, rest: bool) -> Result<(), String> {
-        self.call::<_, serde_json::Value>("stroke", serde_json::json!({ "sheet": sheet, "points": points, "rest": rest })).await.map(|_| ())
+    pub async fn stroke(&self, sheet: &str, points: serde_json::Value, rest: bool, hand: bool) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("stroke", serde_json::json!({ "sheet": sheet, "points": points, "rest": rest, "hand": hand })).await.map(|_| ())
     }
     /// A dev run's: a sheet's canvas emptied as an eraser would.
     pub async fn wipe(&self, sheet: &str) -> Result<(), String> {

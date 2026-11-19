@@ -235,8 +235,12 @@ struct PencilArgs: Decodable {
 /// A dev run's: a stroke of the pen held, through these points of the sheet's drawing, ended resting or not.
 struct StrokeArgs: Decodable {
   var sheet: String
+  /// Each `[x, y]`, with a size and then a force where it has its own.
   var points: [[Double]]
   var rest: Bool
+  /// Handed over as PencilKit hands a written stroke over (through the canvas, so through the pen's `pressure` and
+  /// thinness), where without it the stroke is put on the sheet as it is.
+  var hand: Bool?
 }
 
 /// A dev run's: a sheet, and the name its picture is written under in the app's Documents.
@@ -434,6 +438,11 @@ struct State: Encodable {
   let scribble: Int
   let touched: Touched?
   let lastTouched: [Touched]
+  /// A dev run's: the last touches as the layer met them, each a line (when, where, the sheet under it, where its
+  /// canvas's recogniser stood, what the watcher then saw).
+  var touchLog: [String] = []
+  /// The page's own word that a telling is on the glass is heard (89, `InkPlugin.bindSignal`): its scroller is found.
+  var signal: Bool = false
   /// The notebooks open as surfaces of their own (87).
   var surfaces: [SurfaceState] = []
 }
@@ -458,6 +467,8 @@ final class Host {
   /// The web view's own layer for the column of pages, and the zoom going on over it.
   weak var pagesLayer: CALayer?
   var live: Zoom?
+  /// Until when two fingers' stretch waits for what PencilKit's canvas shows to become the page's (`InkPlugin.held`).
+  var holdUntil: TimeInterval = 0
   init(_ spec: HostSpec) {
     self.id = spec.id
     self.spec = spec
@@ -501,7 +512,7 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
     canvas.showsHorizontalScrollIndicator = false
     canvas.contentInsetAdjustmentBehavior = .never
     canvas.isHidden = true
-    canvas.history = plugin.history
+    canvas.history = scratch
     canvas.delegate = self
   }
 
@@ -522,8 +533,20 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
   /// What the sheet holds: its own strokes where the page draws them, the canvas's otherwise.
   var drawing: PKDrawing {
     get { vector ? model : canvas.drawing }
-    set { if vector { model = newValue } else { canvas.drawing = newValue } }
+    set {
+      if vector { model = newValue } else {
+        setting = true
+        canvas.drawing = newValue
+        setting = false
+        counted = newValue.strokes.count
+      }
+    }
   }
+  /// A canvas that is its sheet (a typed note's area): how many strokes it held when it was last given a drawing or
+  /// a stroke was last taken from PencilKit, and that it is being given one now. More than that is PencilKit's doing:
+  /// a stroke written (`InkPlugin.took`).
+  var counted = 0
+  var setting = false
   /// How many of the canvas's strokes have joined the model, and that the canvas is being emptied (PencilKit says so as a change).
   var taken = 0
   var clearing = false
@@ -544,8 +567,11 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
   var rushedAt: TimeInterval = 0
   var rushedAfter: Double?
   var rushedFor: Double?
-  /// When the page was last told to show what the canvas shows.
+  /// How the page says a sheet the page draws is laid on it (`multiplyBlendMode`, `screenBlendMode`): a highlighter's way.
+  var blend: String?
+  /// When the page was last told to show what the canvas shows, and the ticket that telling carried (`InkPlugin.stamp`).
   var revealedAt: TimeInterval = 0
+  var stamp = 0
   var trace: [String] = []
   func mark(_ what: String) {
     if trace.count >= 60 { trace.removeFirst(20) }
@@ -616,6 +642,12 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
       plugin?.wrote(self, fresh)
       return
     }
+    let now = canvasView.drawing.strokes.count
+    if !setting, now > counted, let p = plugin {
+      p.took(self, from: counted)
+      return
+    }
+    counted = now
     if canvasView.drawing == given { return }
     dirty = true
     stepped = true
@@ -873,6 +905,56 @@ class InkPlugin: Plugin, PenEars {
   private var inkedAt: TimeInterval = 0
   private var touchedAtPoint: CGPoint = .zero
   private var lastTouched: [Touched] = []
+  private var touchLog: [String] = []
+
+  // ── a stroke is on the glass once: the page's commit empties the canvas ──
+  //
+  // A stroke passes from PencilKit's canvas (a view of this process) to the page's own path (the web view's, drawn
+  // by another process). Told by a message that the page has drawn it, the canvas was emptied some frames after the
+  // path was on the glass: for those frames the stroke was there twice, and ink laid on twice is darker wherever it
+  // is laid on by multiplying. The other order (the canvas emptied first) is a frame or more with no stroke at all,
+  // which shows on every ink, black most of all. Neither: the web view's layers are put on the glass by this
+  // process, in a transaction on the main thread that applies what the page's process committed, and that same
+  // commit carries the size of every scroller's content. So the page, in the turn it shows a telling's paths, sets
+  // the height of what a tiny scroller of its own holds to the telling's ticket (`stamp`; `signalDrawn` in
+  // `pageInk.ts`); the web view makes that scroller a `UIScrollView` here, whose `contentSize` changes inside the
+  // transaction that puts the paths on the glass; and the canvas is emptied in the observer of that change, in
+  // that transaction. One frame has the canvas's stroke, the next the page's, whatever either is laid on with.
+  // The page's message (`shown`) is still heard, for a web view that makes no scroll view of the scroller.
+  private var stamp = 0
+  private weak var signal: UIScrollView?
+  private var signalWatch: NSKeyValueObservation?
+  static let signalSize = CGSize(width: 3, height: 5)
+  static let signalBase: CGFloat = 1000
+
+  private func bindSignal() {
+    if let s = signal, s.window != nil { return }
+    guard let web = web else { return }
+    signalWatch = nil
+    signal = nil
+    walk(web.scrollView) { v in
+      guard signal == nil, let s = v as? UIScrollView, s !== web.scrollView, abs(s.bounds.width - InkPlugin.signalSize.width) < 0.6, abs(s.bounds.height - InkPlugin.signalSize.height) < 0.6 else { return }
+      signal = s
+    }
+    signalWatch = signal?.observe(\.contentSize, options: []) { [weak self] s, _ in
+      self?.drawn(upTo: Int((s.contentSize.height - InkPlugin.signalBase).rounded()))
+    }
+    // (found late: what it says already is heard now)
+    if let s = signal { drawn(upTo: Int((s.contentSize.height - InkPlugin.signalBase).rounded())) }
+  }
+
+  /// The page's commit that shows every telling up to the ticket `t` is being put on the glass now.
+  private func drawn(upTo t: Int) {
+    for s in sheets.values where s.vector && s.stamp > 0 && s.stamp <= t && !s.hidden && !s.glass.isEmpty && s.seen < s.revealed {
+      s.seen = max(s.seen, s.revealed)
+      s.mark("on the glass, ticket \(s.stamp)")
+      settle(s)
+    }
+  }
+  fileprivate func noteTouch(_ what: String) {
+    if touchLog.count >= 80 { touchLog.removeFirst(20) }
+    touchLog.append("\(Int((ProcessInfo.processInfo.systemUptime * 1000).rounded()) % 1000000) \(what)")
+  }
 
   /// How long the writing is left alone before it is kept.
   let quietAfter = 2.5
@@ -1103,12 +1185,16 @@ class InkPlugin: Plugin, PenEars {
     guard let web = web, let layer = layer else { return }
     let p = g.location(in: web.scrollView)
     let scale = g.scale.isFinite ? g.scale : 1
+    if g.state != .changed { noteTouch("pinch \(g.state.rawValue) scale \(String(format: "%.3f", Double(scale))) touches \(g.numberOfTouches) zooming \(zooming?.id.suffix(10) ?? "none")") }
     switch g.state {
     case .began:
       zooming = nil
       let q = g.location(in: layer)
       // the pages are about to move: what was just written is the page's to carry, not the canvas's
-      for h in hosts.values { hurry(h) }
+      for h in hosts.values {
+        hurry(h)
+        h.holdUntil = pending(h) ? ProcessInfo.processInfo.systemUptime + 0.12 : 0
+      }
       if !holes.contains(where: { $0.contains(q) }), let h = hosts.values.first(where: { $0.clip.frame.contains(q) && $0.spec.pages != nil && $0.spec.zoom != nil }), h.live == nil {
         bind(h)
         follow(h)
@@ -1122,7 +1208,19 @@ class InkPlugin: Plugin, PenEars {
           let corner = CGPoint(x: pages.x, y: pages.y)
           h.live = Zoom(z0: CGFloat(zs.z), lo: CGFloat(zs.min), hi: CGFloat(zs.max), corner: corner, from: CGPoint(x: c.x - corner.x, y: c.y - corner.y), ref: scroll.contentOffset)
           zooming = h
+          noteTouch("pinch takes \(h.id.suffix(16))")
           emit(["kind": "pinch", "phase": "begin", "native": true, "host": h.id, "k": 1, "x": p.x, "y": p.y])
+          // (a pinch the system was slow to know for one begins with the fingers already apart, and may say no more
+          // before they lift: where they are when it begins is the first change. Without it such a pinch, which a
+          // main thread held up a moment gives, ended at the zoom it began at: nothing)
+          if abs(scale - 1) > 0.002, var z = h.live {
+            z.k = rubber(z.z0 * scale, z.lo, z.hi) / z.z0
+            // (the place between the fingers when they came down is not known: the pages grow about where it is now)
+            z.t = CGPoint(x: (1 - z.k) * z.from.x, y: (1 - z.k) * z.from.y)
+            h.live = z
+            if !held(h) { stretch(h) }
+            emit(["kind": "pinch", "phase": "change", "native": true, "host": h.id, "k": z.k, "x": p.x, "y": p.y])
+          }
           return
         }
       }
@@ -1144,7 +1242,9 @@ class InkPlugin: Plugin, PenEars {
         z.t = CGPoint(x: at.x - z.k * z.from.x, y: at.y - z.k * z.from.y)
       }
       h.live = z
-      stretch(h)
+      // (a stroke lifted this moment is still PencilKit's: the pages wait for the frame it becomes the page's, a
+      // tenth of a second at the most, and then go to where the fingers have them)
+      if !held(h) { stretch(h) }
       emit(["kind": "pinch", "phase": "change", "native": true, "host": h.id, "k": z.k, "x": p.x, "y": p.y])
     default:
       guard let h = zooming, var z = h.live else {
@@ -1394,6 +1494,12 @@ class InkPlugin: Plugin, PenEars {
       if g.view !== web { web?.addGestureRecognizer(g) }
       g.isEnabled = true
     }
+    if let t = target {
+      let g = t.canvas.drawingGestureRecognizer
+      noteTouch("arm \(Int(p.x)),\(Int(p.y)) on \(t.id.suffix(14)) rec \(g.view === web ? "web" : g.view == nil ? "none" : "canvas") \(g.isEnabled ? "on" : "off") state \(g.state.rawValue) hidden \(t.canvas.isHidden) vector \(t.vector) penOff \(penOff)")
+    } else {
+      noteTouch("arm \(Int(p.x)),\(Int(p.y)) on nothing over \(over) penOff \(penOff)")
+    }
     armed = target
     armedHost = host
     armedAt = ProcessInfo.processInfo.systemUptime
@@ -1410,6 +1516,7 @@ class InkPlugin: Plugin, PenEars {
   }
 
   func penDown(_ t: UITouch) {
+    noteTouch("watch began type \(t.type.rawValue) armed \(armed?.id.suffix(14) ?? "none")")
     guard isPen(t), let s = armed, let h = armedHost, layer != nil else { return }
     let now = ProcessInfo.processInfo.systemUptime
     down = true
@@ -1556,13 +1663,10 @@ class InkPlugin: Plugin, PenEars {
       // (a dev run's: the stand-in wrote its one stroke; the fingers that follow are fingers, to PencilKit too)
       standInOnce = false
       standIn = false
-      watch?.allowedTouchTypes = penTypes
-      DispatchQueue.main.async { [weak self] in
-        guard let self = self else { return }
-        self.webSeesPen(true)
-        self.setTouchTypes()
-        for f in self.surfaces.values { f.setTouchTypes() }
-      }
+      // (in this turn: fingers that land a hundredth of a second on must find no canvas that takes a finger)
+      webSeesPen(true)
+      setTouchTypes()
+      for f in surfaces.values { f.setTouchTypes() }
     }
     // a pen's or a highlighter's stroke ended resting: looked at when PencilKit hands the stroke over
     if own == nil, !ours { lastShape = nil }
@@ -1857,7 +1961,15 @@ class InkPlugin: Plugin, PenEars {
       fresh.append(i)
     }
     s.mark("told \(s.said)\(s.hidden && !s.glass.isEmpty ? " unseen" : "")")
-    emit(["kind": "ink", "sheet": s.id, "seq": s.said, "names": all, "add": outlines(of: s.model, at: fresh), "hide": s.hidden ? s.glass : []])
+    var said: [String: Any] = ["kind": "ink", "sheet": s.id, "seq": s.said, "names": all, "add": outlines(of: s.model, at: fresh), "hide": s.hidden ? s.glass : []]
+    if !s.hidden, !s.glass.isEmpty {
+      // (the canvas still shows some of it: the page says with its own commit when this telling is on the glass)
+      stamp += 1
+      s.stamp = stamp
+      said["stamp"] = stamp
+      bindSignal()
+    }
+    emit(said)
   }
 
   /// The outlines of those of a sheet's strokes the page asks for by name: one it was not told, or no longer has.
@@ -1872,6 +1984,27 @@ class InkPlugin: Plugin, PenEars {
       let at = self.names(of: s.model).enumerated().filter { want.contains($0.element) }.map { $0.offset }
       invoke.resolve(["shapes": self.outlines(of: s.model, at: at)])
     }
+  }
+
+  /// PencilKit added strokes to a canvas that is its sheet (a typed note's area), those from `n` on: each is made
+  /// what the pen's `pressure` and thinness have it (`sensed`), as on a notebook's surface and a PDF's page, and is
+  /// a step of the plugin's own to undo (the canvas's own undo is its `scratch`: a stroke changed after PencilKit
+  /// took it is not the stroke PencilKit would take back).
+  fileprivate func took(_ s: Sheet, from n: Int) {
+    let all = s.canvas.drawing.strokes
+    guard n <= all.count else { s.counted = all.count; return }
+    let kept = Array(all[..<n])
+    let fresh = Array(all[n...])
+    let made = fresh.map { sensed($0) }
+    let before = PKDrawing(strokes: kept)
+    if zip(fresh, made).contains(where: { StrokeMark($0) != StrokeMark($1) }) {
+      s.drawing = PKDrawing(strokes: kept + made)
+    } else {
+      s.counted = all.count
+    }
+    s.dirty = true
+    step(s, from: before, to: s.drawing)
+    changed(s)
   }
 
   /// PencilKit handed strokes over on a sheet the page draws: they join what it holds, a step to undo, and the page
@@ -1895,22 +2028,41 @@ class InkPlugin: Plugin, PenEars {
     settleSoon(s)
   }
 
-  /// A stroke as the pen's `pressure` has it (`sense`): each point's size moved toward the stroke's mean (less than
-  /// 1) or away from it (more). As a notebook's surface does (`NoteSurface.sensed`).
-  private func sensed(_ k: PKStroke) -> PKStroke {
-    guard tool.kind == "pen", let f = tool.sense, abs(f - 1) > 0.01 else { return k }
-    var follows = k.ink.inkType == .pen
-    if #available(iOS 17.0, *), k.ink.inkType == .fountainPen { follows = true }
+  /// One for every place a stroke is written (a notebook's surface, a PDF's page, a typed note's area): the same
+  /// stroke under the same pen is the same stroke on each.
+  /// A stroke as the pen's `pressure` and its thinness have it. Pressure: each point's width follows the hand's force
+  /// against the stroke's mean (and what the ink varies by itself is kept, less or more), none of it at 0; thinness:
+  /// a pen set thinner than PencilKit's thinnest is thinned by what is missing.
+  func sensed(_ k: PKStroke) -> PKStroke {
+    guard tool.kind == "pen" else { return k }
+    let type = k.ink.inkType
+    var fountain = false, even = false
+    if #available(iOS 17.0, *) { fountain = type == .fountainPen; even = type == .monoline }
+    let follows = type == .pen || fountain
+    let q = thin
     let points = Array(k.path)
-    guard follows, points.count > 1 else { return k }
+    guard follows || q < 0.999, points.count > 1 else { return k }
+    let g = CGFloat(min(max(tool.sense ?? 1, 0), 2))
     let n = CGFloat(points.count)
-    let mw = points.reduce(0) { $0 + $1.size.width } / n
+    // a round nib's width is twice the point's size less four (`stroke.m`): the line is changed by its width, not its size
+    let round = type == .pen || even
+    let wide: (PKStrokePoint) -> CGFloat = { round ? max(0.05, 2 * $0.size.width - 4) : $0.size.width }
+    let mw = points.reduce(0) { $0 + wide($1) } / n
     let mh = points.reduce(0) { $0 + $1.size.height } / n
-    let g = CGFloat(min(max(f, 0), 2))
-    let made = points.map { p -> PKStrokePoint in
-      let w = max(mw * 0.35, mw + (p.size.width - mw) * g)
-      let h = max(mh * 0.35, mh + (p.size.height - mh) * g)
-      return PKStrokePoint(location: p.location, timeOffset: p.timeOffset, size: CGSize(width: w, height: h), opacity: p.opacity, force: p.force, azimuth: p.azimuth, altitude: p.altitude)
+    let mf = points.reduce(0) { $0 + $1.force } / n
+    let made = points.enumerated().map { (i, p) -> PKStrokePoint in
+      var w = wide(p), h = p.size.height
+      if follows {
+        // (the force evened over its neighbours: no lump where one reading jumps)
+        let a = points[max(i - 1, 0)].force, b = points[min(i + 1, points.count - 1)].force
+        let r = mf > 0.001 ? (a + 2 * p.force + b) / 4 / mf : 1
+        let by = min(max(1 + g * 0.85 * (r - 1), 0.3), 2.4)
+        w = max(mw * 0.2, (mw + (w - mw) * g) * by)
+        if !round { h = max(mh * 0.2, (mh + (h - mh) * g) * by) }
+      }
+      w *= q
+      if !round { h *= q }
+      return PKStrokePoint(location: p.location, timeOffset: p.timeOffset, size: CGSize(width: round ? (w + 4) / 2 : w, height: h), opacity: p.opacity, force: p.force, azimuth: p.azimuth, altitude: p.altitude)
     }
     return PKStroke(ink: k.ink, path: PKStrokePath(controlPoints: made, creationDate: k.path.creationDate), transform: k.transform, mask: k.mask)
   }
@@ -1956,6 +2108,8 @@ class InkPlugin: Plugin, PenEars {
     s.canvas.isHidden = true
     s.scratch.removeAllActions()
     if s.rushedAt > 0, s.rushedFor == nil { s.rushedFor = (now - s.rushedAt) * 1000 }
+    // (the pages waited for this under two fingers: they go to where the fingers have them, in this turn)
+    if let h = s.host, h.holdUntil != 0, h.live?.phase == .fingers, !held(h) { stretch(h) }
   }
 
   /// The pages a host holds are about to move (two fingers on them, its scroller scrolling, a layout at another
@@ -1964,6 +2118,26 @@ class InkPlugin: Plugin, PenEars {
   /// the pages move the two can part. So the pause is for writing on, never for the pages moving.
   private func hurry(_ h: Host) {
     for spec in h.spec.sheets { if let s = sheets[spec.id] { hurry(s) } }
+  }
+
+  /// Something of a host's is still on PencilKit's canvas, or on its way there from the Pencil.
+  private func pending(_ h: Host) -> Bool {
+    let now = ProcessInfo.processInfo.systemUptime
+    return h.spec.sheets.contains { spec in
+      guard let s = sheets[spec.id], s.vector else { return false }
+      return !s.glass.isEmpty || !s.canvas.drawing.strokes.isEmpty || now < s.awaiting
+    }
+  }
+
+  /// Two fingers have the pages, and a stroke just written is still the canvas's: stretched with the pages now, a
+  /// canvas PencilKit is drawing anew at another size can show its stroke cut at a tile's edge for a few frames
+  /// (seen once in a simulator's recording: the right end of a stroke gone for three frames). So the stretch waits
+  /// for the page's commit that takes the stroke over, which is some hundredths of a second away, and for no
+  /// longer than a tenth: after that the canvas is carried as it was.
+  private func held(_ h: Host) -> Bool {
+    if h.holdUntil == 0 { return false }
+    if ProcessInfo.processInfo.systemUptime >= h.holdUntil || !pending(h) { h.holdUntil = 0; return false }
+    return true
   }
 
   private func hurry(_ s: Sheet) {
@@ -2018,6 +2192,7 @@ class InkPlugin: Plugin, PenEars {
       if let s = self.sheets[args.sheet] {
         s.seen = max(s.seen, args.seq)
         s.mark("drawn \(args.seq)")
+        self.bindSignal()
         self.settle(s)
       }
       invoke.resolve()
@@ -2137,6 +2312,7 @@ class InkPlugin: Plugin, PenEars {
   }
 
   fileprivate func inking(_ s: Sheet) {
+    noteTouch("pencilkit began on \(s.id.suffix(14))")
     // PencilKit may hear of the touch before the watcher does
     inkedAt = ProcessInfo.processInfo.systemUptime
     guard down, var t = touched, t.ink == nil else { return }
@@ -2237,7 +2413,7 @@ class InkPlugin: Plugin, PenEars {
     let v = spec.vector == true
     if s.vector != v {
       s.vector = v
-      s.canvas.history = v ? s.scratch : history
+      s.canvas.history = s.scratch
       if v { s.canvas.isHidden = true }
     }
     // Laid out anew with something still on its canvas (pages pinched or scrolled the moment the Pencil lifted, and
@@ -2251,9 +2427,18 @@ class InkPlugin: Plugin, PenEars {
       if now - s.revealedAt > 0.05 { settle(s, force: true) }
     }
     if s.place(frame, zoom: z), s.vector { hurry(s) }
-    let filter: String? = spec.blend == "multiply" ? "multiplyBlendMode" : spec.blend == "screen" ? "screenBlendMode" : nil
-    if (s.canvas.layer.compositingFilter as? String) != filter { s.canvas.layer.compositingFilter = filter }
+    s.blend = spec.blend == "multiply" ? "multiplyBlendMode" : spec.blend == "screen" ? "screenBlendMode" : nil
+    lay(s)
     if picked?.sheet === s { ring(); tellPicked() }
+  }
+
+  /// A sheet's canvas laid on what is under it as the page lays the same ink on: a canvas that is its sheet (a
+  /// typed note's area) as the page says; one over a PDF's page plainly while a pen writes (the page's path of a
+  /// pen's stroke lies over the print as it is: the stroke is one colour written and at rest, whatever a device
+  /// makes of a filter over PencilKit's own layers) and as the page says under the highlighter.
+  private func lay(_ s: Sheet) {
+    let filter: String? = s.vector && tool.kind != "highlighter" ? nil : s.blend
+    if (s.canvas.layer.compositingFilter as? String) != filter { s.canvas.layer.compositingFilter = filter }
   }
 
   private func scrollView(for box: CGRect, height: CGFloat) -> UIScrollView? {
@@ -2330,6 +2515,7 @@ class InkPlugin: Plugin, PenEars {
         for s in self.sheets.values { s.canvas.overrideUserInterfaceStyle = d ? .dark : .light }
       }
       self.made = []
+      self.bindSignal()
       self.holes = (args.holes ?? []).map { self.onLayer($0) }
       // the ink stands aside for what the page lays over it: a menu, a tool's settings, a notice
       if self.holes.isEmpty {
@@ -2544,6 +2730,7 @@ class InkPlugin: Plugin, PenEars {
       }
       self.unpick()
       self.tool = t
+      for s in self.sheets.values where s.vector { self.lay(s) }
       if let ink = made {
         self.ink = ink
         for s in self.sheets.values { s.canvas.tool = ink }
@@ -2825,6 +3012,30 @@ class InkPlugin: Plugin, PenEars {
   @objc public func stroke(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(StrokeArgs.self)
     DispatchQueue.main.async {
+      if args.hand == true, args.points.count >= 2 {
+        // (the size a point has under this tool unless it says its own, and the force it says: 1 where it says none)
+        let w = self.ink.width
+        let pts = args.points.enumerated().map { i, p in
+          PKStrokePoint(location: CGPoint(x: p[0], y: p[1]), timeOffset: Double(i) * 0.01, size: CGSize(width: p.count > 2 && p[2] > 0 ? p[2] : w * 1.3, height: p.count > 2 && p[2] > 0 ? p[2] : w * 1.3), opacity: 1, force: p.count > 3 ? p[3] : 1, azimuth: 0, altitude: .pi / 2)
+        }
+        let k = PKStroke(ink: self.ink.ink, path: PKStrokePath(controlPoints: pts, creationDate: Date()), transform: .identity, mask: nil)
+        if let (f, l) = self.leaf(args.sheet) {
+          f.hand(l, k)
+        } else if let s = self.sheets[args.sheet] {
+          if s.vector {
+            self.wrote(s, [k])
+          } else {
+            // (given to the canvas as PencilKit's own: the sheet finds a stroke more than it counted)
+            s.canvas.drawing = PKDrawing(strokes: s.canvas.drawing.strokes + [k])
+            if !s.vector { s.canvas.isHidden = false }
+          }
+        } else {
+          invoke.reject("no such sheet")
+          return
+        }
+        invoke.resolve()
+        return
+      }
       if let (f, l) = self.leaf(args.sheet), args.points.count >= 1 {
         let w = self.ink.width
         // (a highlighter's points as a finger's are: the nib upright, two thirds of the tool's width)
@@ -2953,6 +3164,9 @@ class InkPlugin: Plugin, PenEars {
       let onSurface = self.surfaces.values.first(where: { $0.selected > 0 })
       if let f = onSurface { heldAt = f.heldAt() }
       var whole = State(sheets: sheets, hosts: hosts, tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: onSurface?.selected ?? self.picked?.at.count ?? 0, held: heldAt, clip: self.clip.count, shape: self.lastShape, pinch: Double(self.hosts.values.compactMap { $0.live?.k }.first ?? self.pinched.values.first ?? 1), sharing: self.sharing, down: self.down || self.surfaces.values.contains(where: { $0.isDown }), scribble: self.scribble, touched: self.touched, lastTouched: self.lastTouched)
+      whole.touchLog = self.touchLog
+      self.bindSignal()
+      whole.signal = self.signal != nil
       whole.surfaces = self.surfaces.values.sorted { $0.id < $1.id }.map { $0.state() }
       for f in self.surfaces.values.sorted(by: { $0.id < $1.id }) {
         whole.sheets += f.sheetStates()

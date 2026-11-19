@@ -9866,10 +9866,15 @@ two sheets still brings them onto one, but that is no step to undo and
 nothing kept: it is part of whatever is done next with what is held (one
 step, which undone puts each stroke back on its own sheet), and is put
 back as it was when the lasso lets go with nothing done.
-**Not done:** a stroke taller than a sheet read on a Mac or a phone, or
-passed on as a PDF, is drawn one sheet under its own (their pictures
-reach that far); on an iPad one kept on a sheet not yet near the screen
-since the notebook was opened is not drawn until that sheet comes near;
+And whole everywhere: a Mac and a phone read a pageless sheet from a
+picture as tall as its ink reaches (a height under nothing asks
+`store_ink_page` for that; nine sheets and 48 million pixels at the most;
+a phone's pageless notebook rests its canvases and shows the pictures);
+the PDF passed on gives each page what runs on from up to eight sheets
+above it; an iPad gives the sheets up to eight above the view their
+strokes, no pictures, so one that runs down into the view from a sheet
+not near the screen is drawn.
+**Not done:**
 the long sheet shorter the moment something is erased (decided against);
 a line across the head or the foot; a margin's own paper colour.
 **Decided, twice:** the sheets past the writing are left in `sheets`.

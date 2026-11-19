@@ -496,7 +496,33 @@ TEST_RUNNER_LOG="$C/Library/Application Support/dev.ilmi.app/logs/ilmi.log" TEST
 ```
 
 which starts the app and ends at the smoke's `done` or `failed` line; about
-two and a half minutes). That runner makes fingers only: Xcode 27.2's
+two and a half minutes). Every touch it makes is the runner's own pointer
+path (`fingers` in `TouchRig.swift`), a tap and a drag too: XCUITest's
+public calls (`tap()`, `press(forDuration:thenDragTo:)`) first find the
+application and read its whole accessibility tree, before the touch and
+five times after it, which over a long typed note is 10 s before a touch is
+made and 30 s before the next can be. A smoke that waits 20 s for what a
+tap does then saw taps that did nothing: they landed after it had given up,
+or on what it had moved to since (`ink` stopped so at a note's ink area
+every time, `phone` at a different button of the foot's bar each run; the
+app's own record of the touches it met, `touchLog` in `dev_ink_state`,
+showed none had come). A pointer path asks the app nothing; the window's
+frame is read once and again when the device is turned. What the public
+calls gave without being asked is given on purpose: no touch sooner than
+three quarters of a second after the one before it (they waited for the
+app to be idle, and a smoke asks for a touch the moment it sees what to
+touch, while a sheet is still coming in or the pages are still settling;
+two taps closer than that are also a double tap to the web view); a moment
+before `type`; a tap is down, still there 0.04 s on, and up (one point
+alone was no tap to the page's buttons, a tenth of a second none to a row
+of the tree; the system's colour wheel is put away only by a longer one,
+which a smoke asks for as `press x y 0.12`); on its side a path's places
+are turned into the upright screen's (`screen`: a record said to be on its
+side put its taps elsewhere); every run begins upright; `tap2` alone is
+still XCUITest's own `doubleTap()`. `TEST_RUNNER_PUBLIC=1` makes taps and
+drags by the public calls again, `TEST_RUNNER_SIDE=public` only while the
+device is on its side.
+That runner makes fingers only: Xcode 27.2's
 XCUIAutomation has no stylus among its pointer paths, so the Pencil's path
 never reaches the page; a dev run says a finger stands in for it
 (`dev_ink_pen`) and the `touch` smoke's one `pen` press is an event it
@@ -716,6 +742,59 @@ on PencilKit's canvas), `said` and `seen`, `hurriedAfter` and `hurriedFor`
 lift, and ms until the canvas was away), and `trace` (what happened to what
 was last written, each with its ms from the lift).
 
+A stroke is on the glass once at the hand-over, by construction. Told by
+a message that the page has drawn a telling, the canvas was emptied some
+frames after the page's path was on the glass (both for those frames: ink
+laid on twice); emptied first, there would be frames with neither, which
+shows on every ink. The web view's layers are put on the glass by the app's
+own process, in a transaction on the main thread that applies what the
+page's process committed, and that commit carries the size of every
+scroller's content. So a telling that shows what the canvas still shows
+carries a ticket (`stamp`); the page, in the turn it draws the telling,
+sets the height of what a tiny scroller of its own holds to the ticket
+(`signalDrawn` in `pageInk.ts`: 3 by 5 px, fixed at the window's corner);
+the web view makes that scroller a `UIScrollView`, which the plugin finds
+by its size (`bindSignal`) and whose `contentSize` it observes: the
+observer runs inside the transaction that puts the paths on the glass, and
+empties the canvas there. One frame has the canvas's stroke, the next the
+page's. `Sheet.trace` says it: `on the glass, ticket n` and `emptied` at
+the same millisecond, the page's message (`drawn n`, still heard, for a web
+view that makes no scroll view of the scroller) some tens of milliseconds
+after.
+
+And a pen's stroke is one colour over print, written and at rest, by
+construction too. A simulator cannot show what a device makes of a
+compositing filter over PencilKit's own layers (there it does nothing, see
+below), so nothing rests on it for a pen: on a PDF's page a pen's ink lies
+over the print as it is, PencilKit's canvas laid on plainly while a pen
+writes (`InkPlugin.lay`) and the page's path laid on plainly at rest; only
+a highlighter's strokes are multiplied (screened on a dark page), in a
+drawing of their own under the pen's (`svg.page-ink-under`, `pdf.css`: the
+layer `.pdf-ink` is no group of its own on a PDF's page, or the blend would
+be shut in with nothing under it), and the canvas is laid on that way while
+the highlighter is held. The PDF passed on does the same on a PDF's own
+page (`ilmi_ink_pdf`). A notebook's sheets are as they were: one layer of
+ink multiplied onto the paper. In the `look` part's captures a pen's stroke
+over print is now the same written, taken over and at rest (246, 122, 62
+against 245, 122, 61; it was 254, 126, 63 against 195, 97, 49); a
+highlighter's still differs in a simulator while it is written (the filter
+does nothing there) and for the tenth of a second until the page has it.
+
+The pen's `pressure` and a width under PencilKit's thinnest are one
+function for every place a stroke is written (`InkPlugin.sensed`): a
+notebook's surface, a PDF's page (which had an older pressure and no
+thinness) and a typed note's area (which had neither: PencilKit's stroke
+was kept as it came). An area's canvas is its sheet, so what PencilKit adds
+to it is taken as a page takes it (`took`): made what `sensed` has it, and
+a step of the plugin's own to undo, the canvas's undo being its `scratch`
+on every sheet now. `dev_ink_stroke` takes a force a point (a fourth
+number) and `hand`: the stroke is given to the canvas as PencilKit's own,
+so it goes the way a written one goes. `"part": "pressure"` of `written`
+hands the same stroke, its force rising, to a notebook's sheet, a PDF's
+page and a note's area under the pen as it is, following the hand not at
+all, twice as much, and at 0.4 points (PencilKit's thinnest is 0.88), and
+compares what the store keeps of each by its outline's nib.
+
 A stroke has one name, in hand and in the store (`nameOf`, `native/ink.m`).
 PencilKit writes the even line (`monoline`, the pen as it starts) into a
 drawing's bytes as a pen, and the name is a hash over the ink's kind among
@@ -730,8 +809,8 @@ kept again with strokes erased or added, set and set back, every stroke
 keeps its name (run inside a simulator and on the Mac): an erase on a page
 loaded from the store writes the erased rows and nothing else.
 
-What the canvas's compositing filter does could not be shown in a
-simulator: there PencilKit's ink over the web view covers the print under
+(Before the two paragraphs above were so:) what the canvas's compositing
+filter does could not be shown in a simulator: there PencilKit's ink over the web view covers the print under
 it, written or taken over, whatever the filter (and a canvas made a group
 by an opacity under 1 does the same), and the page's own lets the print
 through. `"part": "look"` of the `pdfink` smoke captures a pen's and a

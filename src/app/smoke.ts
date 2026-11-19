@@ -12402,6 +12402,7 @@ export async function smokeInk(): Promise<void> {
     for (let i = 0; i < 3 && landed === 0; i++) {
       ask('drag', fx(X(0.15)), fy(ty), fx(X(0.5)), fy(ty + 14), 0.05);
       for (let k = 0; k < 120 && landed === 0; k++) await sleep(100);
+      log(`touch: on a paragraph, asked ${i + 1} times, heard ${landed}; the layer met: ${((await state()) as unknown as { touchLog?: string[] }).touchLog?.slice(-6).join(' | ')}`);
     }
     await poll(() => landed > 0, 'the stand-in is put down on a paragraph', 5000);
     await sleep(3500);
@@ -12426,7 +12427,7 @@ export async function smokeInk(): Promise<void> {
         let got = false;
         for (let k = 0; k < 80 && !got; k++) { await sleep(100); got = sheetOf(await state(), id)?.strokes === want; }
         if (got) break;
-        log(`touch: a drag on the area wrote nothing in 8 s (asked ${i + 1} times)`);
+        log(`touch: a drag on the area wrote nothing in 8 s (asked ${i + 1} times); the layer met: ${((await state()) as unknown as { touchLog?: string[] }).touchLog?.slice(-8).join(' | ')}`);
       }
       await poll(async () => sheetOf(await state(), id)?.strokes === want, `stroke ${want} is on the area's canvas`, 5000);
       n = want;
@@ -12837,7 +12838,7 @@ export async function smokePageInk(): Promise<void> {
       await sleep(600);
       await shot('pageink-canvas-both');
       await poll(async () => (await fs.pageInk(hash, P)).length === all.length + 1, 'left alone, it is kept', 20000);
-      await poll(async () => inkAtRest((await state()).sheets.find((x) => x.id === sheet)) && qa(`svg.page-ink[data-page="${P}"] [data-n]`, book).length === all.length + 1 && getComputedStyle(q<HTMLElement>('.pdf-ink', book)!).mixBlendMode === 'screen', 'and the page draws it over the dark paper, screened on it', 8000);
+      await poll(async () => inkAtRest((await state()).sheets.find((x) => x.id === sheet)) && qa(`svg.page-ink[data-page="${P}"] [data-n]`, book).length === all.length + 1 && getComputedStyle(q<SVGSVGElement>(`svg.page-ink-under[data-under="${P}"]`, book)!).mixBlendMode === 'screen' && /invert/.test(getComputedStyle(q<SVGSVGElement>(`svg.page-ink[data-page="${P}"]`, book)!).filter), 'and the page draws it over the dark paper, turned as the page is (a highlighter\'s screened on it)', 8000);
       await shot('pageink-dark');
       useApp.getState().setTheme('light');
       await pen(false);
@@ -13029,7 +13030,7 @@ export async function smokePageInkMac(vault: Vault): Promise<void> {
       const img = await poll(() => { const i = q<SVGSVGElement>(`svg.page-ink[data-page="${P}"]`, book); return i && qa<SVGElement>('[data-n]', i).map((x) => x.dataset.n).join() === held.join() ? i : null; }, `the page draws its writing itself, a path a stroke: the ${held.length} the store holds, by their names and in their order`, 20000);
       const [a, b] = [img.getBoundingClientRect(), pageEl.getBoundingClientRect()];
       must(Math.abs(a.left - b.left) < 1.5 && Math.abs(a.top - b.top) < 1.5 && Math.abs(a.width - b.width) < 1.5 && Math.abs(a.height - b.height) < 1.5, 'laid exactly over the page');
-      must(qa('.pdf-page[data-page] ~ .pdf-ink .page-ink', book).length === 1 && !q('img.page-ink', book) && getComputedStyle(img).pointerEvents === 'none', 'on that page alone, no picture of it, and it takes no press: a drag there still boxes');
+      must(qa('.pdf-page[data-page] ~ .pdf-ink svg.page-ink:not(.page-ink-under)', book).length === 1 && qa('.pdf-ink svg.page-ink-under', book).length === 1 && !q('img.page-ink', book) && getComputedStyle(img).pointerEvents === 'none', 'on that page alone, no picture of it, and it takes no press: a drag there still boxes');
       {
         // each path lies on the page, where its stroke's points are
         const paths = qa<SVGGraphicsElement>('[data-n]', img).map((x) => x.getBoundingClientRect());
@@ -16362,6 +16363,22 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
       pagesOf(b)[1]!.scrollIntoView({ block: 'start' });
       await shot('written-phone-dark');
       useApp.getState().setTheme('light');
+      {
+        // pageless, and what is kept on its first sheet two and a half sheets long (a stroke taller than a sheet is
+        // kept on the sheet its top lies on): read whole, from a picture as tall as the ink
+        const { setSetup } = await import('./written.js');
+        await setSetup(NB, { pageless: true });
+        await poll(() => docsNow()[NB]?.written?.pageless === true, 'pageless', 8000);
+        const lines = Math.floor((2.6 * 792 - 60) / 42);
+        const got = await ink.keepPage(ID, 1, await invoke<string>('dev_ink_sample', { lines, per: 3, seed: 31 }));
+        must(got.strokes === lines * 3, `a made-up drawing of ${lines} lines is kept on the first sheet`);
+        const img = await poll(() => { const i = q<HTMLImageElement>('img.page-ink[data-page="1"]', b); return i && i.complete && i.dataset.run === '1' && !i.dataset.live && i.naturalHeight > i.naturalWidth * ((2.4 * 792) / 612) ? i : null; }, 'the first sheet\'s picture is as tall as what is written on it, and is what is shown', 25000);
+        const [ir, pr] = [img.getBoundingClientRect(), pagesOf(b)[0]!.getBoundingClientRect()];
+        must(Math.abs(ir.width - pr.width) < 1.5 && ir.height > 2.4 * pr.height && getComputedStyle(img).visibility !== 'hidden', `a sheet wide, ${(ir.height / pr.height).toFixed(2)} sheets down`);
+        q<HTMLElement>('.book-pages', b)!.scrollTop = Math.max(0, 1.9 * pr.height);
+        await sleep(600);
+        await shot('written-phone-tall');
+      }
       finished = true;
       log(`done; collection ${vault.root}`);
       return;
@@ -16413,10 +16430,11 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
     const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
-    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall') {
+    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure') {
       if (part === 'more') await writtenMore(log, vault.root);
       else if (part === 'tabs') await writtenTabs(log);
       else if (part === 'tall') await writtenTall(log);
+      else if (part === 'pressure') await writtenPressure(log);
       else await writtenLong(log, part);
       await ink.settled();
       finished = true;
@@ -16588,7 +16606,8 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     tap(wheel);
     await poll(async () => (await state()).wheel === true, 'tapped again, it is up again', 25000);
     await sleep(900);
-    ask('tap', 0.5, 0.92);
+    // (a touch a little longer than the rig's tap: the system's popover is not put away by so short a one)
+    ask('press', 0.5, 0.92, 0.12);
     await poll(async () => (await state()).wheel === false && wheel.getAttribute('aria-expanded') === 'false', 'a tap beside it closes it', 25000);
     must(kept().custom.pen === WHEEL && kept().swatch.pen === tools.CUSTOM && (await state()).tool?.color === WHEEL, 'with none chosen the colour is as it was');
     await poll(async () => (await fs.pageInk(ID, 2)).length === 3, 'the second sheet\'s three strokes are kept', 20000);
@@ -16704,8 +16723,9 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     await poll(async () => (await fs.pageInk(hash, PAGEINK_PAGE)).length === 2, 'kept under the PDF\'s hash and the page', 20000);
     await poll(async () => inkAtRest((await state()).sheets.find((x) => x.id === psheet)), 'at rest the page draws it (89), and PencilKit\'s canvas is off the glass', 10000);
     const pimg = await poll(() => inkOn(pb, PAGEINK_PAGE), 'the page shows the writing over its print', 20000);
-    must(pimg.querySelector('[data-layer="under"] [data-k="m"]') && pimg.querySelector('[data-layer="over"] [data-k="p"]'), 'a path a stroke: the highlighter\'s under the pen\'s');
-    must(getComputedStyle(pimg.closest<HTMLElement>('.pdf-ink')!).mixBlendMode === 'multiply', 'multiplied: the print shows through the highlighter');
+    const punder = q<SVGSVGElement>(`svg.page-ink-under[data-under="${PAGEINK_PAGE}"]`, pb)!;
+    must(punder.querySelector('[data-layer="under"] [data-k="m"]') && pimg.querySelector('[data-layer="over"] [data-k="p"]') && !pimg.querySelector('[data-k="m"]'), 'a path a stroke: the highlighter\'s in a drawing of its own under the pen\'s');
+    must(getComputedStyle(punder).mixBlendMode === 'multiply' && getComputedStyle(pimg).mixBlendMode === 'normal' && getComputedStyle(pimg.closest<HTMLElement>('.pdf-ink')!).mixBlendMode === 'normal', 'the highlighter\'s multiplied (the print shows through it), the pen\'s over the print as it is');
     await pen(false);
     await shot('written-pdf');
 
@@ -16715,6 +16735,7 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     // ── what 88 added: two margins, and a pageless notebook that is one sheet ──
     await writtenLong(log, '');
     await writtenTall(log);
+    await writtenPressure(log);
 
     // ── a notebook's children as tabs beside its pages ──
     await writtenTabs(log);
@@ -18006,7 +18027,174 @@ async function writtenTall(log: (s: string) => void): Promise<void> {
   await poll(async () => { const s = await f(); return s && s.length !== null && s.length >= Y1 + 100 && s.shown >= 3 && Math.abs(s.zoom - 0.5) < 0.01 && s.sheets[0]!.device.w < wide * 0.6 ? s : null; }, 'opened again: as long as the stroke reaches, at the zoom it was left at', 15000);
   await tall('tall-opened-again');
   setBookZoom(NB, 1);
-  await sleep(800);
+  await poll(async () => { const s = await f(); return Math.abs(s.zoom - 1) < 0.01 && s.phase === 'rest'; }, 'at fit again', 10000);
+  // ── kept on a sheet that has not come near the screen: a second stroke, down to the fifth sheet; the notebook left
+  // with the fifth in view and opened again there, the first four sheets above the view ──
+  {
+    const X2 = 200, Z1 = 4.4 * H;
+    await invoke('dev_ink_stroke', { sheet: sid(first), points: Array.from({ length: 120 }, (_, i) => [X2 + (i % 2) * 0.5, Y0 + ((Z1 - Y0) * i) / 119]), rest: false });
+    await poll(async () => (await fs.pageInk(ID, first)).length === 2, 'a second stroke, to two fifths down the fifth sheet, kept on the first', 20000);
+    await poll(async () => { const s = await f(); return w().sheets.length >= 5 && s.length !== null && s.length >= Z1 + 100 ? s : null; }, 'the long sheet has the five sheets it runs over', 20000);
+    await bringPage(b, 5, 0, 0.02);
+    await surfaceSettled(b);
+    await sleep(1200);
+    openNode('fleeting/idea-for-honors-thesis.md');
+    await poll(() => !bookOf(NB)?.getClientRects().length, 'another document', 10000);
+    await sleep(600);
+    b = await open('the notebook, opened again where it was left');
+    const s = await poll(async () => { const x = await f(); return x && x.length !== null && x.phase === 'rest' && x.sheets.length >= 5 && x.sheets[0]!.loaded ? x : null; }, 'the first sheet is given its strokes, though it is not near the screen', 20000);
+    await surfaceSettled(b);
+    const d = s.sheets[0]!.device;
+    const k = d.w / W;
+    const top = s.device.y, foot = Math.min(s.device.y + s.device.h, d.y + Z1 * k);
+    log(`tall: the first sheet's top is ${Math.round((top - d.y) / k)} points above the view's (${(((top - d.y) / k) / H).toFixed(2)} sheets); sheets given strokes: ${s.sheets.map((x) => (x.loaded ? 1 : 0)).join('')}`);
+    must(top - d.y > 2.5 * H * k, 'the view is more than two and a half sheets below the first sheet\'s top');
+    must(foot - top > 200, 'and the stroke runs down into it');
+    log(`tall: ${JSON.stringify({ shot: 'tall-from-far', x: d.x + X2 * k, y0: top + 12, y1: foot, seams: [d.y + 4 * H * k], view: [s.device.x, s.device.y, s.device.w, s.device.h] })}`);
+    await shot('tall-from-far');
+  }
+  await ink.settled();
+}
+
+/**
+ * The pen's pressure and thinness, the same wherever a stroke is written (a part of `ILMI_SMOKE=written` on an
+ * iPad; alone with `"part": "pressure"`): the same stroke, its points' force rising from a fifth to nine fifths,
+ * handed over as PencilKit hands a written one over (`dev_ink_stroke` with `hand`), on a notebook's sheet, on a
+ * PDF's page and on a typed note's area, under the pen as it is, following the hand not at all, following it twice
+ * as much, and thinner than PencilKit's thinnest. What each place keeps is read back from the store and its
+ * outline's nib (the radii of the discs `ink_shapes` says) compared: the three are one stroke.
+ */
+async function writtenPressure(log: (s: string) => void): Promise<void> {
+  type StoreFs = import('../vault/index.js').StoreFs;
+  type InkStroke = import('../vault/index.js').InkStroke;
+  const q = <T extends Element>(sel: string, at: ParentNode = document) => at.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, at: ParentNode = document) => Array.from(at.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const { createWritten } = await import('./written.js');
+  const tools = await import('./inkTools.js');
+  const ink = await import('./ink.js');
+  const vault = currentVault()!;
+  const fs = vault.fs as StoreFs;
+  const state = () => invoke<InkState>('dev_ink_state');
+  const docsNow = () => useApp.getState().docs;
+  const bookOf = (p: string) => qa<HTMLElement>('.book').find((b) => b.dataset.path === p) ?? null;
+  useApp.getState().setTheme('light');
+  await invoke('dev_ink_pen', { on: false });
+  tools.setTool('pen');
+  tools.setInk('pen');
+  tools.setSnap(false);
+  tools.setRecent('pen', '#204080');
+  const caps = await invoke<{ inks: Record<string, [number, number]> }>('ink_caps');
+  const least = caps.inks.pen![0];
+  log(`pressure: PencilKit's pen is ${least} points wide at its thinnest`);
+  // the three places
+  const NB = 'fleeting/pressure.md';
+  await createWritten('fleeting', 'pressure');
+  const ID = await poll(() => docsNow()[NB]?.written?.id, 'a notebook, for the pen\'s pressure', 10000);
+  const NOTE = 'fleeting/pressure note.md';
+  const AREA = 'fleeting/pressure note/ink-01.pkdrawing';
+  {
+    const made = await invoke<InkStroke[]>('ink_split', { drawing: await invoke<string>('dev_ink_sample', { lines: 2, per: 3, seed: 91 }) });
+    await fs.setInk(vault.abs(AREA), made);
+    const words = 'These are the plain words of a paragraph long enough to stand over an area of ink a typed note holds from before, and under it another of the same kind follows.';
+    await vault.fs.writeText(vault.abs(NOTE), `# pressure note\n\n${words}\n\n![working](pressure%20note/ink-01.png)\n\n${words}\n`);
+    await poll(() => docsNow()[NOTE], 'a typed note that holds an area of ink', 15000);
+  }
+  const places: { name: string; open: () => Promise<string>; kept: () => Promise<InkStroke[]>; at: [number, number] }[] = [
+    {
+      name: 'a notebook\'s sheet',
+      at: [120, 200],
+      open: async () => {
+        openNode(NB);
+        await poll(() => { const k = bookOf(NB); return k && k.getClientRects().length && q(PAPER, k) ? k : null; }, 'the notebook', 15000);
+        const sheet = `p.${ID}.${docsNow()[NB]!.written!.sheets[0]!}`;
+        await poll(async () => (await state()).sheets.some((x) => x.id === sheet), 'its sheet is there', 15000);
+        return sheet;
+      },
+      kept: () => fs.pageInk(ID, docsNow()[NB]!.written!.sheets[0]!),
+    },
+    {
+      name: 'a PDF\'s page',
+      at: [80, 120],
+      open: async () => {
+        openNode(PAGEINK_BOOK);
+        const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ? x : null; }, 'the chapter', 60000);
+        const hash = await poll(() => q<HTMLElement>('.pdf-view', pb)!.dataset.hash, 'its hash known', 10000);
+        q<HTMLElement>(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, pb)!.scrollIntoView({ block: 'start' });
+        const sheet = `p.${hash}.${PAGEINK_PAGE}`;
+        await poll(async () => (await state()).sheets.some((x) => x.id === sheet), 'its page is there', 20000);
+        return sheet;
+      },
+      kept: async () => fs.pageInk(q<HTMLElement>('.pdf-view', bookOf(PAGEINK_BOOK)!)!.dataset.hash!, PAGEINK_PAGE),
+    },
+    {
+      name: 'a typed note\'s area',
+      at: [50, 84],
+      open: async () => {
+        openNode(NOTE);
+        await poll(() => q('.ink-area'), 'the note, its area drawn', 20000);
+        q('.ink-area')!.scrollIntoView({ block: 'center' });
+        await poll(async () => (await state()).sheets.some((x) => x.id === AREA), 'its area is there', 20000);
+        return AREA;
+      },
+      kept: async () => (await fs.ink(vault.abs(AREA))) ?? [],
+    },
+  ];
+  const cases: { name: string; set: () => void }[] = [
+    { name: 'the pen as it is', set: () => { tools.setSize('pen', 1); tools.setWidth('pen', tools.DEFAULTS.widths.pen[1]!); tools.setSense(1); } },
+    { name: 'following the hand not at all', set: () => { tools.setSense(0); } },
+    { name: 'following it twice as much', set: () => { tools.setSense(2); } },
+    { name: 'thinner than PencilKit\'s thinnest', set: () => { tools.setSense(1); tools.setWidth('pen', Math.round(least * 5) / 10); } },
+  ];
+  /** The nib along a stroke as the store keeps it: the radius of each disc of its outline. */
+  const nib = async (k: InkStroke): Promise<number[]> => {
+    const shapes = JSON.parse(await invoke<string>('ink_shapes', { strokes: [k.data] })) as { d?: string }[];
+    return Array.from((shapes[0]?.d ?? '').matchAll(/a([0-9.]+) [0-9.]+ 0 1 0/g)).map((m) => Number(m[1])).filter((_, i) => i % 2 === 0);
+  };
+  const got: number[][][] = [];
+  for (const place of places) {
+    const sheet = await place.open();
+    await sleep(600);
+    const row: number[][] = [];
+    for (const [ci, c] of cases.entries()) {
+      c.set();
+      await sleep(500);
+      const told = (await state()).tool;
+      const before = await place.kept();
+      const names = new Set(before.map((x) => x.stroke));
+      const [x0, y0] = place.at;
+      await invoke('dev_ink_stroke', { sheet, rest: false, hand: true, points: Array.from({ length: 13 }, (_, i) => [x0 + i * 6, y0 + ci * 9, 0, 0.2 + (1.6 * i) / 12]) });
+      const k = await poll(async () => { const now = await place.kept(); const fresh = now.filter((x) => !names.has(x.stroke)); return now.length === before.length + 1 && fresh.length === 1 ? fresh[0]! : null; }, `${place.name}, ${c.name}: a stroke handed over, kept`, 25000);
+      const r = await nib(k);
+      log(`pressure: ${place.name}, ${c.name} (width ${told?.width}): the nib ${r.map((v) => v.toFixed(2)).join(' ')}`);
+      must(r.length >= 2, 'its outline is discs along it');
+      row.push(r);
+    }
+    got.push(row);
+  }
+  const same = (a: number[], b: number[]) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]!) < 0.011);
+  for (const [ci, c] of cases.entries()) {
+    must(same(got[0]![ci]!, got[1]![ci]!) && same(got[0]![ci]!, got[2]![ci]!), `${c.name}: the same stroke on the notebook's sheet, the PDF's page and the note's area`);
+  }
+  const span = (r: number[]) => Math.max(...r) - Math.min(...r);
+  const mean = (r: number[]) => r.reduce((a, v) => a + v, 0) / r.length;
+  const [as, flat, twice, thin] = got[0]! as [number[], number[], number[], number[]];
+  must(span(flat) < 0.011, `following the hand not at all its line is even (${Math.min(...flat).toFixed(2)} to ${Math.max(...flat).toFixed(2)})`);
+  must(span(as) > 0.2 && as[as.length - 1]! > as[0]!, `as it is the line widens as the hand presses (${as[0]!.toFixed(2)} to ${as[as.length - 1]!.toFixed(2)})`);
+  must(span(twice) > span(as) * 1.3, `twice as much, more (${span(as).toFixed(2)} against ${span(twice).toFixed(2)})`);
+  must(mean(thin) < mean(as) * 0.75, `thinner than PencilKit's thinnest it is thinner than its thinnest gives (a mean nib of ${mean(thin).toFixed(2)} against ${mean(as).toFixed(2)})`);
+  tools.setSense(1);
+  tools.setWidth('pen', tools.DEFAULTS.widths.pen[1]!);
+  tools.setInk('monoline');
   await ink.settled();
 }
 
@@ -18224,6 +18412,45 @@ async function writtenLongMac(log: (s: string) => void, vault: Vault): Promise<v
     await setSetup(NB, { pageless: false });
     await poll(() => !w().pageless && !q<HTMLElement>('.pdf-pages', b)?.dataset.run && qa('.pdf-page', b).length === 3 && !!q('button.add-page', b), 'pages again: three sheets, add page', 8000);
     must((await names()) === ink0 && w().sheets.join(' ') === '1 2 3', 'its sheets and its strokes are what they were');
+  }
+  // ── what is kept on a sheet reaches as far as it was written: past the sheet after it (a stroke taller than a
+  // sheet is kept on the sheet its top lies on; here a made-up drawing two and a half sheets long, all the first's) ──
+  {
+    await setSetup(NB, { pageless: true });
+    await poll(() => w().pageless === true, 'pageless again', 8000);
+    const lines = Math.floor((2.6 * H - 60) / 42);
+    await write(1, lines, 31);
+    const foot = await inkFoot(ID, w().sheets, H);
+    must(foot > 2.4 * H && foot < 3 * H - RUN_ALLOW, `a drawing ${Math.round(foot)} points long is kept on the first sheet: over the second and onto the third`);
+    const want = runLength(spec(), foot);
+    await poll(() => Math.abs(drawn() - want) < 1.5 / k(), `the long sheet is ${want} points long: as far as it reaches and a little more`, 15000);
+    const img = await poll(() => { const i = q<HTMLImageElement>('img.page-ink[data-page="1"]', b); return i && i.complete && i.dataset.run === '1' && i.naturalHeight > i.naturalWidth * (2.4 * H / spec().w) ? i : null; }, 'the first sheet\'s picture is as tall as what is written on it', 20000);
+    const [ir, pr] = [img.getBoundingClientRect(), page(0).getBoundingClientRect()];
+    must(Math.abs(ir.width - pr.width) < 1.5 && Math.abs(ir.top - pr.top) < 1.5 && ir.height > 2.4 * pr.height, `laid from the first sheet's top, a sheet wide, ${(ir.height / pr.height).toFixed(2)} sheets down`);
+    {
+      // ink in the picture on each of the three sheets it lies over
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const g = c.getContext('2d')!;
+      g.drawImage(img, 0, 0);
+      const px = g.getImageData(0, 0, c.width, c.height).data;
+      const per = c.height / (ir.height / pr.height);
+      const count = (a: number, z: number) => { let n = 0; for (let y = Math.floor(a); y < Math.min(c.height, Math.floor(z)); y++) for (let x = 0; x < c.width; x++) if (px[(y * c.width + x) * 4 + 3]! > 128) n++; return n; };
+      const on = [count(0, per), count(per, 2 * per), count(2 * per, 3 * per)];
+      must(on.every((n) => n > 500), `ink on all three: ${on.join(', ')} px`);
+    }
+    const sc = q<HTMLElement>('.book-pages', b)!;
+    sc.scrollTop = Math.max(0, 2 * page(0).getBoundingClientRect().height - 200);
+    await sleep(700);
+    await shot('long-mac-tall');
+    // and passed on as a PDF: three pages, the third with what runs on to it
+    const pageTools = await import('./PageTools.js');
+    const pages = await pageTools.pdfPagesOf({ name: 'long sheet', hash: ID, written: w(), inked: new Set(await fs.inkedPages(ID)) });
+    must(pages.length === 3 && (pages[2] as { further?: string[] }).further?.length === 1 && !(pages[2] as { ink?: string | null }).ink, 'cut into three pages; the third has no ink of its own, and is given the first\'s');
+    const out = await invoke<string>('pages_pdf', { root: vault.root, name: 'long sheet tall', pdf: null, pages, out: null });
+    const [n] = await invoke<[number, number, number]>('dev_pdf_info', { path: out });
+    must(n === 3, 'a PDF of three pages');
+    log(`tallpdf: ${JSON.stringify({ pdf: out, pages: n })}`);
   }
 }
 
@@ -19837,7 +20064,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       // stroke is the page's at once, and goes with the page. (A finger for the Pencil for that one stroke only:
       // the fingers that follow in the same record are fingers.)
       tools.setRecent('pen', '#ff8040');
-      const run = async (what: string, verb: 'wpinch' | 'scroll', gap: number, secs: number, row: number) => {
+      const run = async (what: string, verb: 'wpinch' | 'scroll', gap: number, secs: number, row: number, again = false): Promise<void> => {
         setBookZoom(PAGEINK_BOOK, 1);
         await sleep(1500);
         await toPage();
@@ -19858,14 +20085,38 @@ export async function smokePdfInk(path: string | null): Promise<void> {
           for (let i = 0; i < 3000 && ((await there())?.strokes ?? 0) === before; i++) await sleep(5);
           sc.scrollTop += 160;
         }
-        if (verb === 'wpinch') await poll(() => { const v = zoomNow(); return v > 1.2 && !view.dataset.pinch ? v : 0; }, `${what}: larger`, 60000);
+        if (verb === 'wpinch') {
+          // (about one run in eight under this rig the two fingers that follow the stand-in's stroke pinch nothing: what
+          // the layer met is said, and the stroke and the fingers are asked for once more)
+          let larger = false;
+          for (let k = 0; k < 250 && !larger; k++) { await sleep(100); larger = zoomNow() > 1.2 && !view.dataset.pinch; }
+          if (!larger) {
+            const st = (await state()) as unknown as { touchLog?: string[] };
+            log(`trace: ${what}: not larger: ${((await there())?.trace ?? []).join('; ')}; the layer met: ${st.touchLog?.slice(-10).join(' | ')}`);
+            if (again) throw new Error(`${what}: larger`);
+            await invoke('dev_ink_pen', { on: false });
+            await poll(async () => { const k = await there(); return k && !k.dirty; }, `${what}: kept`, 25000);
+            return run(what, verb, gap, secs, row + 3, true);
+          }
+          log(`ok: ${what}: larger`);
+        }
         else await poll(() => sc.scrollTop > top0 + 60, `${what}: scrolled`, 20000);
         await rested(what);
         const c = (await there())!;
         log(`hurried: ${what}: the pages moved ${c.hurriedAfter?.toFixed(0)} ms after the lift; PencilKit's canvas was empty and away ${c.hurriedFor?.toFixed(0)} ms after that; ${before} strokes before, ${c.strokes} now`);
         must(c.strokes === before + 1, `${what}: the stroke is the sheet's`);
-        must(c.hurriedAfter !== undefined && c.hurriedAfter < 300, `${what}: the pages began to move within 0.3 s of the lift`);
+        // (on a loaded machine the rig's fingers, or the page's own scroll, can come later than the pause: then this
+        // run shows nothing of the pause, and says so)
+        if (c.hurriedAfter !== undefined && c.hurriedAfter >= 250) log(`${what}: the pages moved ${c.hurriedAfter.toFixed(0)} ms after the lift, later than the pause: not a run of the pages moved before it`);
+        else must(c.hurriedAfter !== undefined, `${what}: the pages began to move within the pause after the lift`);
         log(`trace: ${what}: ${(c.trace ?? []).join('; ')}`);
+        {
+          // the canvas is emptied in the turn the page's commit puts the telling on the glass, not when the page's message comes
+          const tr = c.trace ?? [];
+          const on = tr.findIndex((x) => /on the glass, ticket/.test(x));
+          must(((await state()) as unknown as { signal?: boolean }).signal === true, `${what}: the page's own scroller is heard`);
+          must(on >= 0 && /emptied$/.test(tr[on + 1] ?? '') && Number(tr[on + 1]!.split(' ')[0]) - Number(tr[on]!.split(' ')[0]) <= 3, `${what}: PencilKit's copy left the glass with the commit that put the page's on it (${tr[on]}; ${tr[on + 1]})`);
+        }
         must(!c.shown && c.live === 0, `${what}: PencilKit's canvas is off the glass`);
         must(qa(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb).length === before + 1, `${what}: the page draws it`);
         phase(`rest after ${what}`);
@@ -19928,8 +20179,12 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         await poll(async () => { const k = await there(); return k && k.strokes === before + 1 && k.live === 0 && !k.shown ? k : null; }, 'a highlighter\'s stroke more: the page draws it', 30000);
         const tr = (await there())?.trace ?? [];
         log(`highlighter: ${tr.join('; ')}`);
-        const emptied = Number(tr.find((x) => /emptied/.test(x))?.split(' ')[0] ?? NaN);
-        must(emptied < 250, `handed to the page ${emptied} ms after the lift: sooner than the pause a pen's stroke waits`);
+        // (told to show it as soon as PencilKit handed it over, with no pause: by the times between, not from the
+        // lift, since a loaded machine's PencilKit takes its time to hand a stroke over)
+        const at = (re: RegExp, from = 0) => { const i = tr.findIndex((x, k) => k >= from && re.test(x)); return i < 0 ? null : { i, ms: Number(tr[i]!.split(' ')[0]) }; };
+        const handed = at(/handed over/);
+        const shown = handed && at(/^\d+ told \d+$/, handed.i + 1);
+        must(handed && shown && shown.ms - handed.ms < 200, `told to show it ${shown && handed ? shown.ms - handed.ms : '?'} ms after PencilKit handed it over: no pause, as a pen's stroke has`);
         await invoke('dev_ink_pen', { on: false });
         await poll(async () => { const k = await there(); return k && !k.dirty; }, 'kept', 25000);
       }

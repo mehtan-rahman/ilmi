@@ -127,7 +127,10 @@ for k in sorted(names):
     full = max((x['n'] for x in fr[:moved]), default=0)
     mv = fr[moved:]
     seen = [x for x in mv if x['u'] is not None]
-    gone = [x for x in mv if x['u'] is None and not x.get('cut')]
+    # (gone: no stroke in a frame after one that had it; a recording that has not yet caught the stroke when the pages
+    # first move has frames before it, which are not frames it went from)
+    first = next((i for i, x in enumerate(fr) if x['u'] is not None), len(fr))
+    gone = [x for i, x in enumerate(fr) if i > first and i >= moved and x['u'] is None and not x.get('cut')]
     twice = [x for x in fr if x['twice']]
     worst = max((max(abs(x['u'] - ref['u']) * x['sx'], abs(x['v'] - refv) * x['sy']) for x in seen), default=0)
     wide = max((abs(x['wd'] - ref['wd']) * x['sx'] for x in seen), default=0)

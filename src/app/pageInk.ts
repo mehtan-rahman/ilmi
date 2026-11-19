@@ -65,6 +65,8 @@ export interface InkEvent {
   add?: Shape[];
   /** Those of `names` PencilKit's canvas still shows: the page holds them unseen until a telling without them. */
   hide?: string[];
+  /** A telling that shows what PencilKit's canvas still shows carries a ticket: the page puts it into the commit that draws the telling (`signalDrawn`). */
+  stamp?: number;
   /** What the lasso holds, carried: those strokes shown moved by `m` (a matrix's six numbers), until the next telling. */
   carry?: { names: string[]; m: number[] } | null;
 }
@@ -79,6 +81,8 @@ export interface Live {
   kept: boolean;
   /** When it was said or kept, by a count that only grows. */
   at: number;
+  /** The ticket of a telling the canvases' side waits to see on the glass. */
+  stamp?: number;
 }
 
 const SHAPES_MOST = 40_000;
@@ -137,7 +141,7 @@ export function heardLive(was: Live | undefined, e: InkEvent, at: number): Live 
   if (!e.names || typeof e.seq !== 'number') return was;
   // (a telling older than the last heard arrived late)
   if (was && !was.kept && e.seq < was.seq) return was;
-  return { seq: e.seq, names: e.names, hide: e.hide ?? [], kept: false, at };
+  return { seq: e.seq, names: e.names, hide: e.hide ?? [], kept: false, at, ...(e.stamp !== undefined ? { stamp: e.stamp } : {}) };
 }
 
 /** What the lasso carries on `sheet` just now. */
@@ -230,18 +234,20 @@ function element(s: Shape): SVGElement {
 }
 
 /**
- * `svg` holds exactly the strokes `names`, in that order, a highlighter's under the rest; those `carry` names are
+ * `svg` (with `underSvg`, where a highlighter's strokes have a drawing of their own) holds exactly the strokes
+ * `names`, in that order, a highlighter's under the rest; those `carry` names are
  * shown moved. Only what differs from what it holds is touched. Returns how many of `names` had no outline known
  * (they are not drawn yet).
  */
-export function drawInk(svg: SVGSVGElement, names: readonly string[], carry: Carry | null = null, hide: readonly string[] = []): number {
+export function drawInk(svg: SVGSVGElement, names: readonly string[], carry: Carry | null = null, hide: readonly string[] = [], underSvg: SVGSVGElement | null = null): number {
   let m = made.get(svg);
   if (!m) {
     const under = document.createElementNS(SVG, 'g');
     const over = document.createElementNS(SVG, 'g');
     under.dataset.layer = 'under';
     over.dataset.layer = 'over';
-    svg.replaceChildren(under, over);
+    // (a highlighter's strokes in a drawing of their own where one is given: it is laid on the page another way than a pen's)
+    if (underSvg) { underSvg.replaceChildren(under); svg.replaceChildren(over); } else svg.replaceChildren(under, over);
     m = { under, over, els: new Map(), drawn: '' };
     made.set(svg, m);
   }
@@ -289,6 +295,37 @@ export function askOutlines(sheet: string, names: readonly string[]): void {
   }, () => {});
 }
 
+/** The scroller whose content's height says, in the page's own commit, which tellings are on the glass. */
+export const SIGNAL_BASE = 1000;
+let signal: HTMLElement | null = null;
+let signalled = 0;
+
+/**
+ * A telling's paths were drawn in this turn: its ticket goes into the same commit. The canvases' side watches the
+ * size of what a tiny scroller of the page's holds (the web view makes a native scroll view of every scroller, and
+ * gives it its content's size in the transaction that puts the page's layers on the glass): the height is the
+ * highest ticket drawn, over `SIGNAL_BASE`. So PencilKit's copy of a stroke leaves the glass in the frame the
+ * page's own arrives in: never both, never neither. (3 by 5 px, the size it is found by: `InkPlugin.signalSize`.)
+ */
+export function signalDrawn(stamp: number): void {
+  if (typeof document === 'undefined' || (stamp <= signalled && signal?.isConnected)) return;
+  signalled = Math.max(signalled, stamp);
+  stamp = signalled;
+  if (!signal || !signal.isConnected) {
+    signal = document.createElement('div');
+    signal.className = 'ink-signal';
+    signal.setAttribute('aria-hidden', 'true');
+    signal.style.cssText = 'position:fixed;left:0;top:0;width:3px;height:5px;overflow:hidden scroll;opacity:0.01;pointer-events:none;z-index:0;scrollbar-width:none';
+    signal.append(document.createElement('div'));
+    document.body.append(signal);
+  }
+  const inner = signal.firstElementChild as HTMLElement;
+  inner.style.cssText = `width:1px;height:${SIGNAL_BASE + stamp}px`;
+}
+
+/** The scroller is there before the first telling: the canvases' side finds it when a page that draws its own ink is laid out. */
+export const signalReady = (): void => signalDrawn(0);
+
 const told = new Map<string, number>();
 /** How long the canvases' side waits to hear a telling is on the glass where no frame comes (a page not shown), ms: PencilKit's copy stays on it meanwhile. */
 export const SHOWN_LATEST = 1500;
@@ -319,6 +356,9 @@ export function resetInk(): void {
   carries.clear();
   told.clear();
   clock = 0;
+  signalled = 0;
+  signal?.remove();
+  signal = null;
 }
 
 /** For the tests and the checks: outlines given as if the native side had made them. */

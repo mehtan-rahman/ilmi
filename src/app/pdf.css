@@ -306,9 +306,19 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
    nothing. On dark paper the page and the picture are both turned, so what darkened lightens. A PDF's page is dark
    when the theme is; a notebook's sheet (`data-paper`) when its paper is (`data-ink-dark`, milestone 87): a chosen
    light paper in the dark theme has its ink as written, a chosen dark one in the light theme has it turned */
-.pdf-ink { position: absolute; inset: 0; pointer-events: none; z-index: 2; mix-blend-mode: multiply; }
-[data-theme="dark"] .pdf-ink:not([data-paper]) { mix-blend-mode: screen; }
-.pdf-ink[data-ink-dark] { mix-blend-mode: screen; }
+.pdf-ink { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.pdf-ink[data-paper] { mix-blend-mode: multiply; }
+.pdf-ink[data-paper][data-ink-dark] { mix-blend-mode: screen; }
+/* A PDF's page (89, and the gaps after it): what a pen wrote lies over the print as it is, and only a highlighter's
+   strokes are multiplied onto it (screened where the page is dark). So a pen's stroke is one colour over print while
+   it is written (PencilKit's canvas, laid on plainly) and at rest (the page's path, laid on plainly): the two cannot
+   differ by how a device lays one layer on another, and a stroke shown by both for a frame is the same stroke. The
+   layer is no group of its own here (no z-index: that would shut a highlighter's blend in with nothing under it);
+   each page's two drawings have their own place over the pages, the highlighter's under the pen's. */
+.pdf-ink:not([data-paper]) { z-index: auto; }
+.pdf-ink:not([data-paper]) > .page-ink { z-index: 3; }
+.pdf-ink:not([data-paper]) > .page-ink-under { z-index: 2; mix-blend-mode: multiply; }
+[data-theme="dark"] .pdf-ink:not([data-paper]) > .page-ink-under { mix-blend-mode: screen; }
 .page-ink { position: absolute; display: block; pointer-events: none; -webkit-user-select: none; user-select: none; }
 /* a canvas lies over this page: the same strokes */
 .page-ink[data-live] { visibility: hidden; }

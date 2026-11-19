@@ -294,7 +294,9 @@ int ilmi_ink_sample(uint32_t lines, uint32_t per, uint32_t seed, uint8_t **out, 
 // 0), a u32 paper (0 none, 1 blank, 2 ruled, 3 grid, 4 dotted), a u32 page of the PDF at `src` (from 1; 0 none), two
 // u32 lengths, the paper's colour and its lines' (0xffrrggbb where one was chosen, else 0), a u32 that is 1 where
 // the paper is dark, the margin line's colour (as the others), and that many bytes each of stroke records as
-// `ilmi_ink_join` takes them: the page's own, and those of the sheet before it, drawn a page's height up.
+// `ilmi_ink_join` takes them: the page's own, and those of the sheet before it, drawn a page's height up; then a
+// u32, how many sheets further up are given too (each a u32 length and its records, the sheet two up first), each
+// drawn as many pages' heights up as it lies.
 
 /// A sheet's paper: `rule` between its rules, lines or dots; `left` and `right` its margins, between which the
 /// ruling lies; `top` how far down a ruled sheet's first rule is and `bottom` the room under its last (a grid's and
@@ -396,22 +398,37 @@ int ilmi_ink_pdf(const uint8_t *spec, size_t len, const uint8_t *src, size_t src
       if (!c) { if (from) CGPDFDocumentRelease(from); return 2; }
       int bad = 0;
       size_t at = 0;
-      while (at + 112 <= len) {
+      while (at + 116 <= len) {
         double w, h, rule, top, run, left, right, bottom, l1, l2;
-        uint32_t kind, page, n, m, color, line, dark, edge;
+        uint32_t kind, page, n, m, color, line, dark, edge, more;
         memcpy(&w, spec + at, 8); memcpy(&h, spec + at + 8, 8);
         memcpy(&rule, spec + at + 16, 8); memcpy(&top, spec + at + 24, 8); memcpy(&run, spec + at + 32, 8);
         memcpy(&left, spec + at + 40, 8); memcpy(&right, spec + at + 48, 8); memcpy(&bottom, spec + at + 56, 8);
         memcpy(&l1, spec + at + 64, 8); memcpy(&l2, spec + at + 72, 8);
         memcpy(&kind, spec + at + 80, 4); memcpy(&page, spec + at + 84, 4); memcpy(&n, spec + at + 88, 4); memcpy(&m, spec + at + 92, 4);
         memcpy(&color, spec + at + 96, 4); memcpy(&line, spec + at + 100, 4); memcpy(&dark, spec + at + 104, 4); memcpy(&edge, spec + at + 108, 4);
-        at += 112;
+        memcpy(&more, spec + at + 112, 4);
+        at += 116;
         if (at + n + m > len || !(w > 0) || !(h > 0)) { bad = 2; break; }
         PKDrawing *d = n ? joined(spec + at, n) : nil;
         at += n;
         // what was written past the foot of the sheet before (a pageless notebook's): drawn at the head of this one
         PKDrawing *above = m ? joined(spec + at, m) : nil;
         at += m;
+        // and past the foot of the sheets before that, a stroke taller than a sheet: the sheet two up first, each
+        // a length and its records
+        NSMutableArray<PKDrawing *> *further = [NSMutableArray array];
+        for (uint32_t g = 0; g < more && !bad; g++) {
+          uint32_t gl;
+          if (at + 4 > len) { bad = 2; break; }
+          memcpy(&gl, spec + at, 4);
+          at += 4;
+          if (at + gl > len) { bad = 2; break; }
+          PKDrawing *up = gl ? joined(spec + at, gl) : nil;
+          [further addObject:up ?: [[PKDrawing alloc] init]];
+          at += gl;
+        }
+        if (bad) break;
         CGRect box = CGRectMake(0, 0, w, h);
         CGContextBeginPage(c, &box);
         if (from && page) {
@@ -430,8 +447,21 @@ int ilmi_ink_pdf(const uint8_t *spec, size_t len, const uint8_t *src, size_t src
         CGContextTranslateCTM(c, 0, h);
         CGContextScaleCTM(c, 1, -1);
         if (kind) paper(c, kind, w, h, rule, top, run, left, right, bottom, l1, l2, color, line, edge, dark != 0);
+        for (NSUInteger g = further.count; g > 0; g--) if (further[g - 1].strokes.count) inked(c, further[g - 1], box, -h * (double)(g + 1), kind && dark);
         inked(c, above, box, -h, kind && dark);
-        inked(c, d, box, 0, kind && dark);
+        if (kind || !d) inked(c, d, box, 0, kind && dark);
+        else {
+          // a PDF's own page, as the reader shows it: a highlighter's strokes multiplied onto the print, a pen's over it as they are
+          NSMutableArray<PKStroke *> *marks = [NSMutableArray array], *pens = [NSMutableArray array];
+          for (PKStroke *s in d.strokes) [([s.ink.inkType isEqualToString:PKInkTypeMarker] ? marks : pens) addObject:s];
+          if (marks.count) inked(c, [[PKDrawing alloc] initWithStrokes:marks], box, 0, 0);
+          if (pens.count) {
+            CGContextSaveGState(c);
+            CGContextClipToRect(c, box);
+            ilmi_drawing_draw((__bridge void *)[[PKDrawing alloc] initWithStrokes:pens], c, 0);
+            CGContextRestoreGState(c);
+          }
+        }
         CGContextRestoreGState(c);
         CGContextEndPage(c);
       }

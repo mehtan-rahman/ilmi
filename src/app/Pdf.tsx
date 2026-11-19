@@ -273,6 +273,15 @@ interface Find {
 /** How many hits a search found, over all its pages. */
 const hitCount = (pages: Find['pages']): number => pages.reduce((n, p) => n + p.n, 0);
 /** The page the `at`th hit is on, and which of that page's hits it is. */
+/** The PDF being opened, kept across a restart: what was being opened when the page last went down. */
+const OPENING_KEY = 'ilmi.pdf.opening';
+function opening(rel: string | null): void {
+  try { if (rel === null) localStorage.removeItem(OPENING_KEY); else localStorage.setItem(OPENING_KEY, rel); } catch { /* no storage: no guard */ }
+}
+function fellOpening(rel: string): boolean {
+  try { return localStorage.getItem(OPENING_KEY) === rel; } catch { return false; }
+}
+
 function hitAt(pages: Find['pages'], at: number): { page: number; k: number } | null {
   let k = at;
   for (const p of pages) {
@@ -837,9 +846,15 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   }, [sheets, id, writtenId, sheetW, sheetH]);
   // ── the file, shared with the notes' crops ──
   const range = info?.pages;
+  // a file whose opening took the page down with it (a device with too little memory for it: the page comes back
+  // white, and a tab kept from last time would do it again at every start) is not opened by itself a second time:
+  // it says so, and `try again` is the reader's to press
+  const [again, setAgain] = useState(0);
   useEffect(() => {
     if (!rel) return;
+    if (fellOpening(rel) && again === 0) { setStatus('unreadable'); return; }
     let live = true;
+    opening(rel);
     const held = acquirePdf(rel);
     rendered.current.clear();
     texts.current.clear();
@@ -868,8 +883,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       setSizes(out);
       setTextless(!hasText);
       setStatus('ok');
+      opening(null);
     })().catch(async (e: unknown) => {
       console.error(id, e);
+      opening(null);
       // a file that is there and will not open is not one that has gone
       const vault = currentVault();
       const there = vault ? await vault.fs.stat(vault.abs(rel)).then((s) => s !== null, () => false) : true;
@@ -877,12 +894,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     });
     return () => {
       live = false;
+      // left while it was still opening (the tab closed, another document): that is not a fall
+      if (fellOpening(rel)) opening(null);
       held.release();
       setPdf(null);
       setSizes([]);
       setStatus('loading');
     };
-  }, [id, rel, range?.first, range?.last]);
+  }, [id, rel, range?.first, range?.last, again]);
 
   // the pane's width sets the scale (milestone 70): a page is drawn across it, up to the width a page is still
   // read at, and centred past that; the read bar and the gutter's § hang in the pane's padding
@@ -2951,7 +2970,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   }, [native, zoom, surfaceId]);
 
   if (status === 'unreadable' && info) {
-    return <div className="reader-wrap"><div className="reader"><div className="empty">could not open this pdf</div></div></div>;
+    return <div className="reader-wrap"><div className="reader"><div className="empty">could not open this pdf<div className="empty-next"><button type="button" className="frozen-tag" data-act="pdf-again" onClick={() => { opening(null); setStatus('loading'); setAgain((n) => n + 1); }}>try again</button></div></div></div></div>;
   }
   if (status === 'gone' || status === 'unreadable' || (status === 'ok' && !info)) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;

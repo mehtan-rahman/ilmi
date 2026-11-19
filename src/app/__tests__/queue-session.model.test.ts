@@ -66,6 +66,7 @@ import { mergeFile } from '../../sync/merge.js';
 import { engine, type Engine } from '../../sync/engine.js';
 import { memStorage, type MemStorage } from '../../sync/storage.js';
 import { join, type StoreFs } from '../../vault/index.js';
+import { isFresh } from '../items.js';
 
 const clock = vi.hoisted(() => ({ t: 0, mobile: false }));
 const T0 = new Date('2026-11-18T09:00:00').getTime();
@@ -304,7 +305,7 @@ function freshQueue(s: Snap, now: Date): { id: string; due: boolean; fresh: bool
   const items: QueueItem[] = [];
   for (const [p, d] of s.docs) items.push(...docItems(p, d, now));
   const q = meterQueue(items, now, { optionsOf, spent: spentToday(s.log, now, optionsOf) });
-  return q.map((i) => ({ id: itemId(i), due: isDue(i, now), fresh: i.kind === 'card' ? !i.sched?.reps : !i.sched.reps, item: i }));
+  return q.map((i) => ({ id: itemId(i), due: isDue(i, now), fresh: isFresh(i), item: i }));
 }
 
 // ── the events ───────────────────────────────────────────────────

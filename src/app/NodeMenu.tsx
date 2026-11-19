@@ -227,10 +227,10 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   const opens = node && !phone ? (
     <>
       <div className="ci" data-act="open-tab" onClick={act(() => openNode(at.id, { newTab: true }))}>
-        <span className="cg"><Glyph g="+" /></span>open in new tab<span className="ck">⌘ click</span>
+        <span className="cg"><Glyph g="+" /></span>open in new tab<span className="ck long">⌘ click</span>
       </div>
       <div className="ci" data-act="open-beside" onClick={act(() => openNodeBeside(at.id))}>
-        <span className="cg"><Glyph g="⊟" /></span>open beside<span className="ck">⇧⌘ click</span>
+        <span className="cg"><Glyph g="⊟" /></span>open beside<span className="ck long">⇧⌘ click</span>
       </div>
       <div className="cd" />
     </>

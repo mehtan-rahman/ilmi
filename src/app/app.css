@@ -496,6 +496,8 @@
   text-overflow: ellipsis;
 }
 .ctx-menu .ci:has(.ck) { padding-right: 44px; }
+/* a hint that is words, not a key (`⇧⌘ click`): the row keeps that much more room for it */
+.ctx-menu .ci:has(.ck.long) { padding-right: 104px; }
 .ctx-menu .ci:hover, .ctx-menu .ci:focus { background: var(--line-2); color: var(--fg-1); }
 /* the menu has the focus while it is open (`popMenu.ts`): the row the keys are on is lit as the one under the pointer is */
 .ctx-menu:focus, .ctx-menu .ci:focus { outline: none; }

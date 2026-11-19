@@ -173,7 +173,8 @@ export function firstWords(text: string, n: number): string {
 export function isFresh(item: QueueItem): boolean {
   // what comes back until it is dismissed says how often in its own words (`standing`)
   if (item.kind === 'section' || (item.kind === 'read' && (item.note || item.extract))) return false;
-  return item.kind === 'card' ? !item.sched || !item.sched.reps : !item.sched.reps;
+  // a card met in its other direction or another of its blanks is not new, though this line has no review (`metElsewhere`)
+  return item.kind === 'card' ? !item.met && (!item.sched || !item.sched.reps) : !item.sched.reps;
 }
 
 /** The tag before the label in a row: `note` (a note revisited), `extract`, `section`, `passage`, `read`, `write`, or the card's form. */

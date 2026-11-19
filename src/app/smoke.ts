@@ -284,7 +284,8 @@ import { vaultName } from './recents.js';
 import { useApp } from './store.js';
 import { runMenu } from './menu.js';
 import { createNode, currentVault, importNode, moveNode, toggleOpen, openCard, openIntake, openNode, openSession, openVault, removeNode, renameNode, setInspector, setSidebar, startFromRecents } from './vault.js';
-import { activeTab, besideAt, closePane } from './panes.js';
+import { activeTab, besideAt, closePane, openTab, splitPane } from './panes.js';
+import { closePopMenu } from './popMenu.js';
 
 const WOZ = 'papers/wozniak-1990.md';
 
@@ -10605,7 +10606,7 @@ export async function smokeIpad(): Promise<void> {
     const top = q<HTMLElement>('.top')!;
     const bot = q<HTMLElement>('.bot')!;
     log(`strips: top ${Math.round(top.getBoundingClientRect().height)}px (inset ${px(getComputedStyle(top).paddingTop)}), bottom ${Math.round(bot.getBoundingClientRect().height)}px (inset ${px(getComputedStyle(bot).paddingBottom)}); shell ${Math.round(q<HTMLElement>('.shell')!.getBoundingClientRect().height)} of ${window.innerHeight}`);
-    must(qa('.pane').length === 1 && !q('.tabbar .ctl'), 'one pane, and no split to ask for');
+    must(qa('.pane').length === 1 && !q('.tabbar .ctl'), 'one pane to begin with, and no button to split it (a second is asked for from a row\'s menu or a tab\'s)');
     must(!q('.side') && !q('.insp'), 'the sidebar and the inspector start hidden');
     must(!q('.side-resize') && !q('.insp-resize'), 'no drag handles');
     must(q('.top .side-toggle') !== null && q('.top .insp-toggle:not(.side-toggle):not(.set-toggle)') !== null, 'the strip has a toggle for each');
@@ -11241,10 +11242,37 @@ export async function smokeTouch(): Promise<void> {
     log(`row menu: ${qa('.ci', tm).map((i) => i.textContent).slice(0, 8).join(' | ')}`);
     await sleep(700);
     must((window.getSelection()?.toString() ?? '') === '', 'with nothing selected');
+    // the menu begins with the two ways to a second document: a tab of its own, the pane beside
+    must(qa('.ci', tm).slice(0, 2).map((i) => (i as HTMLElement).dataset.act).join(' ') === 'open-tab open-beside', `it begins with open in new tab and open beside (${qa('.ci', tm).slice(0, 2).map((i) => i.textContent).join(' | ')})`);
+    must(qa('.ci', tm).every((i) => i.getBoundingClientRect().height >= 44), 'each of its rows a finger\'s size');
     await shot('touch-row-menu');
+    {
+      // `open beside`: a second pane, for any two documents; it lies beside or under the first, is the one in front,
+      // and closes with its last tab
+      const had = useApp.getState().panes;
+      ask('tap', ...mid(q('[data-act="open-beside"]', tm)!));
+      await poll(() => useApp.getState().panes.panes.length === 2 && qa('.pane').length === 2, 'open beside makes a second pane', 20000);
+      await sleep(900);
+      const [pa, pb] = qa('.pane').map((p) => p.getBoundingClientRect());
+      const stacked = shape() === 'portrait';
+      must(stacked ? pb!.top >= pa!.bottom - 1 && Math.abs(pb!.left - pa!.left) < 1 : pb!.left >= pa!.right - 1 && Math.abs(pb!.top - pa!.top) < 1, `the two lie ${stacked ? 'one above the other' : 'side by side'}`);
+      must(useApp.getState().panes.active === 1 && qa('.pane')[1]!.getAttribute('data-active') === '1', 'the new one is the pane in front');
+      must(qa('.tabbar .ctl[aria-label="close pane"]').length === 2 && !q('.tabbar .ctl[aria-label="split pane"]'), 'each has its close, and neither a split');
+      await shot('touch-two-panes');
+      // a third asked for joins the second
+      useApp.getState().setPanes((p) => openTab(splitPane(p, 1), queueId('upcoming')));
+      await poll(() => useApp.getState().panes.panes.length === 2 && useApp.getState().panes.panes[1]!.tabs.length === 2, 'a third pane asked for joins the second', 5000);
+      // a tab held: its menu, `move beside` first
+      ask('press', ...mid(qa('.tab', qa('.pane')[1]!)[0]!), 0.9);
+      const pm = await poll(() => q<HTMLElement>('.pop-menu [data-act="beside"]')?.closest<HTMLElement>('.pop-menu'), 'a long press on a tab opens its menu', 20000);
+      must(qa('.ci', pm).map((i) => (i as HTMLElement).dataset.act).join(' ') === 'beside close close-others', `move beside, close, close others (${qa('.ci', pm).map((i) => i.textContent).join(' | ')})`);
+      closePopMenu();
+      useApp.getState().setPanes(() => had);
+      await poll(() => qa('.pane').length === 1, 'and back to one pane', 5000);
+      if (shape() === 'portrait' && !q('.side[data-on="open"]')) { useApp.setState({ sideSheet: true }); await sleep(900); }
+    }
     const sr = side.getBoundingClientRect();
-    ask('tap', fx(sr.left + sr.width / 2), fy(sr.bottom - 30));
-    await poll(() => !q('.ctx-menu'), 'and a tap elsewhere closes it', 20000);
+    if (q('.ctx-menu')) { ask('tap', fx(sr.left + sr.width / 2), fy(sr.bottom - 30)); await poll(() => !q('.ctx-menu'), 'and a tap elsewhere closes it', 20000); }
     await sleep(600);
     // the first top row, held and dragged below the last one that is closed
     const from = rows()[0]!;

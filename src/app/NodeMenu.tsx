@@ -30,6 +30,7 @@ import { deleteNode } from './remove.js';
 import { createNode, duplicateNode, enrolReading, moveNode, openDir, openIntake, setTabs, sortByName } from './vault.js';
 import { Glyph } from './icons.js';
 import { menuKeys } from './popMenu.js';
+import { createPortal } from 'react-dom';
 
 export const MENU_W = 190;
 
@@ -214,7 +215,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
     set(null);
   };
 
-  return (
+  const menu = (
     <div
       className="ctx-menu"
       ref={ref}
@@ -337,4 +338,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
       )}
     </div>
   );
+  // under a finger the menu is the page's, not the sidebar's: a sheet that is moved by its transform, and a list
+  // that scrolls on an iPad, cut what is fixed inside them off at their own edge
+  return document.documentElement.dataset.mobile === '1' ? createPortal(menu, document.body) : menu;
 }

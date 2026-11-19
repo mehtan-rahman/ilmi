@@ -160,6 +160,9 @@ function useSame<T>(v: T): T {
   return v;
 }
 
+/** How long a phone's queue under another page keeps its list: past the page's coming in over it. */
+const UNDER_FOLLOWS_MS = 600;
+
 export function Queue({ scope, active }: Props) {
   const live = useApp((s) => s.queue);
   // a phone's queue that is not the page in front (the day under what was opened from it, `Canvas.tsx`) keeps the
@@ -168,6 +171,14 @@ export function Queue({ scope, active }: Props) {
   const held = useRef(live);
   const under = useApp((s) => s.phone) && !active;
   if (!under) held.current = live;
+  // (once that page has come to rest over it, it follows again, unseen: it is the day as it is when the page goes
+  // back off it, not the day as it was for a moment first)
+  const [, follow] = useState(0);
+  useEffect(() => {
+    if (!under || held.current === live) return;
+    const t = window.setTimeout(() => { held.current = live; follow((n) => n + 1); }, UNDER_FOLLOWS_MS);
+    return () => window.clearTimeout(t);
+  }, [under, live]);
   const all = useSame(under ? held.current : live);
   const docs = useApp((s) => s.docs);
   const log = useApp((s) => s.log);

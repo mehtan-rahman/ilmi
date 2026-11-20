@@ -2,8 +2,11 @@
 // pdf.js ships it, no CDN. The pure side (a page's paragraphs from its
 // items, finding a passage in a text layer) is src/pdf.
 
-import * as pdfjs from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+// the legacy build, on the page and in the worker: it carries what the library uses of the language that a web view
+// may not have yet (an iPad's had no `Map.prototype.getOrInsertComputed`, which reading a large file by range calls:
+// "could not open this pdf")
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { chapterRanges, documentText, outlineEntries, pageText, uprightItems, type OutlinePdf, type TextBit } from '../pdf/index.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;

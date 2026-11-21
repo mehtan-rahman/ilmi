@@ -11849,6 +11849,8 @@ export async function smokePhone(): Promise<void> {
     // the bar gives way to the keyboard, and comes back a moment after a field goes
     for (let w = 0; w < 100 && !el.getBoundingClientRect().width; w++) await sleep(80);
     if (!el.getBoundingClientRect().width) throw new Error(`nothing to touch for: ${what} (keyboard ${document.documentElement.hasAttribute('data-keyboard')})`);
+    // (off the glass, as a note opened at a place far down has its words: brought into view first, as a finger would scroll to it)
+    { const r = el.getBoundingClientRect(); if (r.bottom < 0 || r.top > window.innerHeight) { el.scrollIntoView({ block: 'nearest' }); await sleep(400); } }
     // (a simulator's keyboard leaves the glass when the runner's keys come, as a keyboard attached would make it,
     // and comes back, the field keeping its caret all the while; what stands over it moves with it. A place is
     // taken once nothing has moved for a second, and taken afresh for the second touch)
@@ -13353,7 +13355,12 @@ export async function smokePageInkMac(vault: Vault): Promise<void> {
     const pageShown = async (wide: number) => {
       openNode(BOOK);
       const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens', 15000);
-      const pageEl = await poll(() => (q(`.pdf-page[data-page="${P}"] canvas`, book) ? q<HTMLElement>(`.pdf-page[data-page="${P}"]`, book) : null), `p. ${P} is drawn`, 30000);
+      // (brought into view if the pages opened elsewhere: a page is drawn where the reader is, not where the pages began)
+      const pageEl = await poll(() => (q(`.pdf-page[data-page="${P}"] canvas`, book) ? q<HTMLElement>(`.pdf-page[data-page="${P}"]`, book) : (q(`.pdf-page[data-page="${P}"]`, book)?.scrollIntoView({ block: 'start' }), null)), `p. ${P} is drawn`, 30000).catch((e: unknown) => {
+        // (what the book holds when its page did not come: its pages, which of them are drawn, which have their small picture)
+        const pages = qa<HTMLElement>('.pdf-page', book);
+        throw new Error(`${e instanceof Error ? e.message : String(e)}; ${pages.length} pages (${pages.map((x) => x.dataset.page).slice(0, 8).join(' ')}), drawn ${pages.filter((x) => x.querySelector('canvas')).map((x) => x.dataset.page).join(' ') || 'none'}, small pictures ${pages.filter((x) => x.querySelector('img.pg-low')).length}; the view ${JSON.stringify(q<HTMLElement>('.pdf-view', book)?.dataset ?? {})}; said "${q('.empty', book)?.textContent ?? ''}"`);
+      });
       // (since the gaps after 89 the Mac draws a PDF's writing as the iPad does: the page's own paths, a stroke each, from what the store holds)
       void wide;
       const held = (await fs.pageInk(hash, P)).map((x) => x.stroke);
@@ -19834,6 +19841,8 @@ export async function smokeSharp(path: string | null): Promise<void> {
       const sheet1 = `p.${ID}.1`;
       const leaf1 = async () => (await surf()).sheets[0]!;
       await poll(async () => (await surfaceNow(b))?.sheets[0]?.loaded, 'its first sheet is there', 20000);
+      // (the pen, whatever tool a run before left chosen on this device)
+      (await import('./inkTools.js')).setTool('pen');
       await poll(async () => (await state()).tool?.kind === 'pen', 'the pen is held', 20000);
       const zoomNow = () => Number(view.dataset.zoom);
       /** At rest: nothing stretched, the sheet on whole pixels of the screen, its picture a pixel for a pixel, the page told the same place. */
@@ -20769,6 +20778,183 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       for (const k of kinds) document.removeEventListener(k, hear, true);
       const mid = (v: number[]) => (v.length ? [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)]! : 0);
       log(`word: ${rounds} rounds whole; ${Object.entries(count).map(([k, c]) => `${k}: ${c.asked} taps, ${c.dead} did nothing (${c.unmet} the page never met, ${c.onIt} met on it, ${c.other} met on something else), ${mid(c.ms)} ms to act`).join('; ')}`);
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
+    if (part.split(',').includes('feel')) {
+      // ── how moving through a long PDF feels (`"part": "feel"`, with `books` as `draw`; no rig; a measure, to be
+      // read beside a recording): opening it, a slow scroll, a fling of thirty pages, a jump to a far page, and its
+      // zoom changed and put back. Every frame, each page in view is looked at: blank (bare paper: no drawing of it
+      // at all), soft (a small picture of it only), or sharp. `feel:` lines say, for each, how many frames had a
+      // blank page in view and how many a soft one, the longest run of blank frames, the frames that came late
+      // (over 34 ms after the one before) and the longest wait, and how long until the view was all sharp ──
+      const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+      if (!books) throw new Error('ILMI_BOOKS (smoke.json: "books") names the folder with scan.pdf and vector.pdf');
+      const { currentVault, setBookZoom } = await import('./vault.js');
+      const v = currentVault()!;
+      const sfs = v.fs as import('../vault/index.js').StoreFs;
+      const only = (await invoke<string | null>('dev_env', { name: 'ILMI_ONLY' })) ?? '';
+      for (const name of ['vector', 'scan'].filter((x) => !only || only === x)) {
+        const rel = `library/${name}.pdf`;
+        if (!(await v.fs.stat(v.abs(rel)))) { await sfs.take(v.abs(rel), `${books}/${name}.pdf`); await v.changed([rel]); }
+        await poll(() => useApp.getState().docs[rel], `${name}.pdf is in the collection`, 120000);
+        const bookEl = () => qa<HTMLElement>('.book').find((k) => k.dataset.path === rel) ?? null;
+        const scOf = () => q<HTMLElement>('.book-pages', bookEl()!)!;
+        /** What is in view this frame: how many pages, how many blank, how many soft. */
+        const look = () => {
+          const b = bookEl(); const sc = b && q<HTMLElement>('.book-pages', b);
+          if (!b || !sc) return { pages: 0, blank: 0, soft: 0, tall: 0 };
+          const r = sc.getBoundingClientRect();
+          let pages = 0; let blank = 0; let soft = 0;
+          for (const el of qa<HTMLElement>('.pdf-page', b)) {
+            const pr = el.getBoundingClientRect();
+            if (pr.bottom < r.top + 40 || pr.top > r.bottom - 40) continue;
+            pages++;
+            const c = el.querySelector('canvas');
+            const low = el.querySelector<HTMLImageElement>('img.pg-low');
+            if (c && c.width > 1) continue;
+            if (low && low.complete && low.naturalWidth > 0) soft++; else blank++;
+          }
+          return { pages, blank, soft, tall: sc.scrollHeight };
+        };
+        /** Watch every frame while `act` goes on and until the view has been all sharp for half a second (or `most` ms). */
+        const watch = async (what: string, act: () => Promise<void> | void, most = 12000) => {
+          let frames = 0; let blankF = 0; let softF = 0; let run = 0; let longest = 0; let late = 0; let worst = 0; let sharpAt = -1; let acting = true; let grew = 0;
+          let last = performance.now(); const t0 = last; let tall0 = -1; let none = 0;
+          const done = (async () => { await act(); acting = false; })();
+          for (;;) {
+            await new Promise((r) => requestAnimationFrame(r));
+            const now = performance.now();
+            const s = look();
+            frames++;
+            if (now - last > 34) { late++; worst = Math.max(worst, now - last); }
+            last = now;
+            if (s.pages === 0) none++;
+            if (s.tall > 0) { if (tall0 < 0) tall0 = s.tall; else if (Math.abs(s.tall - tall0) > 2) { grew++; tall0 = s.tall; } }
+            if (s.blank > 0 || (s.pages === 0 && !acting)) { blankF++; run++; longest = Math.max(longest, run); } else run = 0;
+            if (s.soft > 0) softF++;
+            if (s.pages > 0 && s.blank === 0 && s.soft === 0) { if (sharpAt < 0) sharpAt = now; } else sharpAt = -1;
+            if (!acting && sharpAt > 0 && now - sharpAt > 500) break;
+            if (now - t0 > most) break;
+          }
+          await done;
+          const took = sharpAt > 0 ? `${Math.round(sharpAt - t0)} ms` : `not in ${most} ms`;
+          log(`feel: ${name}: ${what}: ${frames} frames; a blank page in view in ${blankF} (the longest run ${longest}), a soft one in ${softF}; ${late} frames late, the longest wait ${worst.toFixed(0)} ms; all sharp after ${took}; the pages' length changed ${grew} times; nothing laid out in ${none}`);
+        };
+        const glide = (from: number, to: number, ms: number, ease = false) => new Promise<void>((res) => {
+          const sc = scOf(); const t0 = performance.now();
+          const step = () => { const k = Math.min(1, (performance.now() - t0) / ms); const e = ease ? 1 - (1 - k) ** 3 : k; sc.scrollTop = from + (to - from) * e; if (k < 1) requestAnimationFrame(step); else res(); };
+          requestAnimationFrame(step);
+        });
+        phase(`${name}, opening`);
+        await watch('opening', () => { openNode(rel); });
+        await sleep(600);
+        const pageH = qa<HTMLElement>('.pdf-page', bookEl()!)[0]!.getBoundingClientRect().height + 12;
+        phase(`${name}, a slow scroll`);
+        await watch('a slow scroll of four pages in six seconds', () => glide(scOf().scrollTop, scOf().scrollTop + 4 * pageH, 6000));
+        await sleep(400);
+        phase(`${name}, a fling`);
+        await watch('a fling of thirty pages in two and a half seconds', () => glide(scOf().scrollTop, scOf().scrollTop + 30 * pageH, 2500, true));
+        await sleep(400);
+        phase(`${name}, a jump`);
+        const far = name === 'vector' ? 480 : 240;
+        await watch(`a jump to p. ${far} by the bar's page field`, async () => {
+          q<HTMLElement>('.meta [data-tool="page"]', bookEl()!)!.click();
+          const inp = await poll(() => q<HTMLInputElement>('.pdf-bar input[type="number"]', bookEl()!), 'the page field', 5000);
+          const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+          set.call(inp, String(far)); inp.dispatchEvent(new Event('input', { bubbles: true }));
+          inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          inp.closest('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        });
+        await sleep(400);
+        phase(`${name}, zoomed`);
+        await watch('its zoom to 1.5 times', () => { setBookZoom(rel, 1.5); });
+        await watch('and back to fit', () => { setBookZoom(rel, 1); });
+        await shot(`feel-${name}`);
+        // closed, and opened again at the place it was left: is it there at once, or does it come down from the top
+        phase(`${name}, opened again`);
+        openNode(queueId('today'));
+        await sleep(1200);
+        await watch('opened again, at the place it was left', () => { openNode(rel); });
+        const at = Number(q<HTMLElement>('.pdf-view', bookEl()!)?.dataset.page ?? 0);
+        log(`feel: ${name}: opened again on p. ${at} (it was left on p. ${far})`);
+      }
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
+    if (part.split(',').includes('draw')) {
+      // ── what it costs to draw a page each way (`"part": "draw"`, with `books` naming a folder that holds
+      // `scan.pdf` and `vector.pdf`; no rig; a measure): the reader's own library on the page's thread against the
+      // system's drawing asked for as a picture (`ilmipage:`), small and at the screen's size, a dozen pages spread
+      // through each file; and the longest the page's thread was held while each was drawn. `draw:` lines ──
+      const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+      if (!books) throw new Error('ILMI_BOOKS (smoke.json: "books") names the folder with scan.pdf and vector.pdf');
+      const { currentVault } = await import('./vault.js');
+      const { loadPdfPieces } = await import('./pdfjs.js');
+      const v = currentVault()!;
+      const sfs = v.fs as import('../vault/index.js').StoreFs;
+      const med = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)]! : 0);
+      for (const name of ['vector', 'scan']) {
+        const rel = `library/${name}.pdf`;
+        const t0 = Date.now();
+        if (!(await v.fs.stat(v.abs(rel)))) { await sfs.take(v.abs(rel), `${books}/${name}.pdf`); await v.changed([rel]); }
+        await poll(() => useApp.getState().docs[rel], `${name}.pdf is in the collection`, 120000);
+        const hash = sfs.blobAt(v.abs(rel))!;
+        const size = (await v.fs.stat(v.abs(rel)))!.size;
+        log(`draw: ${name}.pdf, ${(size / 1048576).toFixed(0)} MB, taken in by the store in ${Date.now() - t0} ms`);
+        let t = performance.now();
+        const sizes = await invoke<[number, number][]>('pdf_sizes', { root: v.root, hash });
+        log(`draw: ${name}: ${sizes.length} pages' sizes from the system in ${(performance.now() - t).toFixed(0)} ms (the first ${sizes[0]![0]} by ${sizes[0]![1]})`);
+        const pages = Array.from({ length: 12 }, (_, i) => 1 + Math.floor(((i + 0.5) / 12) * sizes.length));
+        // the longest gap between two frames while something is drawn
+        let gap = 0; let last = performance.now(); let watching = true;
+        const tick = () => { const n = performance.now(); gap = Math.max(gap, n - last); last = n; if (watching) requestAnimationFrame(tick); };
+        const watched = async <T,>(f: () => Promise<T>): Promise<[T, number]> => { gap = 0; last = performance.now(); watching = true; requestAnimationFrame(tick); const r = await f(); await new Promise((res) => requestAnimationFrame(res)); watching = false; return [r, gap]; };
+        // the system's, as pictures
+        const url = (n: number, w: number, q: number) => `ilmipage://localhost/${hash}/${n}?root=${encodeURIComponent(v.root)}&w=${w}&q=${q}`;
+        for (const [what, w, q] of [['small (240 px, jpeg)', 240, 0.6], ['screen (1520 px, jpeg)', 1520, 0.85], ['screen (1520 px, png)', 1520, 1]] as [string, number, number][]) {
+          const ms: number[] = []; const kb: number[] = []; let held = 0;
+          for (const n of pages) {
+            const [r, g] = await watched(async () => { const a = performance.now(); const res = await fetch(url(n, w, q)); const blob = await res.blob(); const bmp = await createImageBitmap(blob); const dt = performance.now() - a; const sz = blob.size; bmp.close(); return [dt, sz] as [number, number]; });
+            ms.push(r[0]); kb.push(r[1] / 1024); held = Math.max(held, g);
+          }
+          log(`draw: ${name}: the system's, ${what}: ${med(ms).toFixed(0)} ms a page (most ${Math.max(...ms).toFixed(0)}), ${med(kb).toFixed(0)} kb; the page's thread held ${held.toFixed(0)} ms at most`);
+        }
+        // the reader's own library, on the page's thread
+        t = performance.now();
+        const pieces = (await sfs.pieces(v.abs(rel)))!;
+        const task = loadPdfPieces(pieces.size, pieces.read);
+        const doc = await task.promise;
+        log(`draw: ${name}: the library has the file open in ${(performance.now() - t).toFixed(0)} ms (${doc.numPages} pages)`);
+        {
+          // the system's sizes are the library's: what is laid out before the library comes does not move when it does
+          let off = 0;
+          for (const n of pages) { const vp = (await doc.getPage(n)).getViewport({ scale: 1 }); off = Math.max(off, Math.abs(vp.width - sizes[n - 1]![0]), Math.abs(vp.height - sizes[n - 1]![1])); }
+          must(sizes.length === doc.numPages && off < 0.01, `the system and the library agree on the pages' sizes (${sizes.length} pages, at most ${off.toFixed(3)} pt apart)`);
+        }
+        for (const [what, w] of [['small (240 px)', 240], ['screen (1520 px)', 1520]] as [string, number][]) {
+          const ms: number[] = []; let held = 0;
+          for (const n of pages.slice(0, name === 'scan' ? 6 : 12)) {
+            const [dt, g] = await watched(async () => {
+              const a = performance.now();
+              const page = await doc.getPage(n);
+              const vp = page.getViewport({ scale: w / page.getViewport({ scale: 1 }).width });
+              const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+              await page.render({ canvas: c, viewport: vp, intent: 'print' }).promise;
+              c.width = 0; c.height = 0;
+              page.cleanup();
+              return performance.now() - a;
+            });
+            ms.push(dt); held = Math.max(held, g);
+          }
+          log(`draw: ${name}: the library's, ${what}: ${med(ms).toFixed(0)} ms a page (most ${Math.max(...ms).toFixed(0)}); the page's thread held ${held.toFixed(0)} ms at most`);
+        }
+        await task.destroy();
+      }
       phase('done');
       finished = true;
       log('done');

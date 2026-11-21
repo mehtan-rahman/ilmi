@@ -6,6 +6,26 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-20 — a page of a PDF is never bare paper: its small picture from the system under it at once
+
+**Moving through a long PDF.** Measured first, on the Air simulator, with two files made for it (`gaps/mkpdf.py`: 300 scanned pages, a megabyte of JPEG each, 417 MB; 600 pages of type set as outlines, 52 MB) and a part that looks at every page in view every frame (`pdfink`, `"part": "feel"`: blank, soft or sharp). Before (`m2-feel-before`): a fling of thirty pages showed bare paper in 112 of 146 frames on the scan and 11 of 108 on the other; a jump to a far page in 13 and 2; opening, nothing for 20 frames and then every page's length changing once.
+
+What a page costs each way (`"part": "draw"`, `m1-draw`): the reader's library draws a screen-sized page in 13 ms (type) and 112 ms (scan), the system's drawing asked for as a picture in 31 and 89 as a JPEG, 84 and 176 as a PNG: no faster at full size, on a simulator whose processor is the iPad Air's own kind. A small picture (256 px) is where the system wins: 7 and 31 ms off the page's thread, against 12 and 126 on it (a scan's whole JPEG is decoded for any size), and every page's size in 67 to 350 ms before the library has the file open. So the library still draws the sharp page, and the system gives what makes a page never bare: its sizes at once and its small picture.
+
+- `ilmipage://localhost/<hash>/<page>?root=…&w=…&q=…`: a page drawn by Core Graphics on a thread of its own (`ilmi_pdf_page`, the file kept open between askings), a JPEG, or a PNG at `q=1`; `pdf_sizes` every page's size. Mac and iOS alike.
+- Every page from eight behind the one in view to eighteen ahead, the way the reader is going, has its small picture under it (`img.pg-low`, darkened as the page's drawing is); the sharp drawing comes in over it by opacity alone where there was none, and takes an older drawing's place at once (another zoom) with no blink.
+- The pages are laid out by the system's sizes before the library has the file open, and do not change length when it comes (checked equal to the library's in `draw`).
+- On a device the page drawn next is the one nearest the middle of the view among those waiting, not the one asked for first: a page flung past is not drawn at all.
+- A jump (the page field, a link, back and forward) holds the view for the target's small picture, 150 ms at most.
+
+After (`m3-feel-after`; `m4-feel-rec/fling.png` for the frames): no frame with bare paper in the fling (0 of 124, 0 of 80) or the jump on either file; soft frames in their place (91, 18), all sharp 0.9 to 1.8 s after a fling as before. Opening the scan for the first time still shows bare paper for about half a second (32 frames) while the system first reads a 417 MB file, and a jump to p. 480 of the outlined file still holds the page's thread for about a second (904 ms before, 1083 after): neither found.
+
+On the final code (`y6-feel`), the same: no bare frame in a fling of either file or the scan's jump; one on the outlined file's jump; opening the scan took 5.2 s to sharp that time against 1.2 s before, the first read of a 417 MB file. Each page's small picture is kept under it through a change of scale too.
+
+**Checks.** Typecheck clean; npm test 2672 passed and 2 skipped in 170 files, whole, with the load at 3 to 4; cargo test 80 passed, the ink crate's 11 (a page drawn as a JPEG and a PNG at the size asked, every page's size, none past the last). On the simulators: the Air's `pdfink` whole and its `bar`, `sess`, `feel`, `draw`; `written`; `sharp`; the pageink chain with the Mac (`y7-*`); the Mac's `written`, `book`, `sioyek`; a phone's `phone`, `written`, `pdfink` `most`. The checks mended on the way: `sharp` takes the pen whatever a run before left chosen; the Mac's pageink brings its page into view and says what the book holds if it does not come; the phone's taps bring a word into view when it is off the glass (a note opened far down). The reader draws the pages in view when its library arrives, not only when the observer says (a covered Mac window holds the observer's word back, and the Mac's pageink waited on a page that was never drawn).
+
+**Not seen.** A device. An iOS older than the simulators' 27.2: no older runtime is installed here.
+
 ## 2026-11-19 — FSRS-7 through the slot, fitted to the collection's own reviews
 
 The plan was FSRS-7 as the new built in, with the old one's state migrated. The libraries say otherwise, so it is a scheduler in the slot (`fsrs-7`, carried by the app) and the built in is unchanged.

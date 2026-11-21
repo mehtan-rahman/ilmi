@@ -36,6 +36,8 @@ mod native {
         pub fn ilmi_ink_sample(lines: u32, per: u32, seed: u32, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_pdf(spec: *const u8, len: usize, src: *const u8, src_len: usize, out_path: *const u8, out_len: usize) -> i32;
         pub fn ilmi_pdf_info(path: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
+        pub fn ilmi_pdf_sizes(path: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
+        pub fn ilmi_pdf_page(path: *const u8, len: usize, number: u32, width: u32, quality: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_free(p: *mut u8);
         pub fn ilmi_icloud_folder(out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_icloud_down(path: *const u8, len: usize, seconds: u32) -> i32;
@@ -267,6 +269,36 @@ pub fn pdf_info(path: &str) -> Result<(u32, f64, f64), String> {
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub fn pdf_info(_path: &str) -> Result<(u32, f64, f64), String> {
     Err("no PencilKit on this system".to_string())
+}
+
+/// Every page's width and height in points as a reader shows it (its crop box, turned as the page says).
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn pdf_sizes(path: &str) -> Result<Vec<(f64, f64)>, String> {
+    // SAFETY: as in `split`
+    let b = native::call(|out, len| unsafe { native::ilmi_pdf_sizes(path.as_ptr(), path.len(), out, len) }).map_err(|_| "not a pdf".to_string())?;
+    if b.len() < 4 {
+        return Err("not a pdf".to_string());
+    }
+    let n = u32::from_le_bytes(b[0..4].try_into().unwrap()) as usize;
+    if b.len() < 4 + n * 16 {
+        return Err("not a pdf".to_string());
+    }
+    Ok((0..n).map(|i| { let at = 4 + i * 16; (f64::from_le_bytes(b[at..at + 8].try_into().unwrap()), f64::from_le_bytes(b[at + 8..at + 16].try_into().unwrap())) }).collect())
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn pdf_sizes(_path: &str) -> Result<Vec<(f64, f64)>, String> {
+    Err("no pages drawn on this system".to_string())
+}
+
+/// Page `number` (from 1) of the PDF at `path` as a picture `width` pixels across: a JPEG of `quality` (0 to 1), a PNG at 1.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn pdf_page(path: &str, number: u32, width: u32, quality: f64) -> Result<Vec<u8>, String> {
+    // SAFETY: as in `split`
+    native::call(|out, len| unsafe { native::ilmi_pdf_page(path.as_ptr(), path.len(), number, width, quality, out, len) }).map_err(|_| "no such page".to_string())
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn pdf_page(_path: &str, _number: u32, _width: u32, _quality: f64) -> Result<Vec<u8>, String> {
+    Err("no pages drawn on this system".to_string())
 }
 
 /// A sheet's drawing, to or from its canvas.
@@ -613,6 +645,16 @@ mod tests {
         ];
         pages_pdf(&pages, None, out.to_str().unwrap()).unwrap();
         assert_eq!(pdf_info(out.to_str().unwrap()).unwrap(), (3, 612.0, 792.0));
+        // every page's size, and a page as a picture: a JPEG the width asked, a PNG at full quality, none past the last
+        assert_eq!(pdf_sizes(out.to_str().unwrap()).unwrap(), vec![(612.0, 792.0), (612.0, 792.0), (595.0, 842.0)]);
+        let small = pdf_page(out.to_str().unwrap(), 1, 200, 0.6).unwrap();
+        assert_eq!(&small[..3], &[0xff, 0xd8, 0xff]);
+        let sharp = pdf_page(out.to_str().unwrap(), 3, 400, 1.0).unwrap();
+        assert_eq!(&sharp[..8], b"\x89PNG\r\n\x1a\n");
+        // (a PNG says its size in its first chunk: 400 across, and as tall as the page is to its width)
+        assert_eq!(u32::from_be_bytes(sharp[16..20].try_into().unwrap()), 400);
+        assert_eq!(u32::from_be_bytes(sharp[20..24].try_into().unwrap()), (842.0_f64 * 400.0 / 595.0).round() as u32);
+        assert!(pdf_page(out.to_str().unwrap(), 4, 200, 0.6).is_err());
         let bytes = std::fs::read(&out).unwrap();
         assert_eq!(&bytes[..5], b"%PDF-");
         // the same pages with nothing written are a smaller file: the ink is in the one

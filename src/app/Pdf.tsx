@@ -277,6 +277,40 @@ const hitCount = (pages: Find['pages']): number => pages.reduce((n, p) => n + p.
 /** The PDF being opened, kept across a restart: what was being opened when the page last went down. */
 /** How long a PDF's pages are asked their sizes before it is shown: past this the rest are read behind it. */
 const SIZES_WAIT = 400;
+/** How long a jump waits for the small picture of the page it goes to, at most. */
+const JUMP_HOLD = 150;
+/** How many pixels across a page's small picture is: enough to say what the page is while its drawing comes. */
+const LOW_W = 256;
+/** How many pages on from the one in view have their small pictures there, the way the reader is going; and behind. */
+const LOW_AHEAD = 18;
+const LOW_BEHIND = 8;
+/**
+ * Where the app draws a PDF's pages as pictures (`ilmipage:`, the system's own drawing off the page's thread): the
+ * collection and the file's name among its bytes. Null where there is no app to ask (a test), no store, or the
+ * file's bytes are not on this device.
+ */
+function picturesOf(rel: string | undefined): { root: string; hash: string } | null {
+  const vault = currentVault();
+  if (!rel || !vault || typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return null;
+  const fs = vault.fs as Partial<StoreFs>;
+  const hash = fs.blobAt?.(vault.abs(rel)) ?? null;
+  if (!hash || fs.isAway?.(vault.abs(rel))) return null;
+  return { root: vault.root, hash };
+}
+/** A page's picture, `w` pixels across (a JPEG). */
+const lowUrl = (at: { root: string; hash: string }, n: number, w = LOW_W): string => `ilmipage://localhost/${at.hash}/${n}?root=${encodeURIComponent(at.root)}&w=${w}&q=0.6`;
+/** Every page's size as the system reads it, once a file; null where it cannot. */
+const sizesAsked = new Map<string, Promise<Size[] | null>>();
+function pageSizes(hash: string): Promise<Size[] | null> {
+  let p = sizesAsked.get(hash);
+  if (!p) {
+    const root = currentVault()?.root ?? '';
+    p = import('@tauri-apps/api/core').then((m) => m.invoke<[number, number][]>('pdf_sizes', { root, hash })).then((all) => all.map(([w, h]) => ({ w, h })), () => null);
+    sizesAsked.set(hash, p);
+    void p.then((v) => { if (!v) sizesAsked.delete(hash); });
+  }
+  return p;
+}
 /** How long after its last page is drawn a file is no longer held to be opening. */
 const OPENED_MS = 4000;
 const OPENING_KEY = 'ilmi.pdf.opening';
@@ -527,6 +561,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   /** Its sheets' size, as its page setup has it (85). */
   const { w: sheetW, h: sheetH } = sheetSize(written);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone' | 'unreadable'>(written ? 'ok' : 'loading');
+  const statusRef = useRef(status);
+  statusRef.current = status;
   /** Whether the collection has said what it holds: a document it has not spoken of yet is not one that has gone. */
   const docsKnown = useApp((s) => s.docsKnown);
   /** Why the file did not open, for the page to say; and how often it has been tried again. */
@@ -910,6 +946,23 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     links.current.clear();
     tokens.current.clear();
     outline.current = null;
+    // the system reads every page's size in a moment (`pdf_sizes`), long before the library has the file open: the
+    // pages are laid out at once, each shown as its small picture (`lowUrl`), and the library sharpens them when it comes
+    const early: { got: Size[] | null } = { got: null };
+    const hashNow = picturesOf(rel)?.hash;
+    if (hashNow) {
+      void pageSizes(hashNow).then((all) => {
+        if (!live || !all || !all.length || early.got) return;
+        const lo = Math.max(1, Math.min(range?.first ?? 1, all.length));
+        const hi = Math.max(lo, Math.min(range?.last ?? all.length, all.length));
+        early.got = all.slice(lo - 1, hi);
+        if (statusRef.current === 'ok') return;
+        lastRef.current?.(hi);
+        setBase(lo - 1);
+        setSizes(early.got);
+        setStatus('ok');
+      });
+    }
     (async () => {
       const doc = await held.promise;
       if (!live) return;
@@ -918,6 +971,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       // only the document's own pages when it names a range; a range past the file's end is cut to it
       const lo = Math.max(1, Math.min(range?.first ?? 1, doc.numPages));
       const hi = Math.max(lo, Math.min(range?.last ?? doc.numPages, doc.numPages));
+      if (early.got && early.got.length === hi - lo + 1) {
+        // laid out already, by the system's sizes: the library is only what sharpens them, and whether they have text
+        // is asked of the first few behind the reader's back
+        setPdf(doc);
+        void (async () => {
+          let has = false;
+          for (let n = lo; n <= Math.min(hi, lo + PROBE - 1) && !has; n++) has = (await pageBits(await doc.getPage(n))).some((b) => b.str.trim() !== '');
+          if (live) setTextless(!has);
+        })().catch(console.error);
+        return;
+      }
       // every page's size, while that is quick: a long book on a slow device is shown once its first pages are
       // known, the rest taken to be the size of the last one read, and put right when they have been read (a book's
       // pages are nearly always one size, so nothing moves)
@@ -1001,6 +1065,39 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     return () => { offStore(); offVault?.(); if (timer) clearTimeout(timer); clearInterval(every); };
   }, [rel, status, fail?.kind]);
 
+  // the library has the file open (the pages were laid out before it, by the system's sizes): the pages in view are
+  // drawn now, as a scroll would have them drawn. (Not left to the observer: a covered window holds its word back.)
+  useEffect(() => {
+    if (!pdf || status !== 'ok') return;
+    const t = setTimeout(() => scrollerOf.current?.()?.dispatchEvent(new Event('scroll')), 0);
+    return () => clearTimeout(t);
+  }, [pdf, status]);
+
+  // every page near the view, and further on the way the reader is going, has its small picture under it (the
+  // system's drawing, asked for as a picture: a few milliseconds each, off this thread): a page is never bare paper
+  // while it scrolls in, is flung to, or is jumped to. They are let go far behind
+  const lowDir = useRef<{ at: number; down: boolean }>({ at: 0, down: true });
+  useEffect(() => {
+    if (status !== 'ok' || written || !sizes.length) return;
+    const at = picturesOf(rel);
+    if (!at) return;
+    if (current !== lowDir.current.at) lowDir.current = { at: current, down: current >= lowDir.current.at };
+    const [behind, ahead] = lowDir.current.down ? [LOW_BEHIND, LOW_AHEAD] : [LOW_AHEAD, LOW_BEHIND];
+    for (const [n, el] of pageEls.current) {
+      const img = el.querySelector<HTMLImageElement>(':scope > img.pg-low');
+      const near = n >= current - behind && n <= current + ahead;
+      if (near && !img) {
+        const made = document.createElement('img');
+        made.className = 'pg-low';
+        made.alt = '';
+        made.decoding = 'async';
+        made.draggable = false;
+        made.src = lowUrl(at, n);
+        el.prepend(made);
+      } else if (img && (n < current - behind - 12 || n > current + ahead + 12)) img.remove();
+    }
+  }, [status, written, sizes.length, rel, current, hash, base]);
+
   // the pane's width sets the scale (milestone 70): a page is drawn across it, up to the width a page is still
   // read at, and centred past that; the read bar and the gutter's § hang in the pane's padding
   useLayoutEffect(() => {
@@ -1078,29 +1175,51 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     settleTimer.current = setTimeout(() => { settleTimer.current = null; const r = relRef.current; if (r && openingStill(r)) opening(null); }, OPENED_MS);
   };
   useEffect(() => () => { if (settleTimer.current) clearTimeout(settleTimer.current); }, []);
-  /** The drawing of one page waits for the one before it, on a device. */
-  const gate = useRef<Promise<void>>(Promise.resolve());
   const scrollerOf = useRef<(() => HTMLElement | null) | null>(null);
   const pdfRef = useRef(pdf);
   pdfRef.current = pdf;
   const renderPage = useCallback(async (n: number) => {
     const el = pageEls.current.get(n);
     if (!el || !pdf || rendered.current.get(n) === scale || rendering.current.has(n)) return;
-    rendering.current.add(n);
-    // on a device one page is drawn at a time: a heavy page's drawing takes a great deal of memory while it lasts,
-    // and the four or five near the view drawn together were that many times as much
+    // on a device one page is drawn at a time (a heavy page's drawing takes a great deal of memory while it lasts),
+    // and of the pages waiting it is the one nearest the middle of the view that is drawn next: a page the reader
+    // has flung past is not drawn at all, and the one they have stopped on does not wait behind those
     const one = useApp.getState().mobile;
-    const before = gate.current;
-    let open: () => void = () => {};
-    if (one) gate.current = new Promise<void>((r) => { open = r; });
-    try {
-      if (one) {
-        await before;
-        // its turn has come: a page the reader has gone on past meanwhile is not drawn
-        const sc = scrollerOf.current?.();
-        const [pr, r] = [el.getBoundingClientRect(), sc?.getBoundingClientRect()];
-        if (r && pr.height > 0 && (pr.bottom < r.top - AHEAD || pr.top > r.bottom + AHEAD)) return;
+    if (one) {
+      waiting.current.add(n);
+      if (drawing.current) return;
+      drawing.current = true;
+      try {
+        for (;;) {
+          const sc = scrollerOf.current?.();
+          const r = sc?.getBoundingClientRect();
+          let pick = -1; let best = Infinity;
+          for (const k of waiting.current) {
+            const pr = pageEls.current.get(k)?.getBoundingClientRect();
+            if (!r || !pr || pr.height <= 0 || pr.bottom < r.top - AHEAD || pr.top > r.bottom + AHEAD || rendered.current.get(k) === scale) { waiting.current.delete(k); continue; }
+            const far = Math.abs((pr.top + pr.bottom) / 2 - (r.top + r.bottom) / 2);
+            if (far < best) { best = far; pick = k; }
+          }
+          if (pick < 0) break;
+          waiting.current.delete(pick);
+          await drawRef.current(pick);
+        }
+      } finally {
+        drawing.current = false;
       }
+      return;
+    }
+    await drawRef.current(n);
+  }, [pdf, scale, id]);
+  const waiting = useRef(new Set<number>());
+  const drawing = useRef(false);
+  const drawRef = useRef<(n: number) => Promise<void>>(async () => {});
+  /** One page drawn now, at the scale there is. */
+  const drawPage = useCallback(async (n: number) => {
+    const el = pageEls.current.get(n);
+    if (!el || !pdf || rendered.current.get(n) === scale || rendering.current.has(n)) return;
+    rendering.current.add(n);
+    try {
       const page = await pdf.getPage(n);
       const viewport = page.getViewport({ scale });
       // zoomed far in, a page is drawn with fewer pixels to the point than the screen has, never with more than a canvas holds
@@ -1120,7 +1239,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       layer.className = 'textLayer';
       el.style.setProperty('--total-scale-factor', String(scale));
       const tl = new TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport });
-      el.replaceChildren(canvas, layer);
+      // over the page's small picture, which stays under it; where the page had no drawing yet it comes in over the
+      // picture (opacity alone), and where it had one (another zoom) it takes its place at once, with no blink
+      const low = el.querySelector(':scope > img.pg-low');
+      if (!el.querySelector(':scope > canvas')) canvas.classList.add('pg-new');
+      el.replaceChildren(...(low ? [low] : []), canvas, layer);
       await tl.render();
       // the page's own links, read once, as it is drawn (never for the whole book)
       if (!links.current.has(n)) {
@@ -1145,7 +1268,6 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       console.error(id, `page ${n}`, e);
     } finally {
       rendering.current.delete(n);
-      open();
     }
     // the column changed width while this page was being drawn (an iPad turned): it is drawn again at the scale there is now
     if (scaleRef.current !== scale && rendered.current.get(n) === scale) {
@@ -1154,6 +1276,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       void renderRef.current(n);
     }
   }, [pdf, scale, id]);
+  drawRef.current = drawPage;
   renderRef.current = renderPage;
 
   const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
@@ -1195,16 +1318,18 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
         const el = pageEls.current.get(n);
         const canvas = el?.querySelector('canvas');
         const r = el?.getBoundingClientRect();
+        // (a page's small picture stays under it either way: a page is never bare paper)
+        const low = el?.querySelector(':scope > img.pg-low');
         if (el && canvas && view && r && r.bottom >= view.top - AHEAD && r.top <= view.bottom + AHEAD) {
           canvas.style.width = '100%';
           canvas.style.height = '100%';
-          el.replaceChildren(canvas);
+          el.replaceChildren(...(low ? [low] : []), canvas);
           // (marked as drawn at no scale there is: back at the scale it was drawn at before it is drawn again, it is
           // still a page without its text, and is drawn again)
           rendered.current.set(n, -Math.abs(s));
         } else {
           rendered.current.delete(n);
-          el?.replaceChildren();
+          el?.replaceChildren(...(low ? [low] : []));
         }
       }
     }
@@ -1263,7 +1388,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
           rendered.current.delete(k);
           // (a canvas of no size gives its pixels back at once, not when it is collected)
           for (const c of Array.from(el.querySelectorAll('canvas'))) { c.width = 0; c.height = 0; }
-          el.replaceChildren();
+          const low = el.querySelector(':scope > img.pg-low');
+          el.replaceChildren(...(low ? [low] : []));
           // and the reader lets go of what it worked out to draw it
           const doc = pdfRef.current;
           if (doc) void doc.getPage(k).then((pg) => { (pg as unknown as { cleanup?: () => void }).cleanup?.(); }, () => {});
@@ -1602,8 +1728,28 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   };
   /** A jump is about to be made from here: here is where ⌫ comes back to. */
   const leave = () => setTrail(id, pushPlace(trailOf(id), here()));
+  /**
+   * A jump lands on a page that is already there to see: where the page it goes to has nothing drawn yet, its small
+   * picture is asked for first and the view held where it is until that has come, a moment (150 ms at most: the
+   * picture is a few milliseconds' work). So a jump never shows bare paper first.
+   */
+  const whenSeen = (n: number, go: () => void) => {
+    const at = native ? null : picturesOf(rel);
+    const el = pageEls.current.get(Math.max(first, Math.min(last, n)));
+    if (!at || !el || el.querySelector(':scope > canvas') || el.querySelector<HTMLImageElement>(':scope > img.pg-low')?.complete) { go(); return; }
+    let gone = false;
+    const once = () => { if (gone) return; gone = true; clearTimeout(timer); go(); };
+    const timer = setTimeout(once, JUMP_HOLD);
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = once;
+    img.onerror = once;
+    img.src = lowUrl(at, Math.max(first, Math.min(last, n)));
+    // (the same picture is the page's own from now on: it is under the page when the view arrives)
+    if (!el.querySelector(':scope > img.pg-low')) { img.className = 'pg-low'; img.alt = ''; img.draggable = false; el.prepend(img); }
+  };
   /** A jump: here goes on the trail, the pages go to the place. */
-  const jump = (to: { page: number; y: number }, exact = false) => { leave(); goPlace(to, exact ? 0 : JUMP_ROOM); };
+  const jump = (to: { page: number; y: number }, exact = false) => { leave(); whenSeen(to.page, () => goPlace(to, exact ? 0 : JUMP_ROOM)); };
   /**
    * A jump to a place that may lie outside these pages (a chapter cut from a book): said, not made. `exact`: a place
    * that was the top of the view when it was kept (a bookmark, a mark, a portal's end) comes back as it was; a
@@ -1617,14 +1763,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     const r = stepBack(trailOf(id), here());
     if (!r) return false;
     setTrail(id, r.trail);
-    goPlace(r.to);
+    whenSeen(r.to.page, () => goPlace(r.to));
     return true;
   };
   const goForward = (): boolean => {
     const r = stepForward(trailOf(id), here());
     if (!r) return false;
     setTrail(id, r.trail);
-    goPlace(r.to);
+    whenSeen(r.to.page, () => goPlace(r.to));
     return true;
   };
 
@@ -3248,7 +3394,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
                     const n = Number(e.currentTarget.value);
                     // the field lets the focus go first: the web view brings a focused field back into view, and would undo the scroll
                     e.currentTarget.blur();
-                    if (n >= 1) { leave(); scrollTo(n); }
+                    if (n >= 1) { leave(); whenSeen(n, () => scrollTo(n)); }
                     setGoto(false);
                   }}
                   onBlur={() => setGoto(false)}

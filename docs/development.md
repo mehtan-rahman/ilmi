@@ -913,6 +913,19 @@ is told apart: never met by the page, met on the word, or met on something
 else. `touch`'s `notes:` lines say what the book, the word and the panes
 hold before each tap on the word and when one does not do its work.
 
+A PDF's pages as pictures: `ilmipage://localhost/<hash>/<page>?root=<the
+collection>&w=<pixels across>&q=<quality>` is the system's own drawing of a
+page (`ilmi_pdf_page` in `native/ink.m`, on a thread of its own in
+`lib.rs`), a JPEG, or a PNG at `q=1`; `pdf_sizes` gives every page's size.
+The reader lays its pages out by those sizes before pdf.js has the file
+open and keeps each page's small picture under it (`img.pg-low`, `lowUrl`,
+`picturesOf` in `Pdf.tsx`); pdf.js still draws the sharp page, the text and
+the links. `pdfink`'s `"part": "draw"` times a page each way and checks the
+two agree on the sizes; `"part": "feel"` (both with `"books"` naming a
+folder that holds `scan.pdf` and `vector.pdf`; `"only"` for one of them)
+opens, scrolls, flings, jumps and zooms, and says for each how many frames
+had a page in view that was bare, or only its small picture.
+
 A large PDF on a device: `pdfink`'s `"part": "big"` (with `"books"` naming
 a folder that holds `big.pdf` and `turned.pdf`; no rig) brings it in, opens
 it, reads on through sixty pages, and checks the words of a file that is no

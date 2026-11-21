@@ -8,7 +8,7 @@ fn main() {
     println!("cargo:rerun-if-changed=native/stroke.h");
     if os == "macos" || os == "ios" {
         cc::Build::new().file("native/ink.m").file("native/stroke.m").flag("-fobjc-arc").compile("ilmi_ink");
-        for f in ["Foundation", "CoreGraphics", "PencilKit", if os == "macos" { "AppKit" } else { "UIKit" }] {
+        for f in ["Foundation", "CoreGraphics", "ImageIO", "PencilKit", if os == "macos" { "AppKit" } else { "UIKit" }] {
             println!("cargo:rustc-link-lib=framework={f}");
         }
     }

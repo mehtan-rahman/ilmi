@@ -490,6 +490,101 @@ int ilmi_pdf_info(const uint8_t *path, size_t len, uint8_t **out, size_t *out_le
   }
 }
 
+// ── a PDF's pages drawn here (the reader's pictures) ──
+//
+// The reader shows a page as a picture made here, off the page's own thread: Core Graphics draws a scanned page or a
+// page of type many times faster than a script can, and the web view decodes a picture without stopping to do it. A
+// file stays open between askings (a handful of them), since a book's pages are asked for one after another.
+
+static NSMutableDictionary<NSString *, id> *pdfOpen;
+static NSMutableArray<NSString *> *pdfOrder;
+
+/// The document at `path`, opened once and kept (the last few): retained by the caller.
+static CGPDFDocumentRef pdfAt(NSString *path) {
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{ pdfOpen = [NSMutableDictionary dictionary]; pdfOrder = [NSMutableArray array]; });
+  @synchronized (pdfOpen) {
+    id had = pdfOpen[path];
+    if (had) {
+      [pdfOrder removeObject:path];
+      [pdfOrder addObject:path];
+      return CGPDFDocumentRetain((__bridge CGPDFDocumentRef)had);
+    }
+    CGPDFDocumentRef doc = CGPDFDocumentCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path]);
+    if (!doc) return NULL;
+    pdfOpen[path] = (__bridge id)doc;
+    [pdfOrder addObject:path];
+    while (pdfOrder.count > 4) { [pdfOpen removeObjectForKey:pdfOrder[0]]; [pdfOrder removeObjectAtIndex:0]; }
+    return doc;
+  }
+}
+
+/// A page's size as a reader shows it: its crop box, turned as the page says.
+static CGSize pdfPageSize(CGPDFPageRef page) {
+  CGRect box = CGPDFPageGetBoxRect(page, kCGPDFCropBox);
+  int rot = ((CGPDFPageGetRotationAngle(page) % 360) + 360) % 360;
+  return rot == 90 || rot == 270 ? CGSizeMake(box.size.height, box.size.width) : box.size;
+}
+
+/// Every page's size in points, as a reader shows it: a u32 count, then two doubles a page, little-endian.
+int ilmi_pdf_sizes(const uint8_t *path, size_t len, uint8_t **out, size_t *out_len) {
+  @autoreleasepool {
+    NSString *s = [[NSString alloc] initWithBytes:path length:len encoding:NSUTF8StringEncoding];
+    CGPDFDocumentRef doc = s ? pdfAt(s) : NULL;
+    if (!doc) return 2;
+    uint32_t n = (uint32_t)CGPDFDocumentGetNumberOfPages(doc);
+    NSMutableData *d = [NSMutableData dataWithBytes:&n length:4];
+    for (uint32_t i = 1; i <= n; i++) {
+      CGPDFPageRef page = CGPDFDocumentGetPage(doc, i);
+      CGSize z = page ? pdfPageSize(page) : CGSizeZero;
+      double wh[2] = {z.width, z.height};
+      [d appendBytes:wh length:sizeof wh];
+    }
+    CGPDFDocumentRelease(doc);
+    return give(d, out, out_len);
+  }
+}
+
+/// Page `page` (from 1) of the PDF at `path`, drawn `width` pixels across on white: a JPEG of quality `quality`
+/// (0 to 1), or a PNG when `quality` is not below 1.
+int ilmi_pdf_page(const uint8_t *path, size_t len, uint32_t number, uint32_t width, double quality, uint8_t **out, size_t *out_len) {
+  @autoreleasepool {
+    NSString *s = [[NSString alloc] initWithBytes:path length:len encoding:NSUTF8StringEncoding];
+    CGPDFDocumentRef doc = s ? pdfAt(s) : NULL;
+    if (!doc) return 2;
+    CGPDFPageRef page = CGPDFDocumentGetPage(doc, number);
+    if (!page || width < 1 || width > 16384) { CGPDFDocumentRelease(doc); return 2; }
+    CGSize z = pdfPageSize(page);
+    if (z.width <= 0 || z.height <= 0) { CGPDFDocumentRelease(doc); return 2; }
+    double k = width / z.width;
+    size_t w = width, h = (size_t)MAX(1, llround(z.height * k));
+    CGColorSpaceRef rgb = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(NULL, w, h, 8, 0, rgb, kCGImageAlphaNoneSkipLast);
+    CGColorSpaceRelease(rgb);
+    if (!ctx) { CGPDFDocumentRelease(doc); return 3; }
+    CGContextSetRGBFillColor(ctx, 1, 1, 1, 1);
+    CGContextFillRect(ctx, CGRectMake(0, 0, w, h));
+    CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
+    // (the page's own transform into its size at one point to the unit, which turns it as it says; larger by ours)
+    CGContextScaleCTM(ctx, (double)w / z.width, (double)h / z.height);
+    CGContextConcatCTM(ctx, CGPDFPageGetDrawingTransform(page, kCGPDFCropBox, CGRectMake(0, 0, z.width, z.height), 0, true));
+    CGContextDrawPDFPage(ctx, page);
+    CGImageRef img = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    CGPDFDocumentRelease(doc);
+    if (!img) return 3;
+    NSMutableData *d = [NSMutableData data];
+    BOOL png = quality >= 1;
+    CGImageDestinationRef dest = CGImageDestinationCreateWithData((__bridge CFMutableDataRef)d, png ? CFSTR("public.png") : CFSTR("public.jpeg"), 1, NULL);
+    if (!dest) { CGImageRelease(img); return 3; }
+    CGImageDestinationAddImage(dest, img, png ? NULL : (__bridge CFDictionaryRef)@{(__bridge id)kCGImageDestinationLossyCompressionQuality: @(quality)});
+    BOOL ok = CGImageDestinationFinalize(dest);
+    CFRelease(dest);
+    CGImageRelease(img);
+    return ok ? give(d, out, out_len) : 3;
+  }
+}
+
 // ── a stroke as the page draws it (milestone 89) ──
 //
 // What is written on a PDF's page is drawn by the page itself, in the page's own element: each stroke an outline

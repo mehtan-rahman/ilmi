@@ -779,6 +779,56 @@ on PencilKit's canvas), `said` and `seen`, `hurriedAfter` and `hurriedFor`
 lift, and ms until the canvas was away), and `trace` (what happened to what
 was last written, each with its ms from the lift).
 
+The stroke being written is ours too (2026-11-21, `ios/Sources/Live.swift`),
+on every surface that writes: a notebook's, a PDF's page, a typed note's ink
+area. PencilKit still takes the Pencil (its canvas, its recogniser, its palm
+rejection, the `PKStroke` it hands over), but its canvas is given the ink
+with no colour (`LiveInk.unseen`), and what is seen while the Pencil writes
+is a layer inside the canvas (so it is placed, sized, blended and hidden as
+the canvas is), drawn from the touches the watcher sees (`PenEars.penSample`:
+every touch the system coalesced into an event, and those it predicts for the
+next frame). The stroke is a `PKStroke` made of those touches, the predicted
+ones left off at the lift, drawn by `native/stroke.m` (the outline filled,
+`ilmi_stroke_outline`; a fountain pen's and a pencil's as the picture the page
+is given, `ilmi_stroke_page_picture`, brought down to the glass with mipmaps
+as the web view brings an image down, under one random seed from the first
+touch to the last so a pencil's grain does not change). A point's size is
+the ink's own: a pen and the even line `(width × f + 4) / 2` (the round nib
+`stroke.m` draws is twice that less four, so a 0.3 pt pen is 0.3 pt, under
+PencilKit's thinnest), a highlighter two thirds of its width, a fountain pen
+`(2.03 + 0.62 × width) × f` and a pencil `0.707 + 0.2055 × width` at half
+opacity (PencilKit's own, read off its strokes). `f` is the pen's pressure
+by a mapping fixed at the touch: `1 + pressure × 0.85 × (force − 1)` with the
+force evened with the touches before it, never after, between 0.3 and 2.4;
+1 for a finger and for the inks that do not follow the hand. When PencilKit
+hands its stroke over, the one drawn for it is kept in its place
+(`InkPlugin.keep`, when it begins within 12 points of PencilKit's; else
+PencilKit's own, reshaped by `sensed` as before, which `dev_ink_state`
+counts as `liveMissed`): nothing is drawn again at the lift. The layer's
+ended strokes go when the canvas is emptied (the page or the sheets show
+them) or, in a typed note's area, when the canvas's drawing is the area's
+again. On a PDF's page in the dark theme the layer turns its colours as the
+page turns its ink (`invert(0.92) hue-rotate(180deg)`), not as PencilKit
+turns a colour on a dark canvas, which is what the notebook's sheets show.
+`LiveInk.ours = false` (one constant at the top of `Live.swift`) gives the
+stroke being written back to PencilKit's canvas and keeps PencilKit's
+stroke, reshaped, as before. The eraser and the lasso were ours already.
+
+`pdfink`'s `"part": "live"` is a check: for the pen at 0.3, 0.6 and 2.2, the
+even line, the fountain pen and the pencil each thin and thick, the
+highlighter at 7.5 and 16, and the dark theme's pen, fountain pen and
+highlighter, a line ending at rest is captured while it rests and after it
+lifts; it fails unless the stroke on the glass while it was written and the
+one kept have the same mean width (`lastWidths`, within a hundredth) and a
+pen and the even line keep the width asked (within a fiftieth), and unless
+none was kept as PencilKit's. The `written` and `ink` smokes fail if a
+stroke was (`liveMissed`). `"part": "lag"` (`"lag": "kit"` for PencilKit's
+drawing) writes three lines under a frame clock (`pencilDev` `clock-on`:
+twelve squares at the window's foot count the frames in binary; each frame's
+number and when it is to be on the glass, and every touch, are written to
+`live-clock.txt` in the app's temporary folder), for reading against the
+screen's recording frame by frame (BUILD-LOG, 2026-11-21).
+
 A stroke is on the glass once at the hand-over, by construction. Told by
 a message that the page has drawn a telling, the canvas was emptied some
 frames after the page's path was on the glass (both for those frames: ink
@@ -925,9 +975,9 @@ two agree on the sizes; `"part": "feel"` (both with `"books"` naming a
 folder that holds `scan.pdf` and `vector.pdf`; `"only"` for one of them)
 opens, scrolls, flings, jumps and zooms, and says for each how many frames
 had a page in view that was bare, or only its small picture. `"part":
-"live"` (under the rig) writes a line that ends resting, captured while it
-rests and after it lifts, with `inkgeo:` lines for `scripts/ink-thin.py`,
-and says how wide the stroke was under the finger and kept (`lastWidths`).
+"live"` (under the rig) is the stroke being written against the one kept,
+for every ink (below, by the canvases), with `inkgeo:` lines for
+`scripts/ink-thin.py`.
 
 A large PDF on a device: `pdfink`'s `"part": "big"` (with `"books"` naming
 a folder that holds `big.pdf` and `turned.pdf`; no rig) brings it in, opens

@@ -14,6 +14,8 @@ import UIKit
 @_silgen_name("ilmi_stroke_box") private func c_stroke_box(_ made: UnsafeMutableRawPointer, _ out: UnsafeMutablePointer<Double>)
 @_silgen_name("ilmi_stroke_ours") private func c_stroke_ours(_ made: UnsafeMutableRawPointer) -> Int32
 @_silgen_name("ilmi_stroke_marker") private func c_stroke_marker(_ made: UnsafeMutableRawPointer) -> Int32
+@_silgen_name("ilmi_stroke_page_picture") private func c_stroke_page_picture(_ made: UnsafeMutableRawPointer, _ box: UnsafeMutablePointer<Double>) -> Unmanaged<CGImage>?
+@_silgen_name("ilmi_stroke_outline") private func c_stroke_outline(_ made: UnsafeMutableRawPointer, _ path: UnsafeMutablePointer<UnsafeRawPointer?>, _ rgba: UnsafeMutablePointer<Double>, _ round: UnsafeMutablePointer<Double>, _ alpha: UnsafeMutablePointer<Double>) -> Int32
 
 /// A stroke made ready to be drawn, on any thread, as often as it is asked.
 final class Geom {
@@ -39,6 +41,26 @@ final class Geom {
   deinit { c_stroke_free(made) }
 
   func draw(_ c: CGContext) { c_stroke_draw(made, c) }
+
+  /// For an ink PencilKit draws a picture of: the picture the page is given of it, and the drawing's points it covers.
+  func pagePicture() -> (image: CGImage, box: CGRect)? {
+    var b = [Double](repeating: 0, count: 4)
+    guard let img = c_stroke_page_picture(made, &b)?.takeRetainedValue() else { return nil }
+    return (img, CGRect(x: b[0], y: b[1], width: b[2], height: b[3]))
+  }
+
+  /// Its outline as `draw` fills it, for a layer that shows it (the stroke being written, `Live.swift`): the path in
+  /// the drawing's points, its colour, and a highlighter's half thickness and how much of it is laid on. Nil for an
+  /// ink PencilKit draws a picture of.
+  func outline() -> (path: CGPath, colour: CGColor, round: CGFloat, alpha: CGFloat)? {
+    var p: UnsafeRawPointer?
+    var k = [Double](repeating: 0, count: 4)
+    var r = 0.0, a = 1.0
+    guard c_stroke_outline(made, &p, &k, &r, &a) != 0, let raw = p else { return nil }
+    let path = Unmanaged<CGPath>.fromOpaque(raw).takeRetainedValue()
+    let colour = CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: k.map { CGFloat($0) }) ?? UIColor.black.cgColor
+    return (path, colour, CGFloat(r), CGFloat(a))
+  }
 }
 
 /// What tells one stroke from another without walking it: when it was made, where it starts and ends, how it lies, its ink.

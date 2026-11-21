@@ -6,6 +6,37 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-21 — the stroke being written is ilmi's own drawing: the same stroke, width and colour under the Pencil as kept
+
+**What changed.** PencilKit's canvas still takes the Pencil (recogniser, palm rejection, the `PKStroke` it hands over) but draws with an ink of no colour; the stroke being written is drawn by `ios/Sources/Live.swift` in a layer inside the canvas, from every coalesced touch and the predicted ones, with `native/stroke.m`'s outline (`ilmi_stroke_outline`), or for a fountain pen and a pencil the very picture the page is given (`ilmi_stroke_page_picture`, mipmapped down; one random seed per stroke so a pencil's grain holds). At the hand-over that stroke, without the predicted touches, is kept in place of PencilKit's (`InkPlugin.keep`); nothing is drawn again at the lift. On every surface that writes: a notebook's, a PDF's page, a typed note's ink area. Widths are the ink's own: a pen and the even line keep the width asked (0.3 keeps 0.3, was 0.44); pressure is a mapping fixed at each touch (`1 + pressure × 0.85 × (force − 1)`, the force evened with earlier touches only, 0.3 to 2.4). A PDF page in the dark theme turns the live colours as the page turns its ink (`invert(0.92) hue-rotate(180deg)`). The eraser and lasso were ours already; PencilKit's undo was never used (the plugin has its own steps).
+
+**Fallback.** `static let ours = true` at the top of `src-tauri/ink/ios/Sources/Live.swift`: false gives the stroke being written back to PencilKit's canvas and keeps PencilKit's stroke reshaped by `sensed`, as on 2026-11-20.
+
+**Live against kept** (`pdfink` `"part": "live"`, now a hard check, Air simulator, the rig's finger; `lastWidths` mean widths in pt, and the captures compared pixel by pixel, `gaps/pair-diff.py`):
+
+| ink | width | live / kept (pt) | capture: width at half (px) | largest pixel difference (of 255) |
+|---|---|---|---|---|
+| pen | 0.3 | 0.300 / 0.300 | 2 / 2 | 4 |
+| pen | 0.6 | 0.600 / 0.600 | 2 / 2 | 3 |
+| pen | 2.2 | 2.200 / 2.200 | 8 / 8 | 3 |
+| even line | 0.5, 2 | equal | 2 / 2, 8 / 8 | 4, 3 |
+| fountain | 1.5, 4 | 2.960, 4.510 equal | 2 / 2, 4 / 4 | 17, 13 |
+| pencil | 2.4, 4 | 1.200, 1.529 equal | 4 / 4, 6 / 6 | 32, 23 |
+| highlighter | 7.5, 16 | equal | 24 / 24, 50 / 50 | 4, 20 |
+| dark: pen 0.6, 2.2; fountain 4; highlighter 16 | | equal | equal | 3, 3, 10, 15 |
+
+Every pair within a pixel in width. Before the dark-theme turn the dark pen differed by 20 of 255 (PencilKit's dark colour against the page's filter); before the mipmapped page picture the thin fountain pen was darker live (contrast 734 against 562); before the one seed a pencil's grain changed at the lift (up to 210 of 255 per pixel, same width).
+
+**Latency** (`"part": "lag"`, `gaps/lag/`: a frame clock in the window's corner, each frame's target time and every touch written down, the recording scanned frame by frame for the line's tip; a 2.2 pt pen at about 330 pt/s; two runs each, in both orders): from the touch at the tip's place to the frame on the glass, ilmi 0.3 and 0.0 ms in the middle (10th −14.4, 90th 14.5 and 7.8; means −0.7, −2.0), PencilKit 3.2 and 2.5 ms (10th −1.6 and −5.0, 90th 15.6 and 13.8; means 5.3, 4.8). Negative means the drawn tip is ahead of the finger (predicted touches); ilmi's tip leads by a few ms more than PencilKit's and overshoots up to about a frame. In-app, touch to the layer's update: 9 to 12 ms in the middle. These are a simulator's, with a synthesized finger at 60 Hz: not a Pencil, not 120 Hz, not a device's display pipeline.
+
+**Found on the way.** The first regression round had `written` fail its new check: 12 strokes on a notebook's surface kept as PencilKit's. Two causes, both fixed: the surface's `penDown` returns before beginning anything when the notebook is zoomed or the touch is off the sheets, while PencilKit still writes (the live stroke now begins before those returns; a stroke PencilKit takes that has none drawn for it is kept in the pen's real colour, never the ink with none); and the 12 in that run were the smoke's own strokes put on the canvas (`dev_ink_stroke`), which carry a colour and are now left alone. After: `written` 25 strokes kept as drawn, 0 as PencilKit's; `ink` (a typed note's area) 2 and 0. If PencilKit hands a stroke over before the watcher sees the lift, the live stroke ends there.
+
+**Checks.** Typecheck clean; npm test 2672 passed and 2 skipped in 170 files; cargo test 80 passed. Air simulator after the fixes: `pdfink` live (every ink, hard), `pdfink` whole with books, `written`, `ink`, all done. The round before the last fixes (same live code): `sharp`, `pageink` iPad with the Mac, the phone twice and its `written`, the Mac's `touch`, `ink`, `written`, `book`, `sioyek`, all done; the Air's `touch` failed at "a tap on notes closes the note" and `ink` once at "the eraser drawn across a stroke", both failing the same way in runs from before this change (v1, v2).
+
+**Not seen.** No real Pencil or iPad: pressure, tilt and azimuth, palm rejection with a hand on the glass and the 120 Hz feel are untested; the iPad's older WebKit; the dark-theme highlighter on a PDF page is a shade darker live than kept (15 of 255); a notebook page written in the dark theme was not captured live against kept (its kept ink uses the same `stroke.m` colours as the layer).
+
+---
+
 ## 2026-11-20 — a page of a PDF is never bare paper: its small picture from the system under it at once; what a stroke is under the Pencil and kept, measured
 
 **Moving through a long PDF.** Measured first, on the Air simulator, with two files made for it (`gaps/mkpdf.py`: 300 scanned pages, a megabyte of JPEG each, 417 MB; 600 pages of type set as outlines, 52 MB) and a part that looks at every page in view every frame (`pdfink`, `"part": "feel"`: blank, soft or sharp). Before (`m2-feel-before`): a fling of thirty pages showed bare paper in 112 of 146 frames on the scan and 11 of 108 on the other; a jump to a far page in 13 and 2; opening, nothing for 20 frames and then every page's length changing once.

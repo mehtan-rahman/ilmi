@@ -294,6 +294,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   /// What is drawn over the sheets and scrolls with them: the passages' boxes and tags, the lasso's, the eraser's reach.
   let marks = UIView()
   let canvas = InkCanvas()
+  /// The stroke being written, drawn by ilmi (`Live.swift`).
+  private(set) lazy var live = LiveInk(canvas: canvas)
   let addButton = UIButton(type: .custom)
   private var watch: PenWatch?
   private let spare = UndoManager()
@@ -479,7 +481,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       three.require(toFail: pinch)
     }
     setTouchTypes()
-    canvas.tool = plugin.ink
+    canvas.tool = LiveInk.unseen(plugin.ink)
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
@@ -1373,7 +1375,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   func toolChanged() {
     if down, let l = active, doing != nil { finish(l); spent = true }
     unpick()
-    canvas.tool = plugin.ink
+    canvas.tool = LiveInk.unseen(plugin.ink)
     setTouchTypes()
   }
 
@@ -1460,6 +1462,11 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   }
 
   func penDown(_ t: UITouch) {
+    // a pen's or a highlighter's stroke: drawn here as it is written, wherever PencilKit takes it (zoomed too, and off
+    // the sheets: what PencilKit writes is drawn with no colour, `Live.swift`)
+    if LiveInk.on, isPen(t), plugin.tool.kind == "pen" || plugin.tool.kind == "highlighter" {
+      live.begin(plugin.ink, width: CGFloat(plugin.tool.width), sense: plugin.tool.sense.map { CGFloat($0) })
+    }
     guard isPen(t), abs(scroll.zoomScale - 1) < 0.0005 else { return }
     let q = t.location(in: content)
     guard var l = leaf(at: q) else { return }
@@ -1528,7 +1535,14 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     }
   }
 
+  func penSample(_ t: UITouch, _ event: UIEvent?, ended: Bool) {
+    guard LiveInk.on, live.writing else { return }
+    live.add(t, event, ended: ended)
+  }
+
   func penJoined() {
+    // (what began is no stroke: it goes from the glass)
+    live.cancel()
     guard down, !spent else { return }
     spent = true
     joined = true
@@ -1619,6 +1633,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   // ── PencilKit hands a stroke over ──
 
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+    // (the canvas emptied, in the turn the sheets show what it held: what was drawn of it here goes with it)
+    if LiveInk.on, canvasView.drawing.strokes.isEmpty { live.clearGlass() }
     if clearing { return }
     let all = canvasView.drawing.strokes
     if all.count <= taken { taken = all.count; return }
@@ -1636,7 +1652,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     let at = CGPoint(x: first.x * s + o.x, y: first.y * s + o.y)
     guard let l = active ?? lastActive ?? leaf(at: at) else { return }
     let by = CGAffineTransform(translationX: -(l.frame.minX - o.x) / s, y: -(l.frame.minY - o.y) / s)
-    let moved = strokes.map { k -> PKStroke in var m = plugin.sensed(k); m.transform = k.transform.concatenating(by); return m }
+    let moved = strokes.map { k -> PKStroke in var m = plugin.keep(k, live: live); m.transform = m.transform.concatenating(by); return m }
     let before = l.model
     let on = commit(l, from: before, to: before + moved, moved: Array(before.count..<before.count + moved.count), dirty: box(of: moved)).leaf
     if let w = snap, w.leaf === l {

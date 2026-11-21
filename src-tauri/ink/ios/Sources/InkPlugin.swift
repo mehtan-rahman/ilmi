@@ -446,6 +446,15 @@ struct State: Encodable {
   /// A dev run's: the stroke last written, how wide it was under the Pencil and how wide it is kept (its points' mean
   /// widths, in the sheet's points): the two are to be one, so nothing changes when the Pencil lifts.
   var lastWidths: [Double] = []
+  /// A dev run's: the points PencilKit made of the stroke last written, a few of them (`w×h f a z o`: size, force,
+  /// altitude, azimuth, opacity), with its ink and the tool's width: what its sizing is, read off.
+  var lastPoints: String = ""
+  /// A dev run's: from each touch to the frame the stroke being written was drawn with it, the last few (ms).
+  var lastLags: [Double] = []
+  /// A dev run's: strokes kept as they were drawn while written (`Live.swift`), and those kept as PencilKit's.
+  var liveKept: Int = 0
+  var liveMissed: Int = 0
+  var liveMisses: [String] = []
   /// The page's own word that a telling is on the glass is heard (89, `InkPlugin.bindSignal`): its scroller is found.
   var signal: Bool = false
   /// The notebooks open as surfaces of their own (87).
@@ -493,6 +502,8 @@ final class InkCanvas: PKCanvasView {
 final class Sheet: NSObject, PKCanvasViewDelegate {
   var id: String
   let canvas = InkCanvas()
+  /// The stroke being written on it, drawn by ilmi (`Live.swift`).
+  lazy var live = LiveInk(canvas: canvas)
   weak var host: Host?
   var hit = CGRect.zero
   var zoom: CGFloat = 1
@@ -636,6 +647,8 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
   }()
 
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+    // (the canvas emptied, in the turn the page shows what it held: what was drawn of it here goes with it)
+    if LiveInk.on, canvasView.drawing.strokes.isEmpty { live.clearGlass() }
     if vector {
       if clearing { return }
       let all = canvasView.drawing.strokes
@@ -670,6 +683,9 @@ protocol PenEars: AnyObject {
   func penMoved(_ t: UITouch)
   func penUp(rested: TimeInterval)
   func penJoined()
+  /// Every event of the touch that writes, with what the system coalesced into it and predicts after it: the stroke
+  /// being written is drawn from these (`Live.swift`). `ended`: the last, just before `penUp`.
+  func penSample(_ t: UITouch, _ event: UIEvent?, ended: Bool)
 }
 
 /// Sees the Pencil go by and takes nothing: the moment it lands and where it goes.
@@ -701,6 +717,7 @@ final class PenWatch: UIGestureRecognizer, UIGestureRecognizerDelegate {
     stillAt = t.location(in: view)
     stillSince = t.timestamp
     ears?.penDown(t)
+    ears?.penSample(t, event, ended: false)
   }
 
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
@@ -710,18 +727,21 @@ final class PenWatch: UIGestureRecognizer, UIGestureRecognizerDelegate {
       stillAt = p
       stillSince = t.timestamp
     }
+    ears?.penSample(t, event, ended: false)
+    LiveClock.shared.touch(t, event)
     ears?.penMoved(t)
   }
 
-  private func finish(_ touches: Set<UITouch>) {
+  private func finish(_ touches: Set<UITouch>, _ event: UIEvent?) {
     guard let t = touch, touches.contains(t) else { return }
     touch = nil
     state = .failed
+    ears?.penSample(t, event, ended: true)
     ears?.penUp(rested: t.timestamp - stillSince)
   }
 
-  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { finish(touches) }
-  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { finish(touches) }
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { finish(touches, event) }
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { finish(touches, event) }
   override func reset() { touch = nil }
 }
 
@@ -1582,8 +1602,18 @@ class InkPlugin: Plugin, PenEars {
       }
     } else {
       unpick()
+      // a pen's or a highlighter's stroke: drawn here as it is written
+      if LiveInk.on {
+        s.live.asPage = s.vector
+        s.live.begin(ink, width: CGFloat(tool.width), sense: tool.sense.map { CGFloat($0) })
+      }
     }
     emit(["kind": "begin", "sheet": s.id, "host": h.id, "fresh": false, "x": q.x, "y": q.y, "top": s.canvas.frame.minY])
+  }
+
+  func penSample(_ t: UITouch, _ event: UIEvent?, ended: Bool) {
+    guard LiveInk.on, let s = active, s.live.writing else { return }
+    s.live.add(t, event, ended: ended)
   }
 
   /// A second finger beside the one that writes: under a tool of the plugin's own the gesture is over, and the two scroll.
@@ -2002,7 +2032,7 @@ class InkPlugin: Plugin, PenEars {
     guard n <= all.count else { s.counted = all.count; return }
     let kept = Array(all[..<n])
     let fresh = Array(all[n...])
-    let made = fresh.map { sensed($0) }
+    let made = fresh.map { keep($0, on: s) }
     let before = PKDrawing(strokes: kept)
     if zip(fresh, made).contains(where: { StrokeMark($0) != StrokeMark($1) }) {
       s.drawing = PKDrawing(strokes: kept + made)
@@ -2011,6 +2041,8 @@ class InkPlugin: Plugin, PenEars {
     }
     s.dirty = true
     step(s, from: before, to: s.drawing)
+    // (the area's canvas draws its strokes itself: what was drawn here of the one just ended goes as it does)
+    if LiveInk.on { s.live.clearGlass() }
     changed(s)
   }
 
@@ -2018,7 +2050,7 @@ class InkPlugin: Plugin, PenEars {
   /// is told of them, to hold them unseen while the canvas shows them.
   fileprivate func wrote(_ s: Sheet, _ fresh: [PKStroke]) {
     let before = s.model
-    let made = fresh.map { sensed($0) }
+    let made = fresh.map { keep($0, on: s) }
     s.model = PKDrawing(strokes: before.strokes + made)
     s.glass += names(of: s.model).suffix(made.count)
     // (the pages already moving: the page shows it from the first, and the canvas goes as soon as it has)
@@ -2035,6 +2067,37 @@ class InkPlugin: Plugin, PenEars {
     settleSoon(s)
   }
 
+  /// The stroke PencilKit handed over on a sheet, as it is kept: the one drawn for it while it was written (`Live.swift`),
+  /// or where there is none (`LiveInk.ours` off), PencilKit's own as the pen has it (`sensed`).
+  func keep(_ theirs: PKStroke, live: LiveInk) -> PKStroke {
+    // (a stroke with a colour was not taken from the Pencil under the ink with none: a dev run's stroke put on the canvas)
+    guard LiveInk.on, theirs.ink.color.cgColor.alpha < 0.001 else { return sensed(theirs) }
+    guard let ours = live.take(theirs) else {
+      // (none drawn for it here, or not where PencilKit's is: PencilKit's own is kept, and a dev run says so)
+      liveMissed += 1
+      liveMisses = Array((liveMisses + [live.missed]).suffix(12))
+      // (its ink is the one PencilKit was given to draw with no colour: kept in the pen's own)
+      var k = sensed(theirs)
+      k.ink = PKInk(k.ink.inkType, color: k.ink.color.withAlphaComponent(ink.color.cgColor.alpha))
+      return k
+    }
+    liveKept += 1
+    let round = ours.ink.inkType == .pen || { if #available(iOS 17.0, *) { return ours.ink.inkType == .monoline }; return false }()
+    let pts = Array(ours.path)
+    let mean = pts.isEmpty ? 0 : Double(pts.reduce(0) { $0 + (round ? max(0.05, 2 * $1.size.width - 4) : $1.size.width) }) / Double(pts.count)
+    lastWidths = [live.shownWidth, mean]
+    let pick = pts.isEmpty ? [] : [0, pts.count / 4, pts.count / 2, 3 * pts.count / 4, pts.count - 1].map { pts[$0] }
+    lastPoints = "\(ours.ink.inkType.rawValue) asked \(String(format: "%.3f", tool.width)) n \(pts.count): " + pick.map { String(format: "%.3f×%.3f f%.3f a%.3f z%.3f o%.3f", $0.size.width, $0.size.height, $0.force, $0.altitude, $0.azimuth, $0.opacity) }.joined(separator: " | ")
+    lastLags = live.lags
+    return ours
+  }
+  private func keep(_ theirs: PKStroke, on s: Sheet) -> PKStroke { keep(theirs, live: s.live) }
+  private(set) var lastLags: [Double] = []
+  /// A dev run's: the strokes kept as drawn while written, and those that were PencilKit's (none drawn for them).
+  private(set) var liveKept = 0
+  private(set) var liveMissed = 0
+  private(set) var liveMisses: [String] = []
+
   /// One for every place a stroke is written (a notebook's surface, a PDF's page, a typed note's area): the same
   /// stroke under the same pen is the same stroke on each.
   /// A stroke as the pen's `pressure` and its thinness have it. Pressure: each point's width follows the hand's force
@@ -2049,9 +2112,13 @@ class InkPlugin: Plugin, PenEars {
       return pts.isEmpty ? 0 : Double(pts.reduce(0) { $0 + (round ? max(0.05, 2 * $1.size.width - 4) : $1.size.width) }) / Double(pts.count)
     }
     lastWidths = [mean(k), mean(made)]
+    let pts = Array(k.path)
+    let pick = pts.isEmpty ? [] : [0, pts.count / 4, pts.count / 2, 3 * pts.count / 4, pts.count - 1].map { pts[$0] }
+    lastPoints = "\(k.ink.inkType.rawValue) tool \(String(format: "%.3f", ink.width)) n \(pts.count): " + pick.map { String(format: "%.3f×%.3f f%.3f a%.3f z%.3f o%.3f", $0.size.width, $0.size.height, $0.force, $0.altitude, $0.azimuth, $0.opacity) }.joined(separator: " | ")
     return made
   }
   private(set) var lastWidths: [Double] = []
+  private(set) var lastPoints: String = ""
 
   private func reshaped(_ k: PKStroke) -> PKStroke {
     guard tool.kind == "pen" else { return k }
@@ -2398,7 +2465,7 @@ class InkPlugin: Plugin, PenEars {
     s.host = h
     s.canvas.drawingPolicy = fingerWrites ? .anyInput : .pencilOnly
     s.canvas.overrideUserInterfaceStyle = dark ? .dark : .light
-    s.canvas.tool = ink
+    s.canvas.tool = LiveInk.unseen(ink)
     h.content.addSubview(s.canvas)
     let g = s.canvas.drawingGestureRecognizer
     web?.addGestureRecognizer(g)
@@ -2755,7 +2822,7 @@ class InkPlugin: Plugin, PenEars {
       for s in self.sheets.values where s.vector { self.lay(s) }
       if let ink = made {
         self.ink = ink
-        for s in self.sheets.values { s.canvas.tool = ink }
+        for s in self.sheets.values { s.canvas.tool = LiveInk.unseen(ink) }
       }
       for f in self.surfaces.values { f.toolChanged() }
       invoke.resolve()
@@ -3016,7 +3083,16 @@ class InkPlugin: Plugin, PenEars {
   @objc public func pencilDev(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(PencilArgs.self)
     DispatchQueue.main.async {
-      if args.what == "three", let f = self.surfaces.values.first {
+      if args.what == "live-kit" || args.what == "live-ours" {
+        // (a dev run's: the stroke being written drawn by PencilKit, as before, or by ilmi, to measure one against the other)
+        LiveInk.kitForDev = args.what == "live-kit"
+        for s in self.sheets.values { s.canvas.tool = LiveInk.unseen(self.ink) }
+        for f in self.surfaces.values { f.canvas.tool = LiveInk.unseen(self.ink) }
+      } else if args.what == "clock-on", let w = self.web?.window {
+        LiveClock.shared.start(in: w)
+      } else if args.what == "clock-off" {
+        LiveClock.shared.stop(write: true)
+      } else if args.what == "three", let f = self.surfaces.values.first {
         f.threeTapped()
       } else if args.what == "three", let h = self.hosts.values.first(where: { $0.clip.frame.height > 0 }), let web = self.web, let layer = self.layer {
         // three fingers tapped at the middle of the pages: what the recogniser says when it sees them (no rig's three fingers are taken for a tap)
@@ -3193,6 +3269,11 @@ class InkPlugin: Plugin, PenEars {
       var whole = State(sheets: sheets, hosts: hosts, tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: onSurface?.selected ?? self.picked?.at.count ?? 0, held: heldAt, clip: self.clip.count, shape: self.lastShape, pinch: Double(self.hosts.values.compactMap { $0.live?.k }.first ?? self.pinched.values.first ?? 1), sharing: self.sharing, down: self.down || self.surfaces.values.contains(where: { $0.isDown }), scribble: self.scribble, touched: self.touched, lastTouched: self.lastTouched)
       whole.touchLog = self.touchLog
       whole.lastWidths = self.lastWidths
+      whole.lastPoints = self.lastPoints
+      whole.lastLags = self.lastLags
+      whole.liveKept = self.liveKept
+      whole.liveMissed = self.liveMissed
+      whole.liveMisses = self.liveMisses
       self.bindSignal()
       whole.signal = self.signal != nil
       whole.surfaces = self.surfaces.values.sorted { $0.id < $1.id }.map { $0.state() }

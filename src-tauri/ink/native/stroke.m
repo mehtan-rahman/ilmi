@@ -420,12 +420,54 @@ void ilmi_stroke_draw(void *made, CGContextRef c) {
   }
 }
 
+int ilmi_stroke_outline(void *made, CGPathRef *path, double *rgba, double *round, double *alpha) {
+  if (STROKE_AVAILABLE) {
+    if (!made) return 0;
+    IlmiStroke *g = (__bridge IlmiStroke *)made;
+    if (g.theirs || !g.path) return 0;
+    if (path) *path = CGPathRetain(g.path);
+    const CGFloat *v = g.color ? CGColorGetComponents(g.color) : NULL;
+    size_t n = g.color ? CGColorGetNumberOfComponents(g.color) : 0;
+    if (rgba) {
+      if (v && n >= 4) { rgba[0] = v[0]; rgba[1] = v[1]; rgba[2] = v[2]; rgba[3] = v[3]; }
+      else if (v && n == 2) { rgba[0] = rgba[1] = rgba[2] = v[0]; rgba[3] = v[1]; }
+      else { rgba[0] = rgba[1] = rgba[2] = 0; rgba[3] = 1; }
+    }
+    if (round) *round = g.round;
+    if (alpha) *alpha = g.round > 0 ? g.alpha : 1;
+    return 1;
+  }
+  return 0;
+}
+
 /// A colour as `#rrggbb`, and how much of it shows.
 static NSString *hexOf(CGColorRef c, CGFloat *alpha) {
   const CGFloat *v = c ? CGColorGetComponents(c) : NULL;
   if (!v || CGColorGetNumberOfComponents(c) < 4) { *alpha = 1; return @"#000000"; }
   *alpha = v[3];
   return [NSString stringWithFormat:@"#%02x%02x%02x", (int)lround(MIN(MAX(v[0], 0), 1) * 255), (int)lround(MIN(MAX(v[1], 0), 1) * 255), (int)lround(MIN(MAX(v[2], 0), 1) * 255)];
+}
+
+/// PencilKit's own picture of a stroke it draws, as the page is given it: six pixels to the point, fewer for one that covers much.
+API_AVAILABLE(macos(11.0), ios(14.0))
+static CGImageRef pagePicture(IlmiStroke *g, CGRect *box) {
+  CGRect b = CGRectIntegral(CGRectInset(g.theirs.renderBounds, -2, -2));
+  CGFloat scale = MIN(6, MIN(sqrt(4e6 / MAX(1, b.size.width * b.size.height)), 4000 / MAX(1, MAX(b.size.width, b.size.height))));
+  if (box) *box = b;
+  return pictured(g.theirs, b, MAX(scale, 0.5), g.dark);
+}
+
+CGImageRef ilmi_stroke_page_picture(void *made, double *box) {
+  if (STROKE_AVAILABLE) {
+    if (!made) return NULL;
+    IlmiStroke *g = (__bridge IlmiStroke *)made;
+    if (!g.theirs) return NULL;
+    CGRect b;
+    CGImageRef img = pagePicture(g, &b);
+    if (box) { box[0] = b.origin.x; box[1] = b.origin.y; box[2] = b.size.width; box[3] = b.size.height; }
+    return img;
+  }
+  return NULL;
 }
 
 NSDictionary *ilmi_stroke_shape(void *made) {
@@ -435,9 +477,8 @@ NSDictionary *ilmi_stroke_shape(void *made) {
     NSMutableDictionary *m = [NSMutableDictionary dictionary];
     if (g.theirs) {
       // PencilKit's own picture of it, six pixels to the point (fewer for one that covers much): an image in the page
-      CGRect b = CGRectIntegral(CGRectInset(g.theirs.renderBounds, -2, -2));
-      CGFloat scale = MIN(6, MIN(sqrt(4e6 / MAX(1, b.size.width * b.size.height)), 4000 / MAX(1, MAX(b.size.width, b.size.height))));
-      CGImageRef img = pictured(g.theirs, b, MAX(scale, 0.5), g.dark);
+      CGRect b;
+      CGImageRef img = pagePicture(g, &b);
       if (!img) return nil;
       NSMutableData *png = [NSMutableData data];
       CGImageDestinationRef to = CGImageDestinationCreateWithData((__bridge CFMutableDataRef)png, CFSTR("public.png"), 1, NULL);

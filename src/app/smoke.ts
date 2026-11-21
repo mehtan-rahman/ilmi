@@ -12815,6 +12815,12 @@ export async function smokeInk(): Promise<void> {
     await crdtNow();
     await poll(() => { const s = useApp.getState().sync; return syncWord(s) === 'synced' && s.toPush === 0; }, 'synced: nothing left to push', 30000);
     log(`ink: ${prefix(p1)}|${prefix(p2)} :: ${after1.length}`);
+    {
+      // (every stroke written in a typed note's area was kept as it was drawn while it was written, `Live.swift`)
+      const lv = (await state()) as unknown as { liveKept?: number; liveMissed?: number; liveMisses?: string[] };
+      log(`live: ${lv.liveKept ?? 0} strokes kept as drawn while written, ${lv.liveMissed ?? 0} kept as pencilkit's ${JSON.stringify(lv.liveMisses ?? [])}`);
+      must((lv.liveMissed ?? 0) === 0, 'every stroke written is kept as it was drawn while written');
+    }
     finished = true;
     log(`done; collection ${vault.root}, storage ${storage.folder}`);
   } catch (e) {
@@ -17172,6 +17178,12 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     await told('highlighter', '#ff8fc0', 24, 'the highlighter, thick and pink, is what is left chosen', 8000);
     must(JSON.parse(localStorage.getItem(tools.INK_KEY) ?? '{}').tool === 'highlighter', 'and it is kept on this device');
     await ink.settled();
+    {
+      // (every stroke written on the notebook's surface was kept as it was drawn while it was written, `Live.swift`)
+      const lv = (await invoke<{ liveKept?: number; liveMissed?: number; liveMisses?: string[] }>('dev_ink_state'));
+      log(`live: ${lv.liveKept ?? 0} strokes kept as drawn while written, ${lv.liveMissed ?? 0} kept as pencilkit's ${JSON.stringify(lv.liveMisses ?? [])}`);
+      must((lv.liveMissed ?? 0) === 0, 'every stroke written is kept as it was drawn while written');
+    }
     finished = true;
     log(`done; collection ${vault.root}`);
   } catch (e) {
@@ -20783,49 +20795,110 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       log('done');
       return;
     }
+    if (part.split(',').includes('lag')) {
+      // ── how long from a touch to the glass (`"part": "lag"`, `lag=kit` for PencilKit's own drawing of the stroke being
+      // written, else ilmi's): the frame clock on (`LiveClock`), a pen line written level across the page's foot at an
+      // even pace, three times; the screen's recording and the clock's notes (`live-clock.txt` in the app's temporary
+      // folder) are read after the run (`scripts/` has none: a dev measure, see BUILD-LOG) ──
+      sc.scrollTop += page().bottom - window.innerHeight * 0.62;
+      await sleep(1200);
+      const rr = page();
+      const PL = (x: number, y: number): [number, number] => [fx(rr.left + (x / W) * rr.width), fy(rr.top + (y / H) * rr.height)];
+      const kit = ((await invoke<string | null>('dev_env', { name: 'ILMI_LAG' })) ?? '') === 'kit';
+      tools.setRecent('pen', '#000000');
+      tools.setSnap(false);
+      tools.setSense(1);
+      tools.setTool('pen');
+      tools.setInk('pen');
+      tools.setWidth('pen', 2.2);
+      await invoke('dev_ink_pen', { on: true });
+      await invoke('dev_ink_pencil', { what: kit ? 'live-kit' : 'live-ours' });
+      await poll(async () => Math.abs(((await state()).tool?.width ?? 0) - 2.2) < 0.01, 'a pen 2.2 pt wide', 8000);
+      await invoke('dev_ink_pencil', { what: 'clock-on' });
+      await sleep(600);
+      for (const y of [H - 50, H - 34, H - 18]) {
+        const n0 = (await there())?.strokes ?? 0;
+        const xs: number[] = [];
+        for (let x = 80; x <= 520; x += 10) xs.push(x);
+        log(`lagline: ${(rr.top + (y / H) * rr.height) * (window.devicePixelRatio || 1)}`);
+        ask('rest', ...xs.flatMap((x) => PL(x, y)), 0.4);
+        await poll(async () => { const c = await there(); return !(await state()).down && c && c.strokes === n0 + 1; }, 'written and kept', 30000);
+        await sleep(800);
+      }
+      await invoke('dev_ink_pencil', { what: 'clock-off' });
+      log(`lag: ${kit ? 'pencilkit' : 'ilmi'}: written; the clock's notes are in the app's temporary folder`);
+      await invoke('dev_ink_pencil', { what: 'live-ours' });
+      await invoke('dev_ink_pen', { on: false });
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('live')) {
-      // ── a stroke under the Pencil and the same stroke kept (`"part": "live"`, under the touch rig, whose finger
-      // stands in for the Pencil): a thin pen and a thick one each write a level line that ends with the finger
-      // resting on the glass; a capture while it rests (the stroke as PencilKit shows it being written) and one
-      // after it has lifted and the page has it. `inkgeo:` lines say where the line is in each capture
-      // (`scripts/ink-thin.py <run dir>` reads its width and its darkness in both); and the canvases say how wide
-      // the stroke was under the finger and how wide it is kept (`lastWidths`), which are to be one ──
+      // ── a stroke being written and the same stroke kept (`"part": "live"`, under the touch rig, whose finger stands
+      // in for the Pencil): for every ink, at a thin and a thick width, and the pen in the dark theme too, a level line
+      // that ends with the finger resting on the glass; a capture while it rests (the stroke as it is drawn while it
+      // is written) and one after it has lifted and the page has it, then undone, so the next is written where it
+      // was. `inkgeo:` lines say where the line is in each capture (`scripts/ink-thin.py <run dir>` reads its width
+      // and darkness in both, which are to agree within a pixel). Here: the stroke on the glass while it was written
+      // and the one kept are one (`lastWidths`: their points' mean widths), and a round nib keeps the width asked,
+      // thinner than PencilKit's thinnest too; `lastLags` says how long from each touch to its drawing ──
       // (the page's foot brought into the middle of the glass: it is clear of the page's print)
       sc.scrollTop += page().bottom - window.innerHeight * 0.62;
       await sleep(1200);
       const rr = page();
       const dprL = window.devicePixelRatio || 1;
       const PL = (x: number, y: number): [number, number] => [fx(rr.left + (x / W) * rr.width), fy(rr.top + (y / H) * rr.height)];
-      tools.setTool('pen');
-      tools.setInk('pen');
       tools.setRecent('pen', '#000000');
       tools.setSnap(false);
       tools.setSense(1);
       await invoke('dev_ink_pen', { on: true });
-      let row = 0;
-      for (const w of [0.3, 0.6, 2.2]) {
-        tools.setWidth('pen', w);
-        await poll(async () => Math.abs(((await state()).tool?.width ?? 0) - w) < 0.01, `a pen ${w} pt wide`, 8000);
+      const only = (await invoke<string | null>('dev_env', { name: 'ILMI_ONLY' })) ?? '';
+      const lagsAll: number[] = [];
+      const cases: [string, string, number, boolean][] = [
+        ['pen', 'pen', 0.3, false], ['pen', 'pen', 0.6, false], ['pen', 'pen', 2.2, false],
+        ['pen', 'monoline', 0.5, false], ['pen', 'monoline', 2, false],
+        ['pen', 'fountain', 1.5, false], ['pen', 'fountain', 4, false],
+        ['pen', 'pencil', 2.4, false], ['pen', 'pencil', 4, false],
+        ['highlighter', '', 7.5, false], ['highlighter', '', 16, false],
+        ['pen', 'pen', 0.6, true], ['pen', 'pen', 2.2, true], ['pen', 'fountain', 4, true], ['highlighter', '', 16, true],
+      ];
+      for (const [kind, ink, w, dark] of cases.filter((x) => !only || x[1] === only || x[0] === only)) {
+        if (dark !== (useApp.getState().theme === 'dark')) { useApp.getState().setTheme(dark ? 'dark' : 'light'); await sleep(900); }
+        tools.setTool(kind as 'pen');
+        if (kind === 'pen') tools.setInk(ink as 'pen');
+        tools.setWidth(kind as 'pen', w);
+        await poll(async () => { const t = (await state()).tool; return t?.kind === kind && Math.abs((t?.width ?? 0) - w) < 0.01; }, `${kind} ${ink} ${w} pt`, 8000);
         await sleep(400);
-        // (in the page's foot, clear of its print)
-        const y = H - 44 + 14 * row++;
+        const y = H - 30;
         const n0 = (await there())?.strokes ?? 0;
-        const geo = (shotName: string, what: string) => log(`inkgeo: ${JSON.stringify({ shot: shotName, dpr: dprL, k: (rr.width / W) * dprL, zoom: 1, x: [(rr.left + (150 / W) * rr.width) * dprL, (rr.left + (430 / W) * rr.width) * dprL], lines: [{ w, y: (rr.top + (y / H) * rr.height) * dprL }], drawn: what })}`);
+        const tag = `live-${kind === 'pen' ? ink : 'highlighter'}-${String(w).replace('.', '-')}${dark ? '-dark' : ''}`;
+        const geo = (shotName: string, what: string) => log(`inkgeo: ${JSON.stringify({ shot: shotName, dpr: dprL, k: (rr.width / W) * dprL, zoom: 1, x: [(rr.left + (150 / W) * rr.width) * dprL, (rr.left + (430 / W) * rr.width) * dprL], lines: [{ w, y: (rr.top + (y / H) * rr.height) * dprL }], drawn: what, dark })}`);
         ask('rest', ...PL(120, y), ...PL(200, y), ...PL(280, y), ...PL(360, y), ...PL(460, y), 3.2);
         await poll(async () => (await state()).down, 'the finger is down, writing', 20000);
         await sleep(1300);
-        geo(`live-${String(w).replace('.', '-')}-down`, 'under the finger');
-        await shot(`live-${String(w).replace('.', '-')}-down`, 500);
+        geo(`${tag}-down`, 'while it is written');
+        await shot(`${tag}-down`, 500);
         await poll(async () => { const c = await there(); return !(await state()).down && c && c.strokes === n0 + 1 && c.live === 0 && !c.shown; }, 'lifted: kept, and the page draws it', 30000);
         await sleep(700);
-        geo(`live-${String(w).replace('.', '-')}-rest`, 'kept');
-        await shot(`live-${String(w).replace('.', '-')}-rest`, 500);
-        const lw = ((await state()) as unknown as { lastWidths?: number[] }).lastWidths ?? [];
-        log(`live: a pen ${w} pt wide: ${lw[0]?.toFixed(3)} pt under the finger, ${lw[1]?.toFixed(3)} pt kept`);
-        // (not yet one for a pen under PencilKit's thinnest: said, not failed, until the stroke under the Pencil is the app's own drawing)
-        const one = lw.length === 2 && Math.abs(lw[0]! - lw[1]!) <= Math.max(0.02, lw[1]! * 0.04);
-        log(`live: ${w} pt: ${one ? 'one and the same' : 'NOT the same'} under the finger and kept (${lw.map((x) => x.toFixed(3)).join(' and ')})`);
+        geo(`${tag}-rest`, 'kept');
+        await shot(`${tag}-rest`, 500);
+        const st = (await state()) as unknown as { lastWidths?: number[]; lastLags?: number[]; lastPoints?: string };
+        const lw = st.lastWidths ?? [];
+        lagsAll.push(...(st.lastLags ?? []));
+        log(`live: ${tag}: ${lw[0]?.toFixed(3)} pt while it was written, ${lw[1]?.toFixed(3)} pt kept; ${st.lastPoints ?? ''}`);
+        must(((st as { liveMissed?: number }).liveMissed ?? 0) === 0, `${tag}: kept as it was drawn while written, not as pencilkit's`);
+        must(lw.length === 2 && Math.abs(lw[0]! - lw[1]!) <= Math.max(0.005, lw[1]! * 0.01), `${tag}: the stroke on the glass while it was written is the one kept (${lw.map((x) => x.toFixed(3)).join(' and ')})`);
+        if (kind === 'pen' && (ink === 'pen' || ink === 'monoline')) must(Math.abs(lw[1]! - w) <= Math.max(0.01, w * 0.02), `${tag}: kept as wide as it was asked to be (${lw[1]?.toFixed(3)} of ${w})`);
+        // (the capture is the host's, a moment after it is asked for: undone only once it has surely been taken)
+        await sleep(2500);
+        await tools.undo();
+        await poll(async () => ((await there())?.strokes ?? -1) === n0, 'undone', 15000);
+        await sleep(500);
       }
+      useApp.getState().setTheme('light');
+      const ms = [...lagsAll].sort((x, y2) => x - y2);
+      if (ms.length) log(`live: from a touch to its drawing: ${ms[Math.floor(ms.length / 2)]!.toFixed(1)} ms in the middle, ${ms[Math.floor(ms.length * 0.95)]!.toFixed(1)} ms at the 95th of ${ms.length}, ${ms[ms.length - 1]!.toFixed(1)} ms at most`);
       await invoke('dev_ink_pen', { on: false });
       phase('done');
       finished = true;

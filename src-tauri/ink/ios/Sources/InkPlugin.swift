@@ -443,6 +443,9 @@ struct State: Encodable {
   /// A dev run's: the last touches as the layer met them, each a line (when, where, the sheet under it, where its
   /// canvas's recogniser stood, what the watcher then saw).
   var touchLog: [String] = []
+  /// A dev run's: the stroke last written, how wide it was under the Pencil and how wide it is kept (its points' mean
+  /// widths, in the sheet's points): the two are to be one, so nothing changes when the Pencil lifts.
+  var lastWidths: [Double] = []
   /// The page's own word that a telling is on the glass is heard (89, `InkPlugin.bindSignal`): its scroller is found.
   var signal: Bool = false
   /// The notebooks open as surfaces of their own (87).
@@ -2038,6 +2041,19 @@ class InkPlugin: Plugin, PenEars {
   /// against the stroke's mean (and what the ink varies by itself is kept, less or more), none of it at 0; thinness:
   /// a pen set thinner than PencilKit's thinnest is thinned by what is missing.
   func sensed(_ k: PKStroke) -> PKStroke {
+    let made = reshaped(k)
+    // (for a dev run: what was under the Pencil, and what is kept)
+    let mean: (PKStroke) -> Double = { st in
+      let pts = Array(st.path)
+      let round = st.ink.inkType == .pen || { if #available(iOS 17.0, *) { return st.ink.inkType == .monoline }; return false }()
+      return pts.isEmpty ? 0 : Double(pts.reduce(0) { $0 + (round ? max(0.05, 2 * $1.size.width - 4) : $1.size.width) }) / Double(pts.count)
+    }
+    lastWidths = [mean(k), mean(made)]
+    return made
+  }
+  private(set) var lastWidths: [Double] = []
+
+  private func reshaped(_ k: PKStroke) -> PKStroke {
     guard tool.kind == "pen" else { return k }
     let type = k.ink.inkType
     var fountain = false, even = false
@@ -2718,6 +2734,8 @@ class InkPlugin: Plugin, PenEars {
         let range = type.validWidthRange
         var c = colour(t.color) ?? .black
         if let a = t.opacity, a < 1 { c = c.withAlphaComponent(CGFloat(min(max(a, 0.05), 1))) }
+        // (a tool made narrower than PencilKit's range writes no narrower: tried, and the stroke under the finger was
+        // as wide as at the range's foot. So the foot it is, and what is missing is thinned at the hand-over.)
         made = PKInkingTool(type, color: c, width: min(max(CGFloat(t.width), range.lowerBound), range.upperBound))
         // thinner than PencilKit's thinnest: written at its thinnest, and thinned by this much when it is handed over
         self.thin = t.kind == "pen" && CGFloat(t.width) < range.lowerBound ? max(0.1, CGFloat(t.width) / range.lowerBound) : 1
@@ -3174,6 +3192,7 @@ class InkPlugin: Plugin, PenEars {
       if let f = onSurface { heldAt = f.heldAt() }
       var whole = State(sheets: sheets, hosts: hosts, tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: onSurface?.selected ?? self.picked?.at.count ?? 0, held: heldAt, clip: self.clip.count, shape: self.lastShape, pinch: Double(self.hosts.values.compactMap { $0.live?.k }.first ?? self.pinched.values.first ?? 1), sharing: self.sharing, down: self.down || self.surfaces.values.contains(where: { $0.isDown }), scribble: self.scribble, touched: self.touched, lastTouched: self.lastTouched)
       whole.touchLog = self.touchLog
+      whole.lastWidths = self.lastWidths
       self.bindSignal()
       whole.signal = self.signal != nil
       whole.surfaces = self.surfaces.values.sorted { $0.id < $1.id }.map { $0.state() }

@@ -6,7 +6,7 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
-## 2026-11-20 — a page of a PDF is never bare paper: its small picture from the system under it at once
+## 2026-11-20 — a page of a PDF is never bare paper: its small picture from the system under it at once; what a stroke is under the Pencil and kept, measured
 
 **Moving through a long PDF.** Measured first, on the Air simulator, with two files made for it (`gaps/mkpdf.py`: 300 scanned pages, a megabyte of JPEG each, 417 MB; 600 pages of type set as outlines, 52 MB) and a part that looks at every page in view every frame (`pdfink`, `"part": "feel"`: blank, soft or sharp). Before (`m2-feel-before`): a fling of thirty pages showed bare paper in 112 of 146 frames on the scan and 11 of 108 on the other; a jump to a far page in 13 and 2; opening, nothing for 20 frames and then every page's length changing once.
 
@@ -24,7 +24,17 @@ On the final code (`y6-feel`), the same: no bare frame in a fling of either file
 
 **Checks.** Typecheck clean; npm test 2672 passed and 2 skipped in 170 files, whole, with the load at 3 to 4; cargo test 80 passed, the ink crate's 11 (a page drawn as a JPEG and a PNG at the size asked, every page's size, none past the last). On the simulators: the Air's `pdfink` whole and its `bar`, `sess`, `feel`, `draw`; `written`; `sharp`; the pageink chain with the Mac (`y7-*`); the Mac's `written`, `book`, `sioyek`; a phone's `phone`, `written`, `pdfink` `most`. The checks mended on the way: `sharp` takes the pen whatever a run before left chosen; the Mac's pageink brings its page into view and says what the book holds if it does not come; the phone's taps bring a word into view when it is off the glass (a note opened far down). The reader draws the pages in view when its library arrives, not only when the observer says (a covered Mac window holds the observer's word back, and the Mac's pageink waited on a page that was never drawn).
 
-**Not seen.** A device. An iOS older than the simulators' 27.2: no older runtime is installed here.
+**A stroke under the Pencil and kept.** Measured (`pdfink`, `"part": "live"`: the rig's finger as the Pencil, a line ending with the finger resting, a capture while it rests and one after; `lastWidths` from the canvases; `scripts/ink-thin.py` on the captures; `n3-live`):
+
+| pen asked | under the finger | kept |
+|---|---|---|
+| 0.3 pt | 1.29 pt, 4.08 px at half | 0.44 pt, 2.00 px |
+| 0.6 pt | 1.28 pt, 4.07 px | 0.87 pt, 2.61 px |
+| 2.2 pt | 2.43 pt, 8.43 px | 2.43 pt, 8.44 px |
+
+So a pen at or over PencilKit's thinnest is the same stroke written and kept (under a finger, whose force does not vary), and a thinner one is written at PencilKit's thinnest and shrinks when it lifts: what was reported. PencilKit will not write thinner: a tool made with a width under its range wrote the same 1.27 pt (tried, and put back). And what is kept is thinned from what PencilKit wrote, not from the range's foot, so a 0.3 pt pen keeps 0.44. Not mended here. What it takes: the stroke under the Pencil drawn by the app itself with the outline the page draws it by (`stroke.m`), fed by the touches with their coalesced and predicted ones; and the pen's pressure, which now follows the stroke's own mean force and so cannot be known until it lifts, made to follow a fixed force instead. `"part": "live"` and `lastWidths` stay as the measure for that.
+
+**Not seen.** A device, a Pencil (its force, its latency). An iOS older than the simulators' 27.2: no older runtime is installed here.
 
 ## 2026-11-19 — FSRS-7 through the slot, fitted to the collection's own reviews
 

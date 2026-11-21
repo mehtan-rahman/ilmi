@@ -924,7 +924,10 @@ the links. `pdfink`'s `"part": "draw"` times a page each way and checks the
 two agree on the sizes; `"part": "feel"` (both with `"books"` naming a
 folder that holds `scan.pdf` and `vector.pdf`; `"only"` for one of them)
 opens, scrolls, flings, jumps and zooms, and says for each how many frames
-had a page in view that was bare, or only its small picture.
+had a page in view that was bare, or only its small picture. `"part":
+"live"` (under the rig) writes a line that ends resting, captured while it
+rests and after it lifts, with `inkgeo:` lines for `scripts/ink-thin.py`,
+and says how wide the stroke was under the finger and kept (`lastWidths`).
 
 A large PDF on a device: `pdfink`'s `"part": "big"` (with `"books"` naming
 a folder that holds `big.pdf` and `turned.pdf`; no rig) brings it in, opens

@@ -20783,6 +20783,55 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       log('done');
       return;
     }
+    if (part.split(',').includes('live')) {
+      // ── a stroke under the Pencil and the same stroke kept (`"part": "live"`, under the touch rig, whose finger
+      // stands in for the Pencil): a thin pen and a thick one each write a level line that ends with the finger
+      // resting on the glass; a capture while it rests (the stroke as PencilKit shows it being written) and one
+      // after it has lifted and the page has it. `inkgeo:` lines say where the line is in each capture
+      // (`scripts/ink-thin.py <run dir>` reads its width and its darkness in both); and the canvases say how wide
+      // the stroke was under the finger and how wide it is kept (`lastWidths`), which are to be one ──
+      // (the page's foot brought into the middle of the glass: it is clear of the page's print)
+      sc.scrollTop += page().bottom - window.innerHeight * 0.62;
+      await sleep(1200);
+      const rr = page();
+      const dprL = window.devicePixelRatio || 1;
+      const PL = (x: number, y: number): [number, number] => [fx(rr.left + (x / W) * rr.width), fy(rr.top + (y / H) * rr.height)];
+      tools.setTool('pen');
+      tools.setInk('pen');
+      tools.setRecent('pen', '#000000');
+      tools.setSnap(false);
+      tools.setSense(1);
+      await invoke('dev_ink_pen', { on: true });
+      let row = 0;
+      for (const w of [0.3, 0.6, 2.2]) {
+        tools.setWidth('pen', w);
+        await poll(async () => Math.abs(((await state()).tool?.width ?? 0) - w) < 0.01, `a pen ${w} pt wide`, 8000);
+        await sleep(400);
+        // (in the page's foot, clear of its print)
+        const y = H - 44 + 14 * row++;
+        const n0 = (await there())?.strokes ?? 0;
+        const geo = (shotName: string, what: string) => log(`inkgeo: ${JSON.stringify({ shot: shotName, dpr: dprL, k: (rr.width / W) * dprL, zoom: 1, x: [(rr.left + (150 / W) * rr.width) * dprL, (rr.left + (430 / W) * rr.width) * dprL], lines: [{ w, y: (rr.top + (y / H) * rr.height) * dprL }], drawn: what })}`);
+        ask('rest', ...PL(120, y), ...PL(200, y), ...PL(280, y), ...PL(360, y), ...PL(460, y), 3.2);
+        await poll(async () => (await state()).down, 'the finger is down, writing', 20000);
+        await sleep(1300);
+        geo(`live-${String(w).replace('.', '-')}-down`, 'under the finger');
+        await shot(`live-${String(w).replace('.', '-')}-down`, 500);
+        await poll(async () => { const c = await there(); return !(await state()).down && c && c.strokes === n0 + 1 && c.live === 0 && !c.shown; }, 'lifted: kept, and the page draws it', 30000);
+        await sleep(700);
+        geo(`live-${String(w).replace('.', '-')}-rest`, 'kept');
+        await shot(`live-${String(w).replace('.', '-')}-rest`, 500);
+        const lw = ((await state()) as unknown as { lastWidths?: number[] }).lastWidths ?? [];
+        log(`live: a pen ${w} pt wide: ${lw[0]?.toFixed(3)} pt under the finger, ${lw[1]?.toFixed(3)} pt kept`);
+        // (not yet one for a pen under PencilKit's thinnest: said, not failed, until the stroke under the Pencil is the app's own drawing)
+        const one = lw.length === 2 && Math.abs(lw[0]! - lw[1]!) <= Math.max(0.02, lw[1]! * 0.04);
+        log(`live: ${w} pt: ${one ? 'one and the same' : 'NOT the same'} under the finger and kept (${lw.map((x) => x.toFixed(3)).join(' and ')})`);
+      }
+      await invoke('dev_ink_pen', { on: false });
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('feel')) {
       // ── how moving through a long PDF feels (`"part": "feel"`, with `books` as `draw`; no rig; a measure, to be
       // read beside a recording): opening it, a slow scroll, a fling of thirty pages, a jump to a far page, and its

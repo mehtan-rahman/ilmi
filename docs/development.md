@@ -853,6 +853,27 @@ writes a word at 100%, 250% and 400% and puts a stroke rounded as before
 under it, with the outline as it was (`pencilDev` `smooth-old`) and as it is
 (`smooth-new`); `smoothgeo:` lines say where each is in its capture.
 
+Each touch's place is also evened as it comes (2026-11-23, `LiveInk.Even`,
+a one-euro filter in the screen's points: below 8 Hz at rest, 0.2 more per
+point a second, so a slow hand's tremor goes and a fast one is not dragged
+behind), and the force over 30 ms by the clock. A predicted touch is evened
+from where the filter stands without moving it on; held still, or lifted,
+the stroke ends where the Pencil truly is (the evened place trails it, and a
+Pencil held still sends nothing to catch up with). The places kept are the
+evened ones, so the stroke written and the one kept are still one; the
+device's log keeps the touches as they came. `smooth-old` has neither.
+`"part": "smooth"` also puts a level line on at 100%, 200%, 250% and 400%
+with an `inkgeo:` line for `scripts/ink-thin.py` (the sheet's picture's
+edge). The device's log (`InkLog` in `Live.swift`): `Library/Caches/
+ilmi-ink.log` in the app's container (`dev.ilmi.app`), a JSON line a stroke
+for the last twenty or so: every coalesced and predicted touch as it came
+(precise and rounded place, time, force, altitude, azimuth), the zoom and
+the screen's scale, the stroke's control points, its outline's middle after
+evening, the step it was found rounded to and the sigma it was evened by,
+and its turns; on in every build (`InkLog.on`); pulled with `xcrun devicectl
+device copy from --domain-type appDataContainer --domain-identifier
+dev.ilmi.app --source Library/Caches/ilmi-ink.log`.
+
 On a PDF's page the eraser is on the glass at once (2026-11-22). The page
 draws its ink in the web view's process; told of what an eraser left, it
 drew it 40 to 55 ms later, and a telling each move (each with every name

@@ -53,6 +53,29 @@ static CGFloat EVEN_FIXED = -1;
 
 void ilmi_stroke_tune(double step, double flat, double even) { STEP = step; FLAT = flat; EVEN_FIXED = even; }
 
+/// How far along the path a pen's width is evened (a Gaussian's sigma, in the stroke's points): what the force's
+/// noise makes of the edges, a wobble, is taken out; a width is never more than the widest near it.
+static CGFloat WIDE = 0;
+void ilmi_stroke_tune_width(double sigma) { WIDE = sigma; }
+
+/// The places' radii evened along the path (they are `STEP` apart), each the mean of those within three sigmas
+/// either side, weighted as a Gaussian, the window as wide on both sides.
+static void widthEvened(Place *at, size_t n, CGFloat sigma) {
+  if (sigma <= 0 || n < 3) return;
+  long w = (long)ceil(3 * sigma / STEP);
+  if (w < 1) return;
+  CGFloat *wt = malloc((w + 1) * sizeof(CGFloat)), *r = malloc(n * sizeof(CGFloat));
+  for (long k = 0; k <= w; k++) wt[k] = exp(-0.5 * pow(k * STEP / sigma, 2));
+  for (size_t i = 0; i < n; i++) {
+    long reach = MIN(w, MIN((long)i, (long)(n - 1 - i)));
+    CGFloat s = 0, sw = 0;
+    for (long k = -reach; k <= reach; k++) { s += wt[labs(k)] * at[i + k].r; sw += wt[labs(k)]; }
+    r[i] = s / sw;
+  }
+  for (size_t i = 0; i < n; i++) at[i].r = r[i];
+  free(wt); free(r);
+}
+
 /// The step a stroke's points were rounded to, in its own points, or 0 when they were not: UIKit gives a touch's
 /// place rounded to the screen's points (or pixels) unless asked for the precise one, which ilmi did not ask for until
 /// 2026-11-22. Rounded on the glass and divided by the zoom it was written at, every move from one point to the next
@@ -357,6 +380,7 @@ void *ilmi_stroke_make(void *stroke, int dark) {
       if (n == 0 || hypot(at[n - 1].x - CGPointApplyAffineTransform(last.location, m).x, at[n - 1].y - CGPointApplyAffineTransform(last.location, m).y) > 0.01) add(last);
     }
     evened(at, n, even);
+    widthEvened(at, n, WIDE * grow);
     n = thinned(at, n);
     g.places = [NSData dataWithBytes:at length:n * sizeof(Place)];
     int corners = 0;

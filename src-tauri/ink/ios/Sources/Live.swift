@@ -66,7 +66,7 @@ final class LiveInk {
   private var began: TimeInterval = 0
   private var made = Date()
   /// The touches of the stroke being written as they came, for the device's log (`InkLog`).
-  private var raw: [[String: Any]] = []
+  private var raw: [[Double]] = []
   private var seed: UInt32 = 1
   private var force: CGFloat?
   private var ink = PKInk(.pen, color: .black)
@@ -106,6 +106,10 @@ final class LiveInk {
     points = []
     raw = []
     force = nil
+    forceAt = 0
+    ex = Even()
+    ey = Even()
+    tip = nil
     began = 0
     rounding = 0
     made = Date()
@@ -128,7 +132,8 @@ final class LiveInk {
     let predicted = last ? [] : (event?.predictedTouches(for: t) ?? [])
     if InkLog.on { for u in predicted { raw.append(InkLog.touch(u, in: c, predicted: true, event: t.timestamp)) } }
     let ahead = predicted.map { point($0, in: c, keep: false) }
-    draw(points + ahead, at: t.timestamp)
+    // (moving, the predicted touches lead it; held still, it ends where the Pencil is, as it will when it lifts)
+    draw(points + (ahead.isEmpty ? held() : ahead), at: t.timestamp)
     if last { finish() }
   }
 
@@ -136,6 +141,7 @@ final class LiveInk {
   private func finish() {
     guard writing else { return }
     writing = false
+    points += held()
     draw(points, at: nil)
     if let l = current { shown.append(l) }
     current = nil
@@ -193,7 +199,10 @@ final class LiveInk {
       let rough = u.location(in: c)
       rounding = max(rounding, Double(hypot(rough.x - at.x, rough.y - at.y)))
     }
-    let p = CGPoint(x: at.x / z, y: at.y / z)
+    // evened as it comes (a one-euro filter, `Even`): a predicted touch is evened from where the filter stands and
+    // moves it on not at all
+    let q = LiveInk.roughForDev ? at : evened(at, u.timestamp, in: c, keep: keep)
+    let p = CGPoint(x: q.x / z, y: q.y / z)
     if began == 0 { began = u.timestamp }
     let pencil = u.type == .pencil
     let f = factor(u, keep: keep)
@@ -219,7 +228,12 @@ final class LiveInk {
         w = (asked * f + 4) / 2
       }
     }
-    return PKStrokePoint(location: p, timeOffset: u.timestamp - began, size: CGSize(width: w, height: w), opacity: opacity, force: pencil ? u.force : 1, azimuth: azimuth, altitude: pencil ? u.altitudeAngle : .pi / 2)
+    let made = PKStrokePoint(location: p, timeOffset: u.timestamp - began, size: CGSize(width: w, height: w), opacity: opacity, force: pencil ? u.force : 1, azimuth: azimuth, altitude: pencil ? u.altitudeAngle : .pi / 2)
+    if keep {
+      // (and where the touch truly is: the evened place trails it, and a Pencil held still sends nothing more to catch up with)
+      tip = PKStrokePoint(location: CGPoint(x: at.x / z, y: at.y / z), timeOffset: made.timeOffset, size: made.size, opacity: made.opacity, force: made.force, azimuth: made.azimuth, altitude: made.altitude)
+    }
+    return made
   }
 
   /// How much wider the pen is for the hand's force at a touch, by a mapping fixed at the touch: 1 for an average
@@ -230,9 +244,54 @@ final class LiveInk {
     var follows = ink.inkType == .pen || ink.inkType == .pencil
     if #available(iOS 17.0, *) { follows = follows || ink.inkType == .fountainPen }
     guard follows, u.type == .pencil, u.maximumPossibleForce > 0 else { return 1 }
-    let even = force.map { 0.5 * $0 + 0.5 * u.force } ?? u.force
-    if keep { force = even }
+    // (evened over 30 ms by the clock, not by the touch: the force's noise is what wobbles a pen's edges)
+    var even = u.force
+    if let was = force {
+      let dt = max(0, u.timestamp - forceAt)
+      even = was + CGFloat(1 - exp(-dt / LiveInk.forceTime)) * (u.force - was)
+    }
+    if keep { force = even; forceAt = u.timestamp }
     return min(max(1 + sense * 0.85 * (even - 1), 0.3), 2.4)
+  }
+
+  // ── the place, evened as it comes ──
+
+  /// A one-euro filter (Casiez, Roussel and Vogel, 2012) on one coordinate: a low pass whose cutoff rises with the
+  /// speed, so a slow hand's tremor goes and a fast one is not dragged behind. In the screen's points: below 8 Hz at
+  /// rest, 0.2 more for each point a second (measured on a Pencil's synthesized jitter, BUILD-LOG 2026-11-22: the turns
+  /// a 0.15 pt jitter makes at 250% from 35° to 21°, the tip 0.7 pt behind at 250 pt/s, a sharp corner 0.4 px rounder).
+  struct Even {
+    var x: CGFloat = 0, dx: CGFloat = 0, t: TimeInterval = 0, have = false
+    static let rest = 8.0, beta = 0.2, slope = 1.0
+    static func alpha(_ cutoff: Double, _ dt: Double) -> CGFloat { CGFloat(1 / (1 + 1 / (2 * .pi * cutoff) / dt)) }
+    /// `per` is how many of the coordinate's units a screen point is.
+    mutating func step(_ v: CGFloat, _ at: TimeInterval, per: CGFloat) -> CGFloat {
+      guard have else { x = v; dx = 0; t = at; have = true; return v }
+      let dt = max(at - t, 1e-4)
+      dx += Self.alpha(Self.slope, dt) * ((v - x) / CGFloat(dt) - dx)
+      let cutoff = Self.rest + Self.beta * Double(abs(dx) / max(per, 0.0001))
+      x += Self.alpha(cutoff, dt) * (v - x)
+      t = at
+      return x
+    }
+  }
+  private var ex = Even(), ey = Even()
+  /// The last touch's own place, not evened.
+  private var tip: PKStrokePoint?
+  /// The stroke's end where the Pencil is, when the evened place trails it by more than a twentieth of a point.
+  private func held() -> [PKStrokePoint] {
+    guard let t = tip, let last = points.last, hypot(t.location.x - last.location.x, t.location.y - last.location.y) > 0.05 else { return [] }
+    return [t]
+  }
+  private var forceAt: TimeInterval = 0
+  static let forceTime = 0.03
+
+  private func evened(_ at: CGPoint, _ t: TimeInterval, in c: PKCanvasView, keep: Bool) -> CGPoint {
+    // (the canvas's own points to the screen's: its bounds against its frame, which its transform scales)
+    let per = c.frame.width > 0 ? c.bounds.width / c.frame.width : 1
+    if keep { return CGPoint(x: ex.step(at.x, t, per: per), y: ey.step(at.y, t, per: per)) }
+    var x = ex, y = ey
+    return CGPoint(x: x.step(at.x, t, per: per), y: y.step(at.y, t, per: per))
   }
 
   private func stroke(_ pts: [PKStrokePoint]) -> PKStroke? {
@@ -486,22 +545,33 @@ final class InkLog {
 
   static func r(_ v: CGFloat) -> Double { (Double(v) * 1000).rounded() / 1000 }
 
-  static func touch(_ u: UITouch, in c: UIView, predicted: Bool, event: TimeInterval) -> [String: Any] {
+  /// One touch as it came, as numbers (cheap on the main thread): its time, precise place, rounded place, force,
+  /// altitude, azimuth (0 for a finger), predicted (1) or not, the time of its event, its type. Named in the file.
+  static func touch(_ u: UITouch, in c: UIView, predicted: Bool, event: TimeInterval) -> [Double] {
     let p = u.preciseLocation(in: c), l = u.location(in: c)
-    var d: [String: Any] = ["t": (u.timestamp * 10000).rounded() / 10000, "px": r(p.x), "py": r(p.y), "lx": r(l.x), "ly": r(l.y), "f": r(u.force), "ty": u.type.rawValue]
-    if u.type == .pencil { d["alt"] = r(u.altitudeAngle); d["az"] = r(u.azimuthAngle(in: c)) }
-    if predicted { d["pred"] = 1 }
-    d["ev"] = (event * 10000).rounded() / 10000
-    return d
+    let pencil = u.type == .pencil
+    return [u.timestamp, Double(p.x), Double(p.y), Double(l.x), Double(l.y), Double(u.force), pencil ? Double(u.altitudeAngle) : 0, pencil ? Double(u.azimuthAngle(in: c)) : 0, predicted ? 1 : 0, event, Double(u.type.rawValue)]
   }
+  static let fields = ["t", "px", "py", "lx", "ly", "f", "alt", "az", "pred", "ev", "ty"]
+  private let stamp = ISO8601DateFormatter()
 
-  func stroke(_ k: PKStroke, touches: [[String: Any]], canvas c: PKCanvasView, rounding: Double, asPage: Bool) {
+  func stroke(_ k: PKStroke, touches raw: [[Double]], canvas c: PKCanvasView, rounding: Double, asPage: Bool) {
     let zoom = Double(c.zoomScale)
     let scale = Double(c.window?.screen.scale ?? UIScreen.main.scale)
     let surface = asPage ? "pdf" : (c.superview is UIScrollView ? "notebook" : "area")
-    let when = ISO8601DateFormatter().string(from: Date())
+    let now = Date()
     queue.async { [weak self] in
       guard let self = self, let url = self.url else { return }
+      let when = self.stamp.string(from: now)
+      let touches: [[String: Any]] = raw.map { v in
+        var d: [String: Any] = [:]
+        for (i, name) in Self.fields.enumerated() where i < v.count {
+          if name == "pred" { if v[i] != 0 { d[name] = 1 }; continue }
+          if name == "alt" || name == "az", v[10] != Double(UITouch.TouchType.pencil.rawValue) { continue }
+          d[name] = name == "t" || name == "ev" ? (v[i] * 10000).rounded() / 10000 : name == "ty" ? Int(v[i]) : (v[i] * 1000).rounded() / 1000
+        }
+        return d
+      }
       let pts: [[Double]] = k.path.map { [Self.r($0.location.x), Self.r($0.location.y), Self.r($0.size.width), Self.r($0.force), ($0.timeOffset * 10000).rounded() / 10000] }
       var line: [String: Any] = ["at": when, "surface": surface, "zoom": zoom, "scale": scale, "ink": k.ink.inkType.rawValue, "rounding": rounding, "touches": touches, "points": pts]
       if let g = Geom(k, dark: false) {

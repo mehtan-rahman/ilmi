@@ -18592,7 +18592,7 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
     let row = 0;
     for (const how of ['old', 'new']) {
       await invoke('dev_ink_pencil', { what: `smooth-${how}` });
-      for (const z of [1, 2.5, 4]) {
+      for (const z of [1, 2, 2.5, 4]) {
         await zoomTo(NB, b, z);
         const g = await onGlass(b, sheet);
         // a cursive word, loops 9 points across on the glass whatever the zoom, written from 40 points in
@@ -18632,6 +18632,13 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
         log(`smoothgeo: ${JSON.stringify({ shot: `${tag}-before`, x: g.at(x0 - r - 2, 0)[0] * window.innerWidth * dpr, y: g.at(0, y0 + 2 * r - 2)[1] * window.innerHeight * dpr, w: (4 * 2 * Math.PI * r / 2.2 + 2 * r + 4) * g.k, h: (3.2 * r + 4) * g.k })}`);
         await shot(`${tag}-before`);
         const handed = (await state()).lastTurns ?? [];
+        // and a level line, 0.6 pt, put on as it is: how the sheet's picture draws an edge at this zoom (`scripts/ink-thin.py`)
+        const ly = y0 + 7.5 * r;
+        await invoke('dev_ink_stroke', { sheet, rest: false, hand: false, points: Array.from({ length: 9 }, (_, i) => [x0 + i * (8 * r), ly, 2.3, 1]) });
+        await poll(async () => (await surfaceNow(b))!.sheets.find((l) => l.id === sheet)!.strokes === n0 + 3, 'a level line on the sheet', 15000);
+        await sleep(900);
+        log(`inkgeo: ${JSON.stringify({ shot: `${tag}-level`, dpr, k: g.k, zoom: z, x: [g.at(x0 + 8 * r, 0)[0] * window.innerWidth * dpr, g.at(x0 + 56 * r, 0)[0] * window.innerWidth * dpr], lines: [{ w: 0.6, y: g.at(0, ly)[1] * window.innerHeight * dpr }], drawn: 'the sheet\'s picture' })}`);
+        await shot(`${tag}-level`);
         const line = `smooth: ${how}, ${Math.round(z * 100)}%: written ${written.map((v) => v.toFixed(1)).join('° / ')}° (touch rounded by up to ${(w.lastRounding ?? 0).toFixed(3)} pt); from before ${handed.map((v) => v.toFixed(1)).join('° / ')}°`;
         log(line);
         report.push(line);
@@ -21115,8 +21122,8 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         must(((st as { liveMissed?: number }).liveMissed ?? 0) === 0, `${tag}: kept as it was drawn while written, not as pencilkit's`);
         must(lw.length === 2 && Math.abs(lw[0]! - lw[1]!) <= Math.max(0.005, lw[1]! * 0.01), `${tag}: the stroke on the glass while it was written is the one kept (${lw.map((x) => x.toFixed(3)).join(' and ')})`);
         if (kind === 'pen' && (ink === 'pen' || ink === 'monoline')) must(Math.abs(lw[1]! - w) <= Math.max(0.01, w * 0.02), `${tag}: kept as wide as it was asked to be (${lw[1]?.toFixed(3)} of ${w})`);
-        // (the capture is the host's, a moment after it is asked for: undone only once it has surely been taken)
-        await sleep(2500);
+        // (the capture is the host's, a moment after it is asked for, later when the host is busy: undone only once it has surely been taken)
+        await sleep(6000);
         await tools.undo();
         await poll(async () => ((await there())?.strokes ?? -1) === n0, 'undone', 15000);
         await sleep(500);

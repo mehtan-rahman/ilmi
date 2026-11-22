@@ -59,6 +59,42 @@ The hard run (`h4`: `tileslow` 2.2, `workers` 6, `within` 600) passed:
 **Checks.** Typecheck clean; npm test 2672 passed and 2 skipped (perf.test.ts's timing failed once under the simulator's load and passed alone); cargo test 83 passed and the ink crate's 11; the `pages` tests (an address read, priority and generations, the log begun anew) and the ink crate's tile test.
 
 **Not seen.** The device itself (only its log will say), its 120 Hz, the user's own PDF (real type and pictures, not outlines), memory over a long session of tiles (each band is decoded at about 3 MB), and the phone.
+## 2026-11-23 — what the Pencil gives, logged on the device; a tremor evened as it comes
+
+The user, with a Pencil, after 217868c: "much less apparent now", "still a small little bit of jaggedness", could be more rounded. Rounding was the main cause; something remains on the device that the simulator does not show (the simulator does not round a touch, has no tremor and no force).
+
+**The device's log** (`InkLog` in `Live.swift`, f019ac8): `Library/Caches/ilmi-ink.log` in the app's container (`dev.ilmi.app`), never in a collection. One JSON line per stroke, for the last twenty or so:
+- every coalesced and predicted touch as it came: precise and rounded place, time, force, altitude, azimuth, and the event it came in;
+- the zoom and the screen's scale;
+- the stroke's control points;
+- its outline's middle after evening, the rounding step found and the sigma used, and its turns;
+- on in every build.
+
+Checked on the simulator: twelve strokes, 58 KB.
+
+**What could be done without it** (a Mac harness, `gaps/smooth/harness3.m`: a Pencil's input synthesized at 240 Hz with 0.15 pt of tremor in its place and 0.15 of noise in its force, through what `Live.swift` does, outlined by `stroke.m`).
+
+Each touch's place is evened as it comes by a one-euro filter in screen points: 8 Hz at rest, plus 0.2 per point a second. Force is evened over 30 ms by the clock, where it was half of each touch. Measured before / now:
+
+| zoom | turn (99th) | stray from the curve | edge wobble | tip lag at 250 pt/s | sharp corner rounded by |
+|---|---|---|---|---|---|
+| 100% | 44.7° / 20.9° | 1.33 / 1.17 px | 0.10 / 0.05 px | 1.22 / 2.57 px | 0.46 / 0.83 px |
+| 250% | 35.1° / 20.7° | 1.33 / 1.17 px | 0.26 / 0.15 px | 1.22 / 2.57 px | 0.45 / 0.80 px |
+| 400% | 35.5° / 17.8° | 1.33 / 1.17 px | 0.41 / 0.20 px | 1.22 / 2.57 px | 0.73 / 0.83 px |
+
+Tip lag counts the tremor itself (1.22 px with no filter), so the filter adds about 1.4 px, 0.7 pt on the glass. Heavier settings (3–5 Hz) smoothed a little more but put the tip 4–5 px behind and rounded a sharp corner by 2–3 px; not taken. Evening the outline's radii along the path (0.4 pt) made no difference beyond the force's time constant; left at 0, with its hook in `stroke.m`.
+
+Held still or lifted, the evened place trails the Pencil, and a Pencil held still sends nothing to catch up with. So the stroke ends where the Pencil truly is: the stroke being written (when no touch is predicted) and the one kept alike. Seen first as a kept stroke shorter at its end than the one shown under the resting finger, and fixed.
+
+The ends of fast strokes: the outline begins at the first touch and ends at the last at 100 to 1500 pt/s, since PencilKit's curve is clamped there (`gaps/smooth/ends.m`). The sheet's picture of a 0.6 pt level line at 100%, 200%, 250% and 400% on a 2× screen: 1.49, 2.98, 3.73 and 5.96 px as it should be, its edge 1.0 to 1.6 px (coverage antialiasing, no blur from scaling).
+
+On the simulator: the live check passes, every ink and the dark theme within 27/255 and the same width live and kept. A word at 250%, old and new: `gaps/runs/t3-smooth/crops-25.png`. The rig's input has no tremor, so its turns say little of the filter; the harness says it.
+
+**Found on the way.** `written` failed three times running at "a tap beside it closes it" (the system's colour wheel not put away by a press beside it, 900 ms after it opened), where main passed and the same branch with the log off passed. The log built a dictionary for every touch on the main thread. It now keeps each touch as numbers there, and names them on its own queue: `written` passes with it on. That check has failed now and then since long before (c2, d1, e1, x1), a matter of timing.
+
+**Checks.** Air simulator: `pdfink` live (every ink, the dark theme: live and kept within 27/255, the same widths), `pdfink` whole with books, `written` (25 strokes kept as drawn, 0 as PencilKit's), `ink`: done. Typecheck clean; npm test 2672 passed and 2 skipped; cargo test 79 of 80 whole, `devcloud`'s refusals passed alone, run while a smoke loaded the machine.
+
+**Not seen.** What a real Pencil's input is: the cause of what remains waits for the device's log.
 
 ---
 

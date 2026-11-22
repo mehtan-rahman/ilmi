@@ -597,9 +597,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     painters.cancelAllOperations()
     for l in Array(leaves.values) { retire(l) }
     leaves = [:]
-    let g = canvas.drawingGestureRecognizer
-    g.isEnabled = false
-    g.view?.removeGestureRecognizer(g)
+    // (the canvas on its own first, kept a turn: let go with the view it lies in, in one go, it crashed the app: `CanvasKeep`)
+    CanvasKeep.letGo(canvas)
     view.removeFromSuperview()
   }
 

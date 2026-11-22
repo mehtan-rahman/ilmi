@@ -45,8 +45,11 @@ struct PdfSurfaceArgs: Decodable {
   let y: Double?
   let w: Double?
   let h: Double?
-  /// The PDF's file.
+  /// The PDF's file, and the book's hash: what is written on its pages is kept under `p.<hash>.<page>`.
   let path: String?
+  let hash: String?
+  /// Its number among those the page told: one older than the last taken is not taken (they may come out of order).
+  let seq: Int?
   let zoom: Double?
   let open: PdfPlace?
   let dark: Bool?
@@ -106,6 +109,7 @@ extension InkPlugin {
         s = made
       }
       if s.view.superview !== parent { parent.addSubview(s.view) }
+      if let q = args.seq { if q < s.lastSeq { invoke.resolve(["pages": s.count, "stale": true]); return }; s.lastSeq = q }
       s.take(args, at: rect)
       invoke.resolve(["pages": s.count])
     }
@@ -390,8 +394,12 @@ final class PdfPageView: UIView {
 /// Takes no touch where the page lays something over the surface: there the web view beneath has it.
 final class HoledView: UIView {
   var holes: [CGRect] = []
+  /// What writes on the pages: told of every touch first, as a notebook's surface is (`NoteSurface.arm`).
+  weak var ink: NoteSurface?
   override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    if isHidden || !bounds.contains(point) { return nil }
     if holes.contains(where: { $0.contains(point) }) { return nil }
+    if event == nil || event?.type == .touches { ink?.arm(point) }
     return super.hitTest(point, with: event)
   }
 }
@@ -468,11 +476,23 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     l.add(to: .main, forMode: .common)
     link = l
     text = PdfText(surface: self)
+    // the ink: the notebook's engine, written on these pages (`Surface.swift`, a guest)
+    let w = NoteSurface(id: id, plugin: plugin, over: view, scroll: scroll, content: content)
+    ink = w
+    view.ink = w
+    plugin.adopt(w)
   }
+  /// What is written on the pages.
+  private(set) var ink: NoteSurface?
+  /// The number of the last spec taken.
+  var lastSeq = 0
+  private var bookHash = ""
   /// The text: selection, taps, a search's hits.
   var text: PdfText?
 
   func remove() {
+    if let w = ink { plugin?.disown(w); w.remove() }
+    ink = nil
     link?.invalidate()
     link = nil
     view.removeFromSuperview()
@@ -491,6 +511,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     if nowDark != dark {
       dark = nowDark
       for v in views.values { for k in Array(v.levels.keys) { v.drop(level: k) }; v.picture.contents = nil; v.pictureLevel = -2 }
+      layInk()
     }
     top = CGFloat(a.top ?? 12)
     let f0 = max(1, min(count, a.first ?? 1)), f1 = max(f0, min(count, a.last ?? count))
@@ -500,6 +521,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     if rangeChanged { for v in views.values { v.removeFromSuperview() }; views = [:] }
     // the holes: cut out of the view's glass and its touches
     holesFrom(a.holes ?? [])
+    if let h = a.hash, h != bookHash { bookHash = h; layInk() }
     var lk = PdfLook()
     if let c = a.accent.flatMap({ UIColor(pdfHex: $0) }) { lk.accent = c }
     if let c = a.fg.flatMap({ UIColor(pdfHex: $0) }) { lk.fg = c }
@@ -556,6 +578,13 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     // (a page laid out at another width: its picture stays, stretched, until the one at this width comes)
     for (n, v) in views { v.frame = frames[n - first]; v.pictureLevel = -2; for k in Array(v.levels.keys) { v.drop(level: k) } }
     scroll.zoomScale = z
+    layInk()
+  }
+
+  /// The ink told where the pages lie and what they are.
+  func layInk() {
+    guard let w = ink, !bookHash.isEmpty, !frames.isEmpty else { return }
+    w.lay(key: bookHash, pages: frames.enumerated().map { (n: $0.offset + first, frame: $0.element, pts: sizes[$0.offset + first - 1]) }, dark: dark)
   }
 
   // MARK: where
@@ -640,9 +669,10 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     content.frame.origin.x = dx
     refresh()
     say(settled: false)
+    ink?.pin()
   }
-  func scrollViewDidScroll(_ s: UIScrollView) { refresh(); say(settled: false) }
-  func scrollViewDidEndZooming(_ s: UIScrollView, with view: UIView?, atScale scale: CGFloat) { refresh(); say(settled: true); asked = false }
+  func scrollViewDidScroll(_ s: UIScrollView) { refresh(); say(settled: false); ink?.pin(); ink?.tend() }
+  func scrollViewDidEndZooming(_ s: UIScrollView, with view: UIView?, atScale scale: CGFloat) { refresh(); say(settled: true); asked = false; ink?.pin(); ink?.zoomEnded() }
   func scrollViewWillBeginZooming(_ s: UIScrollView, with view: UIView?) { if s.pinchGestureRecognizer?.state == .began || s.pinchGestureRecognizer?.state == .changed { asked = false } }
   func scrollViewDidEndDecelerating(_ s: UIScrollView) { refresh(); say(settled: true) }
   func scrollViewDidEndDragging(_ s: UIScrollView, willDecelerate d: Bool) { if !d { refresh(); say(settled: true) } }

@@ -38,6 +38,8 @@ final class PdfText: NSObject, UIGestureRecognizerDelegate {
     hold.delegate = self
     surface.scroll.addGestureRecognizer(hold)
     let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+    // (a finger's: the Pencil writes, a dot where it taps)
+    tap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
     tap.delegate = self
     tap.require(toFail: hold)
     surface.scroll.addGestureRecognizer(tap)
@@ -51,6 +53,8 @@ final class PdfText: NSObject, UIGestureRecognizerDelegate {
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { false }
+  /// Where a finger writes, a finger held or tapping on a page is writing: it selects nothing.
+  func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool { !(surface?.plugin?.fingerWrites ?? false) }
 
   // MARK: where
 

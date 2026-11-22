@@ -75,6 +75,28 @@ The live check (ilmi, every ink, the dark theme) still passes, at most 26 of 255
 
 ---
 
+## 2026-11-22 — the native page view, phase 4: ink on the book's pages, the notebook's engine shared
+
+On branch `native-reader-ink`. A `NoteSurface` made over a `PdfSurface` writes on the book's pages: the same
+Pencil, live stroke and smoothing, eraser, lasso, shapes, undo and redo, the same sheets (`p.<hash>.<page>`) through
+the same store. Details in `docs/native-reader-plan.md` ("Phase 4 as built"). Also: the book surface's specs are
+numbered so an older one arriving late is not taken (it had drawn a cleared highlight again, now and then).
+
+**Verified (Air 11 simulator, `pdfink` with `"part": "surfaceink"`, a finger standing in for the Pencil, hard
+checks):** the cross the web reader kept on p. 23 (2 strokes) is on the surface's sheet of the same name; a stroke
+at fit and one at 200% land where they were drawn (the lasso's box round each within 4.9 and 6.1 pt of the drag,
+the stroke's width); at 200% the sheet is drawn a pixel of its picture to a pixel of the screen; the eraser takes
+the stroke, undo puts it back, redo takes it again; kept, and with the setting off the web reader's canvas holds the
+same 3 strokes. The zoom hard check (`part: surface`) passes with the ink in place: no frame two levels coarse; the
+longest late frame 115 ms (132 before), once pages with no ink stopped having a clear picture each (they had made
+it 263 and 308 ms). `surfacemarks` (twice), `surfacetext` pass; `written` (the notebook's surface, 614 checks)
+passes with its engine changed. Its wheel step failed the same way on main on this simulator (the system's
+popover stayed under the rig's press) and passed on the next run here; the check now says so and closes it by
+its swatch if it stays. tsc, npm test and cargo test pass (the tree's timed test failed once under the simulator's
+load and passed alone). Not seen on a device; dark pages' ink not captured.
+
+---
+
 ## 2026-11-22 — the native page view, phase 3: highlights, boxes, tags, the ruler, the read point, bookmarks and portals drawn by the surface
 
 On branch `native-reader-marks`. First, the notebook surface's `remove()` lets its canvas go through `CanvasKeep`

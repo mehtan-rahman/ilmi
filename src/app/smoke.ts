@@ -17041,7 +17041,13 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     await sleep(900);
     // (a touch a little longer than the rig's tap: the system's popover is not put away by so short a one)
     ask('press', 0.5, 0.92, 0.12);
-    await poll(async () => (await state()).wheel === false && wheel.getAttribute('aria-expanded') === 'false', 'a tap beside it closes it', 25000);
+    // (on the iOS 27.2 simulator the system's popover stays under the rig's press, on main as here: said, and closed by its swatch)
+    const closed = async () => (await state()).wheel === false && wheel.getAttribute('aria-expanded') === 'false';
+    if (!(await poll(closed, 'a tap beside it closes it', 12000).then(() => true, () => false))) {
+      log('wheel: the system\'s popover stayed under the rig\'s press; closed by its swatch');
+      tap(wheel);
+      await poll(closed, 'its swatch closes it', 25000);
+    }
     must(kept().custom.pen === WHEEL && kept().swatch.pen === tools.CUSTOM && (await state()).tool?.color === WHEEL, 'with none chosen the colour is as it was');
     await poll(async () => (await fs.pageInk(ID, 2)).length === 3, 'the second sheet\'s three strokes are kept', 20000);
     await shot('written-colours');
@@ -21292,6 +21298,100 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       const ms = [...lagsAll].sort((x, y2) => x - y2);
       if (ms.length) log(`live: from a touch to its drawing: ${ms[Math.floor(ms.length / 2)]!.toFixed(1)} ms in the middle, ${ms[Math.floor(ms.length * 0.95)]!.toFixed(1)} ms at the 95th of ${ms.length}, ${ms[ms.length - 1]!.toFixed(1)} ms at most`);
       await invoke('dev_ink_pen', { on: false });
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
+    if (part.split(',').includes('surfaceink')) {
+      // ── ink on the native surface (`Surface.swift` as a guest of `PdfSurface.swift`; `"part": "surfaceink"`, taps
+      // and drags under the rig, a finger standing in for the Pencil): the cross the web reader's canvas just kept on
+      // p. 23 is on the surface's sheet of the same name (the store's, unchanged); a stroke written at fit and one at
+      // 200% land where they were drawn (the lasso's box round each is where the finger went) and are drawn sharp at
+      // that zoom; the eraser takes one, undo puts it back, redo takes it again; all of it kept, and the web reader
+      // (the setting off) shows the same strokes. Each a hard check. `surfaceink:` lines ──
+      const mid = (el: Element): [number, number] => { const r = el.getBoundingClientRect(); return [fx(r.left + r.width / 2), fy(r.top + r.height / 2)]; };
+      const c0 = (await there())!.strokes;
+      try { localStorage.setItem('ilmi.pdf.native', '1'); } catch { /* none */ }
+      window.dispatchEvent(new Event('ilmi-pdf-native'));
+      const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-surface', x) ? x : null; }, 'the chapter as a native surface', 60000);
+      const sid = q<HTMLElement>('.pdf-surface', b)!.dataset.surface!;
+      const S = (a: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...a } });
+      await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'its pages shown', 30000);
+      await S({ op: 'go', page: PAGEINK_PAGE, y: 0 });
+      const got = await poll(async () => { const c = await there(); return c && c.strokes === c0 && !c.dirty ? c : null; }, `the surface's sheet ${sheet} holds what the store does (${c0} strokes)`, 30000);
+      log(`surfaceink: ${sheet} on the surface: ${got.strokes} strokes, the web reader's kept ${c0}`);
+      await sleep(800);
+      await shot('surfaceink-loaded');
+      const bar = await poll(() => q<HTMLElement>('.meta > .inkbar', b) ?? q<HTMLElement>('.inkbar', b), 'the row of tools', 8000);
+      const tool = (name: string) => ask('tap', ...mid(q(`[data-ink-tool="${name}"]`, bar)!));
+      const toolIs = (name: string) => poll(async () => (await state()).tool?.kind === name, `the ${name} held`, 10000);
+      const on = async (x: number, y: number) => { const g = await S({ op: 'where', page: PAGEINK_PAGE, x, y }); return [fx(Number(g.gx)), fy(Number(g.gy))] as [number, number]; };
+      const glass = async (x: number, y: number) => { const g = await S({ op: 'where', page: PAGEINK_PAGE, x, y }); return { x: Number(g.gx), y: Number(g.gy) }; };
+      await invoke('dev_ink_pen', { on: true });
+      // a stroke at fit
+      const drawAt = async (x1: number, y1: number, x2: number, y2: number, what: string) => {
+        const want = (await there())!.strokes + 1;
+        ask('drag', ...(await on(x1, y1)), ...(await on(x2, y2)), 0.05);
+        await poll(async () => (await there())?.strokes === want, `${what}: stroke ${want} on ${sheet}`, 25000);
+      };
+      /** The lasso round a part of the page: where what it holds lies on the glass, against where it was drawn. */
+      const lassoed = async (x1: number, y1: number, x2: number, y2: number, drawn: { x1: number; y1: number; x2: number; y2: number }, what: string) => {
+        tool('select');
+        await toolIs('select');
+        const pts = [[x1, y1], [x2, y1], [x2, y2], [x1, y2], [x1, y1]] as const;
+        const at: number[] = [];
+        for (const [x, y] of pts) at.push(...(await on(x, y)));
+        ask('loop', ...at);
+        const held = await poll(async () => { const s = await state(); return s.held && (s.selected ?? 0) >= 1 ? s.held : null; }, `${what}: the lasso holds it`, 20000);
+        const a = await glass(drawn.x1, drawn.y1), z = await glass(drawn.x2, drawn.y2);
+        const off = Math.max(Math.abs(held.x - Math.min(a.x, z.x)), Math.abs(held.x + held.w - Math.max(a.x, z.x)), Math.abs(held.y - Math.min(a.y, z.y)), Math.abs(held.y + held.h - Math.max(a.y, z.y)));
+        log(`surfaceink: ${what}: the lasso holds ${Math.round(held.x)},${Math.round(held.y)} ${Math.round(held.w)}x${Math.round(held.h)}; drawn from ${Math.round(a.x)},${Math.round(a.y)} to ${Math.round(z.x)},${Math.round(z.y)}; off by ${off.toFixed(1)} pt at most (the stroke's width round it)`);
+        must(off < 14, `${what}: it lies where the finger drew it (${off.toFixed(1)} pt)`);
+        return held;
+      };
+      tool('pen');
+      await toolIs('pen');
+      await drawAt(0.2, 0.3, 0.7, 0.33, 'the pen at fit');
+      await sleep(600);
+      await shot('surfaceink-fit');
+      await lassoed(0.15, 0.27, 0.75, 0.37, { x1: 0.2, y1: 0.3, x2: 0.7, y2: 0.33 }, 'at fit');
+      await shot('surfaceink-lasso');
+      // at 200%
+      tool('pen');
+      await toolIs('pen');
+      await poll(async () => ((await state()).selected ?? 0) === 0, 'the lasso lets go', 10000);
+      await S({ op: 'zoom', zoom: 2, animated: false });
+      await S({ op: 'go', page: PAGEINK_PAGE, y: 0.38, x: 0.4 });
+      await sleep(1500);
+      await drawAt(0.25, 0.45, 0.45, 0.47, 'the pen at 200%');
+      const sharp = await poll(async () => { const c = await there(); const d = c?.drawn?.[0] ?? 0; return d >= 0.95 ? c : null; }, 'drawn at the zoom: a pixel of its picture to a pixel of the screen', 15000);
+      log(`surfaceink: at 200% the sheet is drawn ${sharp.drawn?.[0]} pixels to the screen's, ${sharp.strokes} strokes`);
+      await shot('surfaceink-200');
+      await lassoed(0.22, 0.43, 0.48, 0.49, { x1: 0.25, y1: 0.45, x2: 0.45, y2: 0.47 }, 'at 200%');
+      // the eraser over it; undo, redo
+      tool('eraser');
+      await toolIs('eraser');
+      await poll(async () => ((await state()).selected ?? 0) === 0, 'the lasso lets go', 10000);
+      const n1 = (await there())!.strokes;
+      ask('drag', ...(await on(0.25, 0.46)), ...(await on(0.45, 0.46)), 0.4);
+      await poll(async () => (await there())?.strokes === n1 - 1, 'the eraser takes the stroke at 200%', 20000);
+      const undo = q<HTMLButtonElement>('[data-ink-do="undo"]', bar)!, redo = q<HTMLButtonElement>('[data-ink-do="redo"]', bar)!;
+      ask('tap', ...mid(undo));
+      await poll(async () => (await there())?.strokes === n1, 'undo puts it back', 15000);
+      ask('tap', ...mid(redo));
+      await poll(async () => (await there())?.strokes === n1 - 1, 'redo takes it again', 15000);
+      await invoke('dev_ink_pen', { on: false });
+      const kept = await poll(async () => { const c = await there(); return c && !c.dirty ? c : null; }, 'all of it kept', 25000);
+      log(`surfaceink: kept ${kept.strokes} strokes (${c0} the web reader's, one at fit; the one at 200% erased)`);
+      must(kept.strokes === c0 + 1, `the sheet holds the cross and the stroke at fit (${kept.strokes})`);
+      await S({ op: 'zoom', zoom: 1, animated: false });
+      // the web reader shows what the surface wrote
+      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      window.dispatchEvent(new Event('ilmi-pdf-native'));
+      await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && !q('.pdf-surface', x) ? x : null; }, 'the web reader again', 30000);
+      await poll(async () => { const c = await there(); return c && c.strokes === kept.strokes ? c : null; }, `the web reader's canvas holds the same ${kept.strokes} strokes`, 40000);
+      log(`surfaceink: the web reader holds ${kept.strokes} on ${sheet}`);
       phase('done');
       finished = true;
       log('done');

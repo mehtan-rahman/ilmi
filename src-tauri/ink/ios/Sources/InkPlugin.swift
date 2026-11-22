@@ -3528,6 +3528,11 @@ class InkPlugin: Plugin, PenEars {
 
   // ── a notebook's surface (87; `Surface.swift`) ──
 
+  /// A book's surface's ink (`PdfSurface`, a guest of its pages): one of the surfaces, so what is asked of a sheet,
+  /// kept, undone, lassoed or turned is asked of it as of a notebook's.
+  func adopt(_ f: NoteSurface) { surfaces[f.id] = f }
+  func disown(_ f: NoteSurface) { if surfaces[f.id] === f { surfaces[f.id] = nil } }
+
   /// A sheet of some notebook's surface, by the name its strokes are kept under.
   func leaf(_ id: String) -> (NoteSurface, Leaf)? {
     for f in surfaces.values { if let l = f.leaf(named: id) { return (f, l) } }

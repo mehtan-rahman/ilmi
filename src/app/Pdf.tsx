@@ -467,11 +467,15 @@ export function nativePdfOn(): boolean {
 }
 /** A book's native surface told what it is and holds (`ink_pdf`), only when that is not what it was last told. */
 const pdfSaid = new Map<string, string>();
+let pdfSeq = 0;
 function sendPdfSurface(spec: Record<string, unknown> & { id: string }): void {
   const text = JSON.stringify(spec);
   if (pdfSaid.get(spec.id) === text) return;
   pdfSaid.set(spec.id, text);
-  void import('@tauri-apps/api/core').then((m) => m.invoke('ink_pdf', { spec })).catch((e: unknown) => { pdfSaid.delete(spec.id); console.error(e); });
+  // (numbered: two told at once may come to the surface the other way round, the commands run side by side; it
+  // takes none older than the last it took)
+  const told = { ...spec, seq: ++pdfSeq };
+  void import('@tauri-apps/api/core').then((m) => m.invoke('ink_pdf', { spec: told })).catch((e: unknown) => { pdfSaid.delete(spec.id); console.error(e); });
 }
 function dropPdfSurface(id: string): void {
   if (!pdfSaid.has(id)) return;
@@ -848,7 +852,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   useEffect(() => {
     const fs = inkStore();
     const sc = wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body');
-    if (!hash || !fs || !sc || !hasCanvas() || status !== 'ok' || native) return;
+    // (a notebook's surface, or a book's native one, writes on its pages itself)
+    if (!hash || !fs || !sc || !hasCanvas() || status !== 'ok' || native || pdfSurf) return;
     const hostId = `pages:${id}`;
     const sheetOf = (n: number) => `p.${hash}.${n}`;
     const pageOfSheet = (sheet: string): number | null => (sheet.startsWith(`p.${hash}.`) ? Number(sheet.slice(hash.length + 3)) : null);
@@ -938,12 +943,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     const onScroll = () => sceneSoon();
     sc.addEventListener('scroll', onScroll, { passive: true });
     return () => { sc.removeEventListener('scroll', onScroll); offLive(); off(); };
-  }, [hash, status, id, sheetAt, native]);
+  }, [hash, status, id, sheetAt, native, pdfSurf]);
   // ── a notebook's surface (87): what it says, and what it is given of the store ──
   const surfaceHears = useRef<(e: import('./ink.js').SurfaceEvent) => void>(() => {});
   useEffect(() => {
     const fs = inkStore();
-    if (!native || !hash || !fs) return;
+    // (a book's native surface writes on its pages with the same engine, its sheets the same as the canvases' were)
+    if ((!native && !pdfSurf) || !hash || !fs) return;
     const sheetOf = (n: number) => `p.${hash}.${n}`;
     const pageOfSheet = (sheet: string): number | null => (sheet.startsWith(`p.${hash}.`) ? Number(sheet.slice(hash.length + 3)) : null);
     /** The sheets the surface has asked for, each with the count its strokes were last given at. */
@@ -964,7 +970,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       async kept() { /* the surface shows what it holds */ },
     };
     const off = addSurface(surface);
-    const offEars = onSurface(surfaceId, (e) => {
+    const want = (e: import('./ink.js').SurfaceEvent) => {
       if (e.what === 'want') {
         for (const sheet of e.sheets ?? []) {
           const n = pageOfSheet(sheet);
@@ -976,17 +982,22 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
         return;
       }
       surfaceHears.current(e);
-    });
+    };
+    // (a book's surface has one ear, the page's own: it hands this what it asks for its sheets)
+    if (pdfSurf) { pdfWant.current = want; return () => { off(); pdfWant.current = null; wantedRef.current = null; }; }
+    const offEars = onSurface(surfaceId, want);
     return () => { off(); offEars(); wantedRef.current = null; };
-  }, [native, hash, surfaceId]);
+  }, [native, pdfSurf, hash, surfaceId]);
+  /** What a book's native surface asks for its sheets (`want`), heard by the page's one ear for it. */
+  const pdfWant = useRef<((e: import('./ink.js').SurfaceEvent) => void) | null>(null);
   /** The sheets the surface holds, and how one is given what the store holds. */
   const wantedRef = useRef<{ given: Map<number, number>; fill(n: number): void } | null>(null);
   // strokes come by a merge, or written on another device: a sheet the surface holds is given them
   useEffect(() => {
     const w = wantedRef.current;
-    if (!native || !w) return;
+    if ((!native && !pdfSurf) || !w) return;
     for (const [n, was] of w.given) if ((inked[n] ?? 0) !== was) w.fill(n);
-  }, [native, inked]);
+  }, [native, pdfSurf, inked]);
   // ── a notebook's pages: its sheets, with nothing to load ──
   useEffect(() => {
     if (writtenId === undefined) return;
@@ -3854,6 +3865,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     if (!pdfSurf) return;
     return onSurface(pdfSurfId, (e) => {
       const m = e as unknown as { what: string; page: number; y: number; x?: number; zoom: number; settled: boolean; asked?: boolean; foot: number; footY: number };
+      if (m.what === 'want') { pdfWant.current?.(e); return; }
       if (m.what !== 'pdfplace') { pdfHear.current(e as unknown as Record<string, unknown>); return; }
       setCurrent(m.page);
       place.current = { page: m.page, y: m.y };
@@ -4302,7 +4314,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
           {written && status === 'ok' && !pageless && !native && (
             <button type="button" className="add-page" data-tool="add-page" style={{ width: pageW }} onClick={morePage}>add page</button>
           )}
-          {canWrite && (native ? <InkMenu host={surfaceId} scroller={surfaceEl} /> : <InkMenu host={`pages:${id}`} scroller={scrollerEl} />)}
+          {canWrite && (native ? <InkMenu host={surfaceId} scroller={surfaceEl} /> : pdfSurf ? <InkMenu host={pdfSurfId} scroller={pdfSurfEl} /> : <InkMenu host={`pages:${id}`} scroller={scrollerEl} />)}
           {setup && written && bookEl && <PageSetup id={id} into={bookEl} written={written} onClose={() => setSetup(false)} />}
           {grid && bookEl && status === 'ok' && (
             <PageGrid id={id} into={bookEl} written={written} hash={hash} base={base} sizes={sizes} current={current} inked={inked} pdf={pdf}

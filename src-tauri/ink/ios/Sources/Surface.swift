@@ -37,6 +37,15 @@
 // view, which takes no touch there. The page says where the surface lies and what it holds (`surface`), and asks it
 // to go to a page or a zoom (`surfaceDo`); the surface says the page in view and the zoom, a box drawn by a held
 // finger, a passage's tag pressed, and everything the canvases over a PDF's pages say of the Pencil.
+//
+// A book's pages (the native page view, phase 4). The same engine writes on a PDF's pages: a `NoteSurface` made
+// `over` a `PdfSurface` is its guest. It has no scroll view, layout or paper of its own; it lies in the book's: its
+// sheets are clear views over the book's pages, laid where the book lays them (`lay`), each in its page's own points
+// (`p.<hash>.<page>`, the sheets the web reader's canvases kept: storage and sync are unchanged), drawn bare and laid
+// on the page as ink is (multiplied, or screened on a dark page). The Pencil, the live stroke and its smoothing, the
+// eraser, the lasso, shapes, undo and what the page asks of a sheet are this file's, unchanged. What differs is
+// where: the book's zoom is its scroll view's own and stays, so a guest's sheets are drawn for it (`guestRefresh`),
+// the canvas is told it, and a sheet's points to the screen's are its own (`sOf`), the book's pages being of any size.
 
 import PencilKit
 import UIKit
@@ -202,6 +211,9 @@ final class Pane: UIScrollView {
 final class Leaf: UIView {
   let sheet: Int
   var id: String
+  /// (a book's page's sheet) The view's points to a point of the page, and the page's size in its points.
+  var sc: CGFloat = 1
+  var pts = CGSize(width: 612, height: 792)
   var index = 0
   var model: [PKStroke] = []
   var geoms: [Geom] = []
@@ -288,9 +300,11 @@ private enum Doing {
 final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, UIGestureRecognizerDelegate, PenEars {
   let id: String
   unowned let plugin: InkPlugin
-  let view = SurfaceView()
-  let scroll = Pane()
-  let content = UIView()
+  let view: UIView
+  let scroll: UIScrollView
+  let content: UIView
+  /// Written on a book's pages: the book's surface lays them out and scrolls them (`over`).
+  let guest: Bool
   /// What is drawn over the sheets and scrolls with them: the passages' boxes and tags, the lasso's, the eraser's reach.
   let marks = UIView()
   let canvas = InkCanvas()
@@ -395,10 +409,15 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   init(id: String, plugin: InkPlugin) {
     self.id = id
     self.plugin = plugin
+    let v = SurfaceView(), p = Pane()
+    view = v
+    scroll = p
+    content = UIView()
+    guest = false
     super.init()
-    view.surface = self
+    v.surface = self
     view.clipsToBounds = true
-    scroll.surface = self
+    p.surface = self
     scroll.delegate = self
     scroll.frame = view.bounds
     scroll.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -415,9 +434,29 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     scroll.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
     view.addSubview(scroll)
     scroll.addSubview(content)
+    setUp()
+  }
+
+  /// A book's pages written on: in the book's surface's own view, scroll view and content.
+  init(id: String, plugin: InkPlugin, over book: UIView, scroll sv: UIScrollView, content c: UIView) {
+    self.id = id
+    self.plugin = plugin
+    view = book
+    scroll = sv
+    content = c
+    guest = true
+    super.init()
+    made = true
+    // (the Pencil writes; fingers scroll and zoom)
+    scroll.panGestureRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    scroll.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    setUp()
+  }
+
+  private func setUp() {
     marks.isUserInteractionEnabled = false
     content.addSubview(marks)
-    marks.layer.zPosition = 5
+    marks.layer.zPosition = guest ? 30 : 5
     canvas.backgroundColor = .clear
     canvas.isOpaque = false
     canvas.isUserInteractionEnabled = false
@@ -467,7 +506,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     two.numberOfTouchesRequired = 2
     three = UITapGestureRecognizer(target: self, action: #selector(fingers(_:)))
     three.numberOfTouchesRequired = 3
-    for g in [hold, tap, twice, two, three] as [UIGestureRecognizer] {
+    // (a book's own surface has its taps and its held finger: the text's, `PdfText`)
+    for g in (guest ? [two, three] : [hold, tap, twice, two, three]) as [UIGestureRecognizer] {
       g.allowedTouchTypes = direct
       g.cancelsTouchesInView = false
       g.delaysTouchesBegan = false
@@ -597,6 +637,15 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     painters.cancelAllOperations()
     for l in Array(leaves.values) { retire(l) }
     leaves = [:]
+    if guest {
+      // (the book's view is the book's: what is ours in it goes)
+      if let w = watch { scroll.removeGestureRecognizer(w) }
+      for g in [two, three] as [UIGestureRecognizer] { scroll.removeGestureRecognizer(g) }
+      scroll.removeGestureRecognizer(canvas.drawingGestureRecognizer)
+      marks.removeFromSuperview()
+      CanvasKeep.letGo(canvas)
+      return
+    }
     // (the canvas on its own first, kept a turn: let go with the view it lies in, in one go, it crashed the app: `CanvasKeep`)
     CanvasKeep.letGo(canvas)
     view.removeFromSuperview()
@@ -617,7 +666,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       let r = parent.convert(web.scrollView.convert(CGRect(x: h.x, y: h.y, width: h.w, height: h.h), to: parent), to: view).intersection(view.bounds)
       if !r.isNull, r.width > 0, r.height > 0 { list.append((r, CGFloat(h.r ?? 0))) }
     }
-    view.holes = list
+    (view as? SurfaceView)?.holes = list
     if list.isEmpty {
       view.layer.mask = nil
       return
@@ -788,7 +837,30 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   }
 
   /// A part of a sheet, in its points, as it lies in the sheet's view.
-  private func onLeaf(_ r: CGRect) -> CGRect { CGRect(x: r.minX * s, y: r.minY * s, width: r.width * s, height: r.height * s) }
+  private func onLeaf(_ r: CGRect, _ l: Leaf? = nil) -> CGRect {
+    let k = l.map { sOf($0) } ?? s
+    return CGRect(x: r.minX * k, y: r.minY * k, width: r.width * k, height: r.height * k)
+  }
+  /// A sheet's view's points to a point of it: the notebook's one for all, a book's page's its own.
+  private func sOf(_ l: Leaf) -> CGFloat { guest ? l.sc : s }
+  /// The screen's points to a point of a sheet as it is shown now (a book's zoom is its scroll view's own).
+  private func ks(_ l: Leaf) -> CGFloat { sOf(l) * (guest ? scroll.zoomScale : 1) }
+  /// A sheet's size in its points.
+  private func sizeOf(_ l: Leaf) -> CGSize { guest ? l.pts : CGSize(width: CGFloat(paper.w), height: CGFloat(paper.h)) }
+  /// Not in a zoom: the Pencil writes. (A notebook's zoom ends at one; a book's stays what it is.)
+  private var steady: Bool { guest ? !(scroll.isZooming || scroll.isZoomBouncing) : abs(scroll.zoomScale - 1) < 0.0005 }
+  /// The screen's points to a point of what the canvas holds.
+  private var canvasK: CGFloat = 1
+  /// The canvas's points (what PencilKit hands over) to a sheet's, as the canvas stands now.
+  private func canvasTo(_ l: Leaf) -> CGAffineTransform {
+    let o = scroll.contentOffset, k = canvasK, sl = sOf(l)
+    func at(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+      let v = scroll.convert(CGPoint(x: x * k + o.x, y: y * k + o.y), to: l)
+      return CGPoint(x: v.x / sl, y: v.y / sl)
+    }
+    let c0 = at(0, 0), c1 = at(1, 0), c2 = at(0, 1)
+    return CGAffineTransform(a: c1.x - c0.x, b: c1.y - c0.y, c: c2.x - c0.x, d: c2.y - c0.y, tx: c0.x, ty: c0.y)
+  }
 
   /// Narrower than the view, the pages stand in its middle.
   private func centre() {
@@ -812,7 +884,15 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     canvas.bounds = CGRect(origin: .zero, size: size)
     canvas.transform = CGAffineTransform(scaleX: v.width / size.width, y: v.height / size.height)
     // (PencilKit's own drawing draws in a space `LiveInk.scale` times as large: `LiveInk.pencilKit`)
-    let zz = s * k / LiveInk.drawn(scaled: true)
+    // (a book's: the screen's points to a point of the page in the middle of the view, at its zoom)
+    if guest {
+      let mid = scroll.convert(CGPoint(x: scroll.bounds.midX, y: scroll.bounds.midY), to: content)
+      let near = leaves.values.min { abs($0.frame.midY - mid.y) < abs($1.frame.midY - mid.y) }
+      canvasK = (near?.sc ?? 1) * scroll.zoomScale
+    } else {
+      canvasK = s
+    }
+    let zz = canvasK * k / LiveInk.drawn(scaled: true)
     if abs(canvas.zoomScale - zz) > 0.00001 {
       canvas.maximumZoomScale = max(canvas.maximumZoomScale, zz)
       canvas.minimumZoomScale = min(canvas.minimumZoomScale, zz)
@@ -830,6 +910,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     let b = scroll.bounds
     let c = CGPoint(x: b.midX, y: b.midY)
     if canvas.center != c { canvas.center = c }
+    if guest { return }
     if laidFor != b.size, made, !rebasing {
       // the view has another size (the iPad turned, the tree opened): laid out again, the same place at the top
       let keep = place()
@@ -1034,13 +1115,14 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   // ── the pictures ──
 
   private func visible() -> CGRect {
+    if guest { return scroll.convert(scroll.bounds, to: content) }
     let r = max(scroll.zoomScale, 0.01)
     return CGRect(x: scroll.contentOffset.x / r, y: scroll.contentOffset.y / r, width: scroll.bounds.width / r, height: scroll.bounds.height / r)
   }
 
   /// Every sheet near the view has its strokes and its pictures; one far from it gives its pictures back.
-  private func tend() {
-    guard made, pageH > 0 else { return }
+  func tend() {
+    guard made, pageH > 0 || guest else { return }
     let vis = visible()
     let near = vis.insetBy(dx: 0, dy: -vis.height * 1.2)
     let far = vis.insetBy(dx: 0, dy: -vis.height * 3)
@@ -1049,7 +1131,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       let f = l.frame
       if f.maxY >= near.minY, f.minY <= near.maxY {
         if !l.loaded, !l.asked { l.asked = true; want.append(l.id) }
-        refresh(l, vis: vis)
+        if guest { guestRefresh(l, vis: vis) } else { refresh(l, vis: vis) }
       } else {
         // (a pageless notebook's stroke is kept on the sheet its top lies on and may run down into the view from a
         // sheet well above it: those sheets are given their strokes, no pictures, so what runs on from them is drawn)
@@ -1088,7 +1170,156 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
         d -= 1
       }
     }
+    if guest {
+      // (a book's page: its ink alone, laid on the page as ink is)
+      var pa = paper
+      pa.kind = "blank"; pa.run = false; pa.w = Double(l.pts.width); pa.h = Double(l.pts.height)
+      var j = PaintJob(paper: pa, look: look, index: l.index, strokes: strokes, above: [], region: region, pw: pw, ph: ph)
+      j.bare = true
+      return j
+    }
     return PaintJob(paper: paper, look: look, index: l.index, strokes: strokes, above: above, region: region, pw: pw, ph: ph)
+  }
+
+  /// A book's page's pictures of its ink: the whole of it at the fitted size, and zoomed in, the part in view at the
+  /// zoom (the book's zoom is its scroll view's own: these are stretched while it moves, and made again at rest).
+  private func guestRefresh(_ l: Leaf, vis: CGRect) {
+    // (nothing written on the page: no picture at all, not a clear one laid over it; most pages of a book)
+    if l.geoms.isEmpty || l.lifted.count == l.geoms.count {
+      if l.rest.contents != nil || l.fine.contents != nil || !l.patches.isEmpty {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        l.rest.contents = nil
+        l.fine.contents = nil
+        l.fine.isHidden = true
+        for q in l.patches { q.layer.removeFromSuperlayer() }
+        l.patches = []
+        CATransaction.commit()
+      }
+      l.restKey = nil; l.fineKey = nil; l.restAsked = nil; l.fineAsked = nil
+      return
+    }
+    let zooming = !steady
+    let fw = (l.frame.width * screen).rounded(), fh = (l.frame.height * screen).rounded()
+    let f = fw * fh > NoteSurface.cap ? (NoteSurface.cap / (fw * fh)).squareRoot() : 1
+    let pw = max(1, Int((fw * f).rounded())), ph = max(1, Int((fh * f).rounded()))
+    let key = [l.ver, pw, ph]
+    if l.restKey != key, l.restAsked != key, !(zooming && l.rest.contents != nil && l.restKey?[0] == l.ver) {
+      l.restAsked = key
+      paint(job(l, region: CGRect(origin: .zero, size: l.pts), pw: pw, ph: ph)) { [weak self, weak l] img in
+        guard let self = self, let l = l, l.restAsked == key, let img = img else { return }
+        l.restAsked = nil
+        l.restKey = key
+        l.rest.contents = img
+        self.settle(l)
+      }
+    }
+    // the whole picture is as sharp as the screen shows it: nothing more is drawn
+    let z = scroll.zoomScale
+    if z * (1 / f) < 1.05 {
+      if !l.fine.isHidden { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil; settle(l) }
+      return
+    }
+    if zooming { return }
+    let part = vis.intersection(l.frame)
+    if part.isNull || part.width <= 0 || part.height <= 0 {
+      if !l.fine.isHidden, l.fineKey?[0] != l.ver { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil; settle(l) }
+      return
+    }
+    let zk = Int((z * 100000).rounded())
+    if l.fineKey?[0] == l.ver, l.fineKey?[5] == zk, !l.fine.isHidden, onLeaf(l.fineRegion, l).offsetBy(dx: l.frame.minX, dy: l.frame.minY).insetBy(dx: -0.5, dy: -0.5).contains(part) { return }
+    // (the part in view and a little round it, in the sheet's view's points, drawn at the screen's pixels at this zoom)
+    let grown = part.insetBy(dx: -vis.width * 0.2, dy: -vis.height * 0.2).intersection(l.frame).offsetBy(dx: -l.frame.minX, dy: -l.frame.minY)
+    let px = screen * z
+    let x0 = (grown.minX * px).rounded(.down), y0 = (grown.minY * px).rounded(.down)
+    let x1 = (grown.maxX * px).rounded(.up), y1 = (grown.maxY * px).rounded(.up)
+    let fkey = [l.ver, Int(x0), Int(y0), Int(x1 - x0), Int(y1 - y0), zk]
+    if l.fineAsked == fkey || l.fineKey == fkey { return }
+    l.fineAsked = fkey
+    let sl = sOf(l)
+    let region = CGRect(x: x0 / px / sl, y: y0 / px / sl, width: (x1 - x0) / px / sl, height: (y1 - y0) / px / sl)
+    // (nothing written in view: the whole picture, coarse, has nothing there to be coarse)
+    if !l.geoms.contains(where: { $0.box.intersects(region) }) {
+      if !l.fine.isHidden { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil; settle(l) }
+      return
+    }
+    paint(job(l, region: region, pw: Int(x1 - x0), ph: Int(y1 - y0))) { [weak self, weak l] img in
+      guard let self = self, let l = l, l.fineAsked == fkey, let img = img else { return }
+      l.fineAsked = nil
+      l.fineKey = fkey
+      l.fineRegion = region
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      l.fine.contents = img
+      l.fine.frame = self.onLeaf(region, l)
+      l.fine.isHidden = false
+      CATransaction.commit()
+      self.settle(l)
+    }
+  }
+
+  /// A book's pages, where the book lays them (in its content, at its fitted size) and their size in their points:
+  /// each a sheet, `p.<key>.<page>`. `dark`: the ink lightens what is under it.
+  func lay(key k: String, pages: [(n: Int, frame: CGRect, pts: CGSize)], dark: Bool) {
+    guard guest else { return }
+    if k != key {
+      key = k
+      for l in leaves.values { l.id = "p.\(k).\(l.sheet)" }
+    }
+    if dark != look.dark {
+      look.dark = dark
+      for l in leaves.values { l.cache = [:]; regeom(l); l.ver += 1; l.restKey = nil; l.fineKey = nil; l.restAsked = nil; l.fineAsked = nil }
+    }
+    let blend = dark ? "screenBlendMode" : "multiplyBlendMode"
+    canvas.overrideUserInterfaceStyle = dark ? .dark : .light
+    canvas.layer.compositingFilter = blend
+    let list = pages.map { $0.n }
+    var next: [Int: Leaf] = [:]
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for (i, p) in pages.enumerated() {
+      let l = leaves[p.n] ?? {
+        let fresh = Leaf(sheet: p.n, id: "p.\(key).\(p.n)")
+        fresh.backgroundColor = .clear
+        fresh.isOpaque = false
+        fresh.rest.isOpaque = false
+        fresh.fine.isOpaque = false
+        fresh.layer.zPosition = 20
+        content.insertSubview(fresh, belowSubview: marks)
+        return fresh
+      }()
+      l.index = i
+      if l.frame != p.frame || l.pts != p.pts {
+        let resized = l.frame.size != p.frame.size
+        l.frame = p.frame
+        l.pts = p.pts
+        l.sc = p.frame.width / max(1, p.pts.width)
+        l.rest.frame = l.bounds
+        if resized {
+          // (laid out at another size: its pictures are made again; the one there stays, stretched, until then)
+          l.ver += 1
+          if !l.fine.isHidden { l.fine.frame = onLeaf(l.fineRegion, l) }
+          for q in l.patches { q.layer.frame = onLeaf(q.region, l) }
+        }
+      }
+      l.layer.compositingFilter = blend
+      next[p.n] = l
+    }
+    for (n, l) in leaves where next[n] == nil { retire(l) }
+    leaves = next
+    order = list
+    marks.frame = content.bounds
+    CATransaction.commit()
+    placeCanvas()
+    tend()
+  }
+
+  /// A book's zoom has ended: the canvas told it, and the pictures made at it.
+  func zoomEnded() {
+    guard guest else { return }
+    placeCanvas()
+    tend()
+    if picked != nil { ring(); tellPicked() }
   }
 
   /// A sheet's pictures asked for, where it has none as it is now: the whole of it, and zoomed past what that holds, the part in view.
@@ -1190,9 +1421,10 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   /// A part of a sheet (in its points) drawn again now, over its pictures: what was just written, erased or moved is on the glass before the pictures are made again.
   private func patch(_ l: Leaf, _ dirty: CGRect) {
-    let whole = CGRect(x: 0, y: 0, width: CGFloat(paper.w), height: CGFloat(paper.h))
+    let whole = CGRect(origin: .zero, size: sizeOf(l))
     let d = dirty.insetBy(dx: -2, dy: -2).intersection(whole)
     if d.isNull || d.width <= 0 || d.height <= 0 { return }
+    let s = ks(l)
     let x0 = (d.minX * s * screen).rounded(.down), y0 = (d.minY * s * screen).rounded(.down)
     let x1 = (d.maxX * s * screen).rounded(.up), y1 = (d.maxY * s * screen).rounded(.up)
     // (a large part is drawn at once with fewer pixels, four million at most, and sharp a moment later with the
@@ -1207,12 +1439,12 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     guard let img = Paint.make(job(l, region: region, pw: max(1, Int(((x1 - x0) * fewer).rounded())), ph: max(1, Int(((y1 - y0) * fewer).rounded())))) else { return }
     let layer = CALayer()
     layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
-    layer.isOpaque = true
+    layer.isOpaque = !guest
     layer.contentsGravity = .resize
     layer.zPosition = 2
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    layer.frame = onLeaf(region)
+    layer.frame = onLeaf(region, l)
     layer.contents = img
     l.layer.addSublayer(layer)
     CATransaction.commit()
@@ -1407,9 +1639,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   /// A dev run's: a stroke of a sheet (its points) given to the canvas as if PencilKit had just taken it from the
   /// Pencil there: it comes to the sheet the way a written one does (`canvasViewDrawingDidChange`), pressure and all.
   func hand(_ l: Leaf, _ k: PKStroke) {
-    let o = scroll.contentOffset
     var m = k
-    m.transform = k.transform.concatenating(CGAffineTransform(translationX: (l.frame.minX - o.x) / s, y: (l.frame.minY - o.y) / s))
+    m.transform = k.transform.concatenating(canvasTo(l).inverted())
     lastActive = l
     canvas.drawing = PKDrawing(strokes: canvas.drawing.strokes + [m])
   }
@@ -1439,6 +1670,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   // ── a touch is coming ──
 
   private func leaf(at p: CGPoint) -> Leaf? {
+    if guest { return leaves.values.first { !$0.isHidden && $0.frame.contains(p) } }
     let step = pageH + gap
     guard step > 0, !order.isEmpty, p.x >= left, p.x <= left + pageW else { return nil }
     let i = Int(((p.y - top) / step).rounded(.down))
@@ -1459,7 +1691,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     let g = canvas.drawingGestureRecognizer
     if g.view !== scroll { scroll.addGestureRecognizer(g) }
     let p = view.convert(point, to: content)
-    let on = !plugin.ours && abs(scroll.zoomScale - 1) < 0.0005 && leaf(at: p) != nil
+    let on = !plugin.ours && steady && leaf(at: p) != nil
     if g.isEnabled != on { g.isEnabled = on }
   }
 
@@ -1467,7 +1699,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   private func point(_ t: UITouch, in l: Leaf) -> CGPoint {
     let p = t.location(in: l)
-    return CGPoint(x: p.x / s, y: p.y / s)
+    return CGPoint(x: p.x / sOf(l), y: p.y / sOf(l))
   }
 
   func penDown(_ t: UITouch) {
@@ -1477,7 +1709,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       live.scaled = true
       live.begin(plugin.ink, width: CGFloat(plugin.tool.width), sense: plugin.tool.sense.map { CGFloat($0) })
     }
-    guard isPen(t), abs(scroll.zoomScale - 1) < 0.0005 else { return }
+    guard isPen(t), steady else { return }
     let q = t.location(in: content)
     guard var l = leaf(at: q) else { return }
     // what the lasso holds may lie over where two of a pageless notebook's sheets meet: pressed there, it is its own sheet's
@@ -1508,11 +1740,11 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       erase(l, from: p, to: p)
       ringEraser(at: q)
     } else if tool.kind == "select" {
-      if let k = picked, k.leaf === l, let b = heldBox(), hypot(p.x - b.maxX, p.y - b.maxY) <= plugin.gripReach / s {
+      if let k = picked, k.leaf === l, let b = heldBox(), hypot(p.x - b.maxX, p.y - b.maxY) <= plugin.gripReach / ks(l) {
         doing = .resize(before: l.model, at: k.at, origin: b.origin, from: p, moved: false)
         lift(l, k.at)
         plugin.emit(["kind": "unpicked", "moving": true])
-      } else if let k = picked, k.leaf === l, let b = heldBox(), b.insetBy(dx: -8 / s, dy: -8 / s).contains(p) {
+      } else if let k = picked, k.leaf === l, let b = heldBox(), b.insetBy(dx: -8 / ks(l), dy: -8 / ks(l)).contains(p) {
         doing = .drag(before: l.model, at: k.at, from: p, moved: false)
         lift(l, k.at)
         plugin.emit(["kind": "unpicked", "moving": true])
@@ -1538,7 +1770,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     if paper.run {
       // a pageless notebook's one sheet never runs out under the Pencil: there is paper below wherever it is put down
       if tool.kind == "pen" || tool.kind == "highlighter" { reach(Double(l.index) * paper.h + Double(p.y)) }
-    } else if l.index == order.count - 1, grown != l.sheet, p.y > CGFloat(paper.h) * 2 / 3, tool.kind == "pen" || tool.kind == "highlighter" {
+    } else if !guest, l.index == order.count - 1, grown != l.sheet, p.y > CGFloat(paper.h) * 2 / 3, tool.kind == "pen" || tool.kind == "highlighter" {
       // a notebook never runs out of paper: a stroke begun low on its last sheet asks for the next, once for that sheet
       grown = l.sheet
       plugin.emit(["kind": "surface", "id": id, "what": "grow", "sheet": l.sheet])
@@ -1659,9 +1891,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     // the canvas stands over the view: a point of it is a point of the view, as large as the sheets are laid out
     let o = scroll.contentOffset
     guard let first = strokes.first?.path.first?.location.applying(strokes[0].transform) else { return }
-    let at = CGPoint(x: first.x * s + o.x, y: first.y * s + o.y)
+    let at = scroll.convert(CGPoint(x: first.x * canvasK + o.x, y: first.y * canvasK + o.y), to: content)
     guard let l = active ?? lastActive ?? leaf(at: at) else { return }
-    let by = CGAffineTransform(translationX: -(l.frame.minX - o.x) / s, y: -(l.frame.minY - o.y) / s)
+    let by = canvasTo(l)
     let moved = strokes.map { k -> PKStroke in var m = plugin.keep(k, live: live); m.transform = m.transform.concatenating(by); return m }
     let before = l.model
     let on = commit(l, from: before, to: before + moved, moved: Array(before.count..<before.count + moved.count), dirty: box(of: moved)).leaf
@@ -1725,7 +1957,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private func rub(_ l: Leaf, from a: CGPoint, to b: CGPoint) {
     let t0 = ProcessInfo.processInfo.systemUptime
     defer { plugin.eraseNote(hit: (ProcessInfo.processInfo.systemUptime - t0) * 1000) }
-    let r = CGFloat(max(plugin.tool.width, 1)) / s
+    let r = CGFloat(max(plugin.tool.width, 1)) / ks(l)
     let reach = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y)).insetBy(dx: -r, dy: -r)
     var left: [PKStroke] = []
     var gone: CGRect?
@@ -1755,7 +1987,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   }
 
   private func ringEraser(at q: CGPoint) {
-    let r = CGFloat(max(plugin.tool.width, 1))
+    let r = CGFloat(max(plugin.tool.width, 1)) / (guest ? scroll.zoomScale : 1)
     show(reach, path: UIBezierPath(ovalIn: CGRect(x: q.x - r, y: q.y - r, width: r * 2, height: r * 2)).cgPath)
   }
 
@@ -1768,13 +2000,13 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     for p in points.dropFirst() { path.addLine(to: p) }
     path.close()
     let b = path.bounds
-    if b.width + b.height < 8 / s { return }
+    if b.width + b.height < 8 / ks(l) { return }
     /// The strokes of a sheet the loop holds, the sheet lying `dy` points below the loop's own.
     func held(_ on: Leaf, _ dy: CGFloat) -> [Int] {
       var at: [Int] = []
       for (i, k) in on.model.enumerated() where k.renderBounds.offsetBy(dx: 0, dy: dy).intersects(b) {
         var all = 0, inside = 0
-        plugin.along(k, by: max(2, 4 / s)) { p, _ in
+        plugin.along(k, by: max(2, 4 / ks(on))) { p, _ in
           all += 1
           if path.contains(CGPoint(x: p.x, y: p.y + dy)) { inside += 1 }
           return true
@@ -1831,7 +2063,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   private func tellPicked() {
     guard let k = picked, let b = heldBox() else { return }
-    let on = k.leaf.convert(onLeaf(b), to: view)
+    let on = k.leaf.convert(onLeaf(b, k.leaf), to: view)
     plugin.emit(["kind": "picked", "sheet": k.leaf.id, "host": id, "count": k.at.count, "clip": plugin.clip.count, "x": on.minX, "y": on.minY, "w": on.width, "h": on.height])
   }
 
@@ -1841,7 +2073,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       hide(grip)
       return
     }
-    let r = k.leaf.convert(onLeaf(b), to: content).insetBy(dx: -4, dy: -4)
+    let r = k.leaf.convert(onLeaf(b, k.leaf), to: content).insetBy(dx: -4, dy: -4)
     show(outline, path: UIBezierPath(rect: r).cgPath)
     show(grip, path: UIBezierPath(ovalIn: CGRect(x: r.maxX - 7, y: r.maxY - 7, width: 14, height: 14)).cgPath)
   }
@@ -1864,12 +2096,15 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private func lift(_ l: Leaf, _ at: [Int]) {
     guard let b = heldBox() else { return }
     let d = b.insetBy(dx: -3, dy: -3)
+    let s = ks(l)
     let x0 = (d.minX * s * screen).rounded(.down), y0 = (d.minY * s * screen).rounded(.down)
     let x1 = (d.maxX * s * screen).rounded(.up), y1 = (d.maxY * s * screen).rounded(.up)
     let region = CGRect(x: x0 / screen / s, y: y0 / screen / s, width: (x1 - x0) / screen / s, height: (y1 - y0) / screen / s)
     let most = (16_000_000 / max((x1 - x0) * (y1 - y0), 1)).squareRoot()
     let f = min(1, most)
-    var j = PaintJob(paper: paper, look: look, index: l.index, strokes: at.filter { $0 < l.geoms.count }.map { l.geoms[$0] }, above: [], region: region, pw: max(1, Int((x1 - x0) * f)), ph: max(1, Int((y1 - y0) * f)))
+    var j = job(l, region: region, pw: max(1, Int((x1 - x0) * f)), ph: max(1, Int((y1 - y0) * f)))
+    j.strokes = at.filter { $0 < l.geoms.count }.map { l.geoms[$0] }
+    j.above = []
     j.bare = true
     let img = Paint.make(j)
     l.lifted = Set(at)
@@ -1886,7 +2121,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       held.frame = onLeaf(region).offsetBy(dx: l.frame.minX, dy: l.frame.minY)
       marks.layer.addSublayer(held)
     } else {
-      held.frame = onLeaf(region)
+      held.frame = onLeaf(region, l)
       l.layer.addSublayer(held)
     }
     CATransaction.commit()
@@ -1906,14 +2141,15 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private func carry(_ l: Leaf, _ by: CGAffineTransform) {
     carried = by
     // the picture's own corner is where the transform begins: about the sheet's
-    let o = onLeaf(heldRegion).origin
-    let tx = by.a * o.x + by.c * o.y - o.x + by.tx * s, ty = by.b * o.x + by.d * o.y - o.y + by.ty * s
+    let o = onLeaf(heldRegion, l).origin
+    let sl = sOf(l)
+    let tx = by.a * o.x + by.c * o.y - o.x + by.tx * sl, ty = by.b * o.x + by.d * o.y - o.y + by.ty * sl
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     held.setAffineTransform(CGAffineTransform(a: by.a, b: by.b, c: by.c, d: by.d, tx: tx, ty: ty))
     // the dashed box goes with it
     if let k = picked, let b = box(of: k.at.filter { $0 < l.model.count }.map { l.model[$0] }) {
-      let r = l.convert(onLeaf(b.applying(by)), to: content).insetBy(dx: -4, dy: -4)
+      let r = l.convert(onLeaf(b.applying(by), l), to: content).insetBy(dx: -4, dy: -4)
       outline.path = UIBezierPath(rect: r).cgPath
       grip.path = UIBezierPath(ovalIn: CGRect(x: r.maxX - 7, y: r.maxY - 7, width: 14, height: 14)).cgPath
     }
@@ -1999,8 +2235,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   func paste(on l: Leaf, at q: CGPoint) -> Bool {
     guard !down, !plugin.clip.isEmpty else { return false }
     let on = view.convert(q, to: l)
-    var p = CGPoint(x: on.x / s, y: on.y / s)
-    let size = CGSize(width: CGFloat(paper.w), height: CGFloat(paper.h))
+    var p = CGPoint(x: on.x / sOf(l), y: on.y / sOf(l))
+    let size = sizeOf(l)
     let cb = plugin.clipBox
     p.x = min(max(p.x, min(cb.width / 2, size.width / 2)), max(size.width - cb.width / 2, size.width / 2))
     if paper.run {
@@ -2203,7 +2439,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     }
     let cv = canvas.convert(canvas.bounds, to: nil)
     let memory = leaves.values.reduce(0) { $0 + $1.bytes() } + Int(canvas.bounds.width * canvas.bounds.height * sc * sc * 4)
-    return SurfaceState(id: id, at: onWeb(view.bounds, from: view), device: device(view), base: Double(base), stretch: Double(scroll.zoomScale), zoom: Double(base * scroll.zoomScale), offset: [Double(scroll.contentOffset.x), Double(scroll.contentOffset.y)], content: [Double(scroll.contentSize.width), Double(scroll.contentSize.height)], inset: [Double(scroll.contentInset.left), Double(scroll.contentInset.top)], phase: phase, page: current, pages: order.count, sheets: list, canvas: [Double(canvas.zoomScale), cv.width > 0 ? Double(canvas.bounds.width / cv.width) : 1, Double(canvas.drawing.strokes.count)], memory: memory, holes: view.holes.count, marks: markSpecs.filter { $0.pending != true }.count, pendings: markSpecs.filter { $0.pending == true }.count, tags: tagRects.map { onWeb($0.rect, from: content) }, add: showAdd ? onWeb(addButton.frame, from: content) : nil, pending: pendingRect.map { onWeb($0, from: content) }, length: paper.run ? runLen : nil, shown: leaves.values.filter { !$0.isHidden }.count, making: making, sharpAfter: sharpAfter, blend: canvas.layer.compositingFilter as? String, paper: paper, dark: look.dark, colours: [look.paper, look.rule, look.dot, look.margin, look.desk])
+    return SurfaceState(id: id, at: onWeb(view.bounds, from: view), device: device(view), base: Double(base), stretch: Double(scroll.zoomScale), zoom: Double(base * scroll.zoomScale), offset: [Double(scroll.contentOffset.x), Double(scroll.contentOffset.y)], content: [Double(scroll.contentSize.width), Double(scroll.contentSize.height)], inset: [Double(scroll.contentInset.left), Double(scroll.contentInset.top)], phase: phase, page: current, pages: order.count, sheets: list, canvas: [Double(canvas.zoomScale), cv.width > 0 ? Double(canvas.bounds.width / cv.width) : 1, Double(canvas.drawing.strokes.count)], memory: memory, holes: (view as? SurfaceView)?.holes.count ?? 0, marks: markSpecs.filter { $0.pending != true }.count, pendings: markSpecs.filter { $0.pending == true }.count, tags: tagRects.map { onWeb($0.rect, from: content) }, add: showAdd ? onWeb(addButton.frame, from: content) : nil, pending: pendingRect.map { onWeb($0, from: content) }, length: paper.run ? runLen : nil, shown: leaves.values.filter { !$0.isHidden }.count, making: making, sharpAfter: sharpAfter, blend: canvas.layer.compositingFilter as? String, paper: paper, dark: look.dark, colours: [look.paper, look.rule, look.dot, look.margin, look.desk])
   }
 
   /// Its sheets as the checks know a canvas's sheet (`SheetState`), and itself as a host: what was asked of the canvases over a notebook's pages is asked of these.
@@ -2216,7 +2452,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       var drawn: [Double] = []
       if let k = l.restKey, l.rest.contents != nil, device.width > 0 { drawn.append((Double(CGFloat(k[1]) / device.width) * 100).rounded() / 100) }
       if !l.fine.isHidden, let k = l.fineKey { let w = l.fine.convert(l.fine.bounds, to: nil).width * sc; if w > 0 { drawn = [(Double(CGFloat(k[3]) / w) * 100).rounded() / 100] } }
-      return SheetState(id: l.id, strokes: l.model.count, shown: true, dirty: l.dirty, at: Box(l.convert(l.bounds, to: web.scrollView)), pixels: Double(s * sc * scroll.zoomScale), blend: look.dark ? "screenBlendMode" : "multiplyBlendMode", device: Box(device), stretch: Double(scroll.zoomScale), drawn: drawn)
+      return SheetState(id: l.id, strokes: l.model.count, shown: true, dirty: l.dirty, at: Box(l.convert(l.bounds, to: web.scrollView)), pixels: Double(sOf(l) * sc * scroll.zoomScale), blend: look.dark ? "screenBlendMode" : "multiplyBlendMode", device: Box(device), stretch: Double(scroll.zoomScale), drawn: drawn)
     }
   }
 
@@ -2228,7 +2464,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   /// A dev run's: where what the lasso holds lies, on the page.
   func heldAt() -> Box? {
     guard let k = picked, let b = heldBox(), let web = plugin.webView else { return nil }
-    return Box(k.leaf.convert(onLeaf(b), to: web.scrollView))
+    return Box(k.leaf.convert(onLeaf(b, k.leaf), to: web.scrollView))
   }
 
   /// A dev run's: a sheet as it is drawn here, a pixel of the picture to a pixel of the screen, and PencilKit's own picture of the same strokes at the screen's pixels and at twice them (made half the size again): to hold one against the other.

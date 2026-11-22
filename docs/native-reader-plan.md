@@ -144,6 +144,27 @@ The surface answers with events on the `onSurface` channel. Commands go by `ink_
   surface. The keys on a book (`h`, `b`, `v`, `e`, `m`) work as on the web reader; `v` takes its line from the place
   the surface says.
 
+## Phase 4 as built (ink)
+
+- The notebook surface's engine is the book's, not a copy: a `NoteSurface` made `over` a `PdfSurface` (a guest)
+  shares the book's view, scroll view and content. It has no layout, paper or scroll of its own. Its sheets are
+  clear views over the book's pages (`lay`, told by the book after each layout and on a dark turn), each in its
+  page's own points and named `p.<hash>.<page>`: the sheets the web reader's canvases kept, so storage, sync and the
+  store's door (`want`, `ink_fill`, `quiet`, `ink_take`) are unchanged. The plugin holds it among its surfaces
+  (`adopt`), so undo, redo, the lasso's menu, the tools and keeping reach it as they reach a notebook's.
+- What differs is only where: a sheet's points to its view's are its own (`sOf`, a book's pages being of any size);
+  the book's zoom is its scroll view's own and stays, so the screen's points to a sheet's are `ks` (that times the
+  zoom), the Pencil writes whenever no zoom is going on (`steady`), the canvas is told the zoom at the end of each
+  (`zoomEnded`), and what PencilKit hands over is taken into a sheet through the views (`canvasTo`).
+- Pictures (`guestRefresh`): a page with nothing written on it has none. One with ink has its whole picture at the
+  fitted size and, zoomed in, the part in view drawn at the zoom (a pixel to a pixel), where there is ink in view;
+  while a zoom goes on they are stretched. They are bare and laid on the page as ink is (multiplied; screened on a
+  dark page).
+- The book's own gestures are a finger's: its tap and held finger (`PdfText`) take no Pencil, and none where a
+  finger writes. The Pencil no longer scrolls the book; fingers do.
+- The specs the page tells the surface are numbered; one older than the last taken is not taken (two `ink_pdf`
+  calls at once may arrive the other way round: a highlight cleared was drawn again by the older spec).
+
 ## Phases after this one
 
 1. **The surface for PDFs, B with our own tiles:** drawing, zoom, scroll, the fitted pictures, the dark turn, place

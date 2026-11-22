@@ -28,6 +28,27 @@ Captures: `gaps/runs/colours-notes-evidence.png`, `gaps/runs/c2-colours*/`, `gap
 
 ---
 
+## 2026-11-22 — what the page lays over a book shows, never the pages; a notebook's ink in tiles too
+
+**Overlays (the iPad, 31a4c64):** the contents palette over a book showed only its search field; its list was
+covered by the pages. Holes the page told the surface overlapped (the palette and its list), and a mask cut with the
+even-odd rule shows again what lies inside two. Holes that overlap are now cut as one (`Holes.union`). And what
+lies over most of the pages without being known to be over them (the palette's shade) makes a book's surface stand
+aside with a picture of itself in its place under the shade, as a notebook's did (`veiled`, `picture`); a smaller
+unknown thing is a hole like any other. The check: `pdfink` `"part": "overlays"` (hard) opens the contents palette,
+open or run, the book's ⋯ menu, tweaks, a highlight's menu, the pen's settings, a size's popover and the lasso's
+menu over a book, and at points over each the surface draws at none (`covers`); closed, the pages come back.
+
+**Notebooks in tiles:** a notebook's sheet is drawn as bands of the screen's pixels, each its paper and its ink in
+one picture, over its whole picture; a change draws again the tiles under it (those in view first, in a lane of
+their own, in one transaction) and the stroke being written leaves the glass with them. The picture of the part in
+view and the patches are gone. A zoom's end keeps the tiles of the size before, stretched, until the new ones
+cover. `inkstill` on a notebook at 100%, 250% and 400%, light and dark: the stroke beside unchanged in every frame,
+an erased one's tiles drawn again 1 to 2 ms after the eraser took it and off the glass before the lift. `written`
+(616 checks) and `inksharp` on notebooks pass.
+
+---
+
 ## 2026-11-22 — a book's ink drawn into its page's tiles: one copy, no layers
 
 The user, on the iPad (5780663): strokes near one being written "blur then quickly unblur ... as though its

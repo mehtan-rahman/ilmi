@@ -168,8 +168,16 @@ wrong architecture, very un-simple." It is replaced by one copy:
 - **The engine is the notebook's.** The ink's model, the Pencil, the tools, undo and the store are `NoteSurface`'s
   as before (a guest of the book's surface, its sheets clear views used for places and the lasso's held picture);
   it no longer draws. It tells the surface what changed and gives it the page's strokes to draw.
-- **Notebooks next.** A notebook's sheets become the same tiled surface with its paper (colour and ruling) drawn
-  where a book draws its PDF page, so one renderer draws both.
+- **Notebooks, the same.** A notebook's sheet is drawn in tiles too: bands of the screen's pixels as it is laid out,
+  each its paper and its ink in one picture (`Paint.make`), over its whole picture (what shows where a tile is not
+  yet). A change draws again the tiles under it, those in view first, in a lane of their own, in one transaction,
+  and the stroke being written leaves the glass with them; the whole picture comes after. A zoom's end lays the
+  sheets out anew and their tiles of the size before stay, stretched, until the new ones cover what is in view. The
+  picture of the part in view and the patches over it are gone.
+- **What the page lays over the pages** is cut out of the surface: holes that overlap are cut as one (the even-odd
+  rule showed again what lay inside two: the contents palette's list hidden under a book's pages). Something laid
+  over most of the pages that is not known to be over them (a palette's or a dialog's shade) cannot be cut to: the
+  surface stands aside and the page shows a picture of it in its place, under the shade, as a notebook's did.
 
 ## Phase 4 as built (ink)
 

@@ -240,17 +240,25 @@ final class Leaf: UIView {
   var ver = 0
   /// How far down its lowest stroke reaches, in its points: past its own foot on a pageless notebook's.
   var low: CGFloat = 0
+  /// Its whole picture (under its tiles: what shows where they are not yet), and its tiles: bands of the screen's
+  /// pixels as it is laid out, each the paper and the ink in one picture, by place (`x,y`, pixels), in `tileBox`.
   let rest = CALayer()
-  let fine = CALayer()
   let hair = CALayer()
   var restKey: [Int]?
   var restAsked: [Int]?
-  var fineKey: [Int]?
-  var fineAsked: [Int]?
-  /// The part of the sheet the fine picture covers, in its points.
-  var fineRegion = CGRect.zero
-  /// Parts drawn again at once after a change, over the pictures, until those are made again: each with the part of the sheet it covers.
-  var patches: [(layer: CALayer, region: CGRect, ver: Int)] = []
+  let tileBox = CALayer()
+  var tiles: [String: CALayer] = [:]
+  var tileAsked = Set<String>()
+  /// The layout the tiles are of (the screen's points to a point of the sheet, ×10⁵), and those of the one before,
+  /// stretched to this one until these cover what is in view.
+  var tileLayout = 0
+  var tileS: CGFloat = 0
+  var staleBox: CALayer?
+  /// What changed of it since a while ago (each the version it made and the rect, its points; none: all of it), what
+  /// is not yet drawn again, and whether a batch is being drawn.
+  var inkChanges: [(ver: Int, rect: CGRect?)] = []
+  var inkPending: CGRect?? = nil
+  var inkBusy = false
 
   init(sheet: Int, id: String) {
     self.sheet = sheet
@@ -259,14 +267,14 @@ final class Leaf: UIView {
     isUserInteractionEnabled = false
     isOpaque = true
     clipsToBounds = true
-    for l in [rest, fine] {
-      l.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "frame": NSNull(), "hidden": NSNull()]
-      l.contentsGravity = .resize
-      l.isOpaque = true
-      layer.addSublayer(l)
-    }
-    fine.zPosition = 1
-    fine.isHidden = true
+    rest.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "frame": NSNull(), "hidden": NSNull()]
+    rest.contentsGravity = .resize
+    rest.isOpaque = true
+    layer.addSublayer(rest)
+    tileBox.actions = ["sublayers": NSNull(), "transform": NSNull(), "bounds": NSNull(), "position": NSNull()]
+    tileBox.anchorPoint = .zero
+    tileBox.zPosition = 1
+    layer.addSublayer(tileBox)
   }
 
   required init?(coder: NSCoder) { fatalError("no coder") }
@@ -292,8 +300,7 @@ final class Leaf: UIView {
   func bytes() -> Int {
     var n = 0
     if let k = restKey, rest.contents != nil { n += k[1] * k[2] * 4 }
-    if let k = fineKey, fine.contents != nil { n += k[3] * k[4] * 4 }
-    for p in patches { if let img = p.layer.contents { let i = img as! CGImage; n += i.width * i.height * 4 } }
+    for t in tiles.values { if let c = t.contents { let i = c as! CGImage; n += i.width * i.height * 4 } }
     return n
   }
 }
@@ -632,7 +639,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       layOut()
       if let k = keep { go(k, animated: false, exact: true) }
     }
-    if repaint { for l in leaves.values { l.ver += 1; l.restKey = nil; l.fineKey = nil; l.restAsked = nil; l.fineAsked = nil } }
+    if repaint { for l in leaves.values { l.ver += 1; l.restKey = nil; l.restAsked = nil; dropTiles(l) } }
     if let m = a.marks, m != markSpecs { markSpecs = m; drawMarks() } else if relay || moved { drawMarks() }
     if let h = a.holes { holeSpecs = h }
     if pageW > 0 { edgeRun() }
@@ -676,6 +683,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       let r = parent.convert(web.scrollView.convert(CGRect(x: h.x, y: h.y, width: h.w, height: h.h), to: parent), to: view).intersection(view.bounds)
       if !r.isNull, r.width > 0, r.height > 0 { list.append((r, CGFloat(h.r ?? 0))) }
     }
+    // (holes that overlap are cut as one, square: the even-odd rule shows again what lies inside two)
+    if Holes.overlap(list.map { $0.0 }) { list = Holes.union(list.map { $0.0 }).map { ($0, 0) } }
     (view as? SurfaceView)?.holes = list
     if list.isEmpty {
       view.layer.mask = nil
@@ -797,10 +806,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     for l in leaves.values {
       let was = l.isHidden ? 0 : l.frame.height
       seat(l)
-      // paper come into view with no picture of it yet is drawn now: never a bare strip
-      if !l.isHidden, l.frame.height > was, l.rest.contents == nil || l.restKey?[0] != l.ver {
-        patch(l, CGRect(x: 0, y: was / s, width: CGFloat(paper.w), height: (l.frame.height - was) / s))
-      }
+      // (paper come into view has its tiles asked for at once, `tend`)
+      _ = was
     }
     edgeRun()
     rebasing = false
@@ -830,8 +837,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     scroll.contentSize = m.size
     for l in leaves.values {
       seat(l)
-      if !l.fine.isHidden { l.fine.frame = onLeaf(l.fineRegion) }
-      for p in l.patches { p.layer.frame = onLeaf(p.region) }
+      relayTiles(l)
     }
     edgeRun()
     addButton.isHidden = !showAdd
@@ -1159,15 +1165,12 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
         if paper.run, !l.loaded, !l.asked, f.maxY < near.minY, f.maxY >= near.minY - CGFloat(NoteSurface.runsOver) * pageH { l.asked = true; want.append(l.id) }
       }
       if f.maxY < far.minY || f.minY > far.maxY {
-        if l.rest.contents != nil || !l.patches.isEmpty || l.fine.contents != nil {
+        if l.rest.contents != nil || !l.tiles.isEmpty || l.staleBox != nil {
           CATransaction.begin()
           CATransaction.setDisableActions(true)
           l.rest.contents = nil
-          l.fine.contents = nil
-          l.fine.isHidden = true
-          l.restKey = nil; l.fineKey = nil; l.restAsked = nil; l.fineAsked = nil
-          for p in l.patches { p.layer.removeFromSuperlayer() }
-          l.patches = []
+          l.restKey = nil; l.restAsked = nil
+          dropTiles(l)
           CATransaction.commit()
         }
       }
@@ -1223,7 +1226,6 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
         fresh.backgroundColor = .clear
         fresh.isOpaque = false
         fresh.rest.isOpaque = false
-        fresh.fine.isOpaque = false
         fresh.layer.zPosition = 20
         content.insertSubview(fresh, belowSubview: marks)
         return fresh
@@ -1270,14 +1272,15 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   /// (a book's) The book's tiles show the ink as it is: what PencilKit held of the stroke just written, and ilmi's
   /// live stroke with it, leave the glass now, in the transaction those tiles appear in.
   func inkShown() {
-    guard guest, sweepWhenShown, !down else { return }
+    guard sweepWhenShown, !down else { return }
     sweepWhenShown = false
-    sweep()
+    sweep(flushing: false)
   }
   /// The stroke just written waits on the glass for the book's tiles to show it (`inkShown`; at most half a second).
   private var sweepWhenShown = false
 
-  /// A sheet's pictures asked for, where it has none as it is now: the whole of it, and zoomed past what that holds, the part in view.
+  /// A sheet's whole picture asked for where it is not of the sheet as it is now (one at a time: while one is made
+  /// the sheet may change again and again, under the eraser), and its tiles over what is in view and about it.
   private func refresh(_ l: Leaf, vis: CGRect) {
     // (the pictures are of the sheets as they are laid out: while a zoom stretches them nothing is made but what has none)
     let zooming = abs(scroll.zoomScale - 1) > 0.0005
@@ -1285,50 +1288,228 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     let f = fw * fh > NoteSurface.cap ? (NoteSurface.cap / (fw * fh)).squareRoot() : 1
     let pw = max(1, Int((fw * f).rounded())), ph = max(1, Int((fh * f).rounded()))
     let key = [l.ver, pw, ph]
-    if l.restKey != key, l.restAsked != key, !(zooming && l.rest.contents != nil && l.restKey?[0] == l.ver) {
+    let busy = l.restAsked.map { Array($0.dropFirst()) == Array(key.dropFirst()) } ?? false
+    if l.restKey != key, !busy, !(zooming && l.rest.contents != nil) {
       l.restAsked = key
       paint(job(l, region: CGRect(x: 0, y: 0, width: CGFloat(paper.w), height: CGFloat(paper.h)), pw: pw, ph: ph)) { [weak self, weak l] img in
-        guard let self = self, let l = l, l.restAsked == key, let img = img else { return }
+        guard let self = self, let l = l, let img = img, let want = l.restAsked, Array(want.dropFirst()) == Array(key.dropFirst()), key[0] > (l.restKey?[0] ?? -1) else { return }
         l.restAsked = nil
         l.restKey = key
         l.rest.contents = img
-        self.settle(l)
+        if key[0] < l.ver { DispatchQueue.main.async { [weak self] in self?.tend() } }
       }
     }
-    if f >= 1 {
-      if !l.fine.isHidden { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil }
-      return
-    }
     if zooming { return }
-    // the part of the sheet in view, and a little round it, on whole pixels of the screen
-    let part = vis.intersection(l.frame)
-    if part.isNull || part.width <= 0 || part.height <= 0 {
-      // out of view, the part drawn fine is of the sheet as it was: it goes, and with it nothing is left to wait for
-      if !l.fine.isHidden, l.fineKey?[0] != l.ver { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil; settle(l) }
-      return
+    tiles(l, vis: vis)
+  }
+
+  /// The pixels' bands of a sheet as it is laid out over `a` (its view's points), in its pixels.
+  private func bands(_ l: Leaf, over a: CGRect) -> [CGRect] {
+    let pxW = (l.bounds.width * screen).rounded(), pxH = (l.bounds.height * screen).rounded()
+    let a = a.intersection(l.bounds)
+    if a.isNull || a.isEmpty { return [] }
+    let bw: CGFloat = 2048, bh: CGFloat = 384
+    var out: [CGRect] = []
+    var y = (a.minY * screen / bh).rounded(.down) * bh
+    while y < a.maxY * screen && y < pxH {
+      var x = (a.minX * screen / bw).rounded(.down) * bw
+      while x < a.maxX * screen && x < pxW {
+        out.append(CGRect(x: x, y: y, width: min(bw, pxW - x), height: min(bh, pxH - y)))
+        x += bw
+      }
+      y += bh
     }
-    if l.fineKey?[0] == l.ver, l.fineKey?[5] == Int((s * 100000).rounded()), !l.fine.isHidden, onLeaf(l.fineRegion).offsetBy(dx: l.frame.minX, dy: l.frame.minY).insetBy(dx: -0.5, dy: -0.5).contains(part) { return }
-    let grown = part.insetBy(dx: -vis.width * 0.2, dy: -vis.height * 0.2).intersection(l.frame).offsetBy(dx: -l.frame.minX, dy: -l.frame.minY)
-    let x0 = (grown.minX * screen).rounded(.down), y0 = (grown.minY * screen).rounded(.down)
-    let x1 = (grown.maxX * screen).rounded(.up), y1 = (grown.maxY * screen).rounded(.up)
-    let fkey = [l.ver, Int(x0), Int(y0), Int(x1 - x0), Int(y1 - y0), Int((s * 100000).rounded())]
-    if l.fineAsked == fkey || l.fineKey == fkey { return }
-    l.fineAsked = fkey
-    let region = CGRect(x: x0 / screen / s, y: y0 / screen / s, width: (x1 - x0) / screen / s, height: (y1 - y0) / screen / s)
-    paint(job(l, region: region, pw: Int(x1 - x0), ph: Int(y1 - y0))) { [weak self, weak l] img in
-      guard let self = self, let l = l, l.fineAsked == fkey, let img = img else { return }
-      l.fineAsked = nil
-      l.fineKey = fkey
-      l.fineRegion = region
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      l.fine.contents = img
-      l.fine.frame = self.onLeaf(region)
-      l.fine.isHidden = false
+    return out
+  }
+
+  /// A band of a sheet's pixels as the part of the sheet it is, in its points.
+  private func region(_ b: CGRect) -> CGRect { CGRect(x: b.minX / screen / s, y: b.minY / screen / s, width: b.width / screen / s, height: b.height / screen / s) }
+
+  /// A sheet's tiles over what is in view and about it: those missing asked for, those far let go, and those of the
+  /// layout before let go once these cover what is in view.
+  private func tiles(_ l: Leaf, vis: CGRect) {
+    relayTiles(l)
+    let part = vis.intersection(l.frame).offsetBy(dx: -l.frame.minX, dy: -l.frame.minY)
+    if part.isNull || part.width <= 0 || part.height <= 0 { return }
+    let around = part.insetBy(dx: -vis.width * 0.25, dy: -vis.height * 0.5)
+    for b in bands(l, over: around) {
+      let at = "\(Int(b.minX)),\(Int(b.minY))"
+      if l.tiles[at] != nil || l.tileAsked.contains(at) { continue }
+      askTile(l, b, at)
+    }
+    let keep = part.insetBy(dx: -vis.width, dy: -vis.height * 2)
+    var gone = false
+    for (at, t) in l.tiles where !t.frame.intersects(keep) {
+      if !gone { CATransaction.begin(); CATransaction.setDisableActions(true); gone = true }
+      t.removeFromSuperlayer()
+      l.tiles[at] = nil
+    }
+    if gone { CATransaction.commit() }
+    if let st = l.staleBox, covers(l, part) {
+      CATransaction.begin(); CATransaction.setDisableActions(true)
+      st.removeFromSuperlayer()
       CATransaction.commit()
-      self.settle(l)
+      l.staleBox = nil
     }
   }
+
+  /// Whether a sheet's tiles cover a part of it (its view's points).
+  private func covers(_ l: Leaf, _ part: CGRect) -> Bool {
+    let frames = l.tiles.values.map { $0.frame }
+    for i in 0..<4 { for j in 0..<4 {
+      let p = CGPoint(x: part.minX + part.width * (CGFloat(i) + 0.5) / 4, y: part.minY + part.height * (CGFloat(j) + 0.5) / 4)
+      if !frames.contains(where: { $0.contains(p) }) { return false }
+    } }
+    return true
+  }
+
+  /// A tile made, off the main thread, and laid in its place when it comes, unless the sheet was laid out again or
+  /// changed there since it was asked for (the next `tend` asks again).
+  private func askTile(_ l: Leaf, _ b: CGRect, _ at: String) {
+    l.tileAsked.insert(at)
+    let ver = l.ver, lay = l.tileLayout
+    let r = region(b)
+    paint(job(l, region: r, pw: Int(b.width), ph: Int(b.height))) { [weak self, weak l] img in
+      guard let self = self, let l = l else { return }
+      l.tileAsked.remove(at)
+      guard let img = img, l.tileLayout == lay, l.tiles[at] == nil else { return }
+      if self.changed(l, since: ver, in: r) { DispatchQueue.main.async { [weak self] in self?.tend() }; return }
+      self.lay(tile: img, at: at, b, on: l)
+    }
+  }
+
+  private func lay(tile img: CGImage, at: String, _ b: CGRect, on l: Leaf) {
+    CATransaction.begin(); CATransaction.setDisableActions(true)
+    if let t = l.tiles[at] { t.contents = img } else {
+      let t = CALayer()
+      t.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+      t.isOpaque = true
+      t.contentsGravity = .resize
+      t.frame = CGRect(x: b.minX / screen, y: b.minY / screen, width: b.width / screen, height: b.height / screen)
+      t.contents = img
+      l.tileBox.addSublayer(t)
+      l.tiles[at] = t
+    }
+    CATransaction.commit()
+  }
+
+  /// Whether a sheet changed after version `ver` where `r` (its points) lies.
+  private func changed(_ l: Leaf, since ver: Int, in r: CGRect) -> Bool {
+    l.inkChanges.contains { $0.ver > ver && ($0.rect == nil || $0.rect!.insetBy(dx: -2, dy: -2).intersects(r)) }
+  }
+
+  /// The sheet is laid out at another size: its tiles there are stretched to it, until those of this size cover
+  /// what is in view.
+  private func relayTiles(_ l: Leaf) {
+    let lay = Int((s * 100000).rounded())
+    if l.tileLayout == lay { return }
+    CATransaction.begin(); CATransaction.setDisableActions(true)
+    if l.tileLayout != 0, !l.tiles.isEmpty, l.tileS > 0 {
+      l.staleBox?.removeFromSuperlayer()
+      let st = CALayer()
+      st.anchorPoint = .zero
+      st.frame = CGRect(origin: .zero, size: l.bounds.size)
+      for t in l.tiles.values { t.removeFromSuperlayer(); st.addSublayer(t) }
+      let k = s / l.tileS
+      st.sublayerTransform = CATransform3DMakeScale(k, k, 1)
+      st.zPosition = 0.5
+      l.layer.insertSublayer(st, below: l.tileBox)
+      l.staleBox = st
+    } else {
+      for t in l.tiles.values { t.removeFromSuperlayer() }
+    }
+    CATransaction.commit()
+    l.tiles = [:]
+    l.tileAsked = []
+    l.tileLayout = lay
+    l.tileS = s
+  }
+
+  /// Every tile of a sheet let go (it is far, or its paper changed).
+  private func dropTiles(_ l: Leaf) {
+    for t in l.tiles.values { t.removeFromSuperlayer() }
+    l.staleBox?.removeFromSuperlayer()
+    l.staleBox = nil
+    l.tiles = [:]
+    l.tileAsked = []
+    l.tileLayout = 0
+  }
+
+  /// What changed of a sheet (`r` its points; none: all of it): its tiles under the change drawn again, those over
+  /// what of it is in view first and all at once, in a lane of their own; then the stroke just written leaves the
+  /// glass (`inkShown`). What changes while they are drawn goes into the next batch.
+  private func inkDirty(_ l: Leaf, _ r: CGRect?) {
+    l.inkChanges.append((l.ver, r))
+    if l.inkChanges.count > 64 { l.inkChanges.removeFirst(l.inkChanges.count - 64) }
+    if let was = l.inkPending { l.inkPending = (was == nil || r == nil) ? .some(nil) : .some(was!.union(r!)) } else { l.inkPending = .some(r) }
+    drawTiles(l)
+  }
+
+  private func drawTiles(_ l: Leaf) {
+    guard !l.inkBusy, let pend = l.inkPending else { return }
+    l.inkPending = nil
+    guard made, l.tileLayout == Int((s * 100000).rounded()), abs(scroll.zoomScale - 1) < 0.0005 else { inkShown(); tend(); return }
+    let vis = visible().intersection(l.frame).offsetBy(dx: -l.frame.minX, dy: -l.frame.minY)
+    let inView = pend.map { CGRect(x: $0.minX * s, y: $0.minY * s, width: $0.width * s, height: $0.height * s).insetBy(dx: -2, dy: -2) } ?? l.bounds
+    var targets: [(at: String, b: CGRect)] = []
+    for (at, t) in l.tiles where t.frame.intersects(inView) {
+      targets.append((at, CGRect(x: t.frame.minX * screen, y: t.frame.minY * screen, width: t.frame.width * screen, height: t.frame.height * screen)))
+    }
+    // (and where what changed is in view and no tile is yet: made now, with the rest)
+    if !vis.isNull {
+      for b in bands(l, over: inView.intersection(vis)) {
+        let at = "\(Int(b.minX)),\(Int(b.minY))"
+        if l.tiles[at] == nil { targets.append((at, b)) }
+      }
+    }
+    if targets.isEmpty { inkShown(); return }
+    l.inkBusy = true
+    let jobs = targets.map { (at: $0.at, b: $0.b, job: job(l, region: region($0.b), pw: Int($0.b.width), ph: Int($0.b.height))) }
+    let lay = l.tileLayout
+    let ready = Ready()
+    var got: [String: CGImage] = [:]
+    var left = jobs.count
+    for j in jobs {
+      front.addOperation { [weak self, weak l] in
+        let img = Paint.make(j.job)
+        ready.mark()
+        DispatchQueue.main.async {
+          guard let self = self, let l = l else { return }
+          if let img = img { got[j.at] = img }
+          left -= 1
+          guard left == 0 else { return }
+          if l.tileLayout == lay {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            for j in jobs { if let img = got[j.at] { l.tileAsked.remove(j.at); self.lay(tile: img, at: j.at, j.b, on: l) } }
+            CATransaction.commit()
+          }
+          self.shown.append(CACurrentMediaTime())
+          self.readyAt.append(ready.at)
+          if self.shown.count > 200 { self.shown.removeFirst(self.shown.count - 200); self.readyAt.removeFirst(self.readyAt.count - 200) }
+          self.inkShown()
+          l.inkBusy = false
+          self.drawTiles(l)
+        }
+      }
+    }
+  }
+
+  /// (the checks) When batches of tiles drawn again came on the glass, and when the last of each was drawn.
+  private var shown: [CFTimeInterval] = []
+  private var readyAt: [CFTimeInterval] = []
+  private final class Ready {
+    private let lock = NSLock()
+    private var t: CFTimeInterval = 0
+    func mark() { lock.lock(); t = max(t, CACurrentMediaTime()); lock.unlock() }
+    var at: CFTimeInterval { lock.lock(); defer { lock.unlock() }; return t }
+  }
+  /// The lane the tiles that show a change are drawn in: nothing else waits in front of them.
+  private let front: OperationQueue = {
+    let q = OperationQueue()
+    q.maxConcurrentOperationCount = 2
+    q.qualityOfService = .userInteractive
+    return q
+  }()
 
   /// How many sheets past its own a pageless notebook's stroke is looked for: drawn, rubbed out and picked up there.
   static let runsOver = 8
@@ -1361,69 +1542,13 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     }
   }
 
-  /// A sheet's pictures are as it is now: the patches drawn over them meanwhile go.
-  private func settle(_ l: Leaf) {
-    let fineOn = !l.fine.isHidden || l.fineAsked != nil
-    let v = min(l.restKey?[0] ?? -1, fineOn ? (l.fineKey?[0] ?? -1) : Int.max)
-    let gone = l.patches.filter { $0.ver <= v }
-    if gone.isEmpty { return }
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    for p in gone { p.layer.removeFromSuperlayer() }
-    l.patches.removeAll { $0.ver <= v }
-    CATransaction.commit()
-  }
-
-  /// A part of a sheet (in its points) drawn again now, over its pictures: what was just written, erased or moved is on the glass before the pictures are made again.
-  private func patch(_ l: Leaf, _ dirty: CGRect) {
-    let whole = CGRect(origin: .zero, size: sizeOf(l))
-    let d = dirty.insetBy(dx: -2, dy: -2).intersection(whole)
-    if d.isNull || d.width <= 0 || d.height <= 0 { return }
-    let s = ks(l)
-    // (on the pixels the pictures under it were drawn on: a book's page's corner as it was when they were asked for,
-    // not read again now; read again, it had moved a fraction, and what was round the new stroke shook)
-    let pp = CGPoint.zero
-    let x0 = (d.minX * s * screen + pp.x).rounded(.down) - pp.x, y0 = (d.minY * s * screen + pp.y).rounded(.down) - pp.y
-    let x1 = (d.maxX * s * screen + pp.x).rounded(.up) - pp.x, y1 = (d.maxY * s * screen + pp.y).rounded(.up) - pp.y
-    // (a large part is drawn in bands of four million pixels at most, each a pixel for a pixel, so what is round
-    // what was written or erased is not drawn softer for a moment; past sixteen million, with fewer pixels, and sharp
-    // a moment later with the sheet's pictures. Until 2026-11-22 anything past four million had fewer)
-    let area = (x1 - x0) * (y1 - y0)
-    let fewer = area > 16_000_000 ? sqrt(16_000_000 / area) : 1
-    if fewer < 1 { plugin.eraseSkipped += 1 }
-    let t0 = ProcessInfo.processInfo.systemUptime
-    defer { plugin.erasePatch.append((ProcessInfo.processInfo.systemUptime - t0) * 1000); plugin.erasePatchPx.append(Int(area * fewer * fewer)) }
-    let rows = max(1, (y1 - y0) * fewer)
-    let bandRows = max(1, (4_000_000 / max(1, (x1 - x0) * fewer)).rounded(.down))
-    let bands = Int((rows / bandRows).rounded(.up))
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    for b in 0..<bands {
-      // (each band whole pixels of the screen: its edges on the same grid as the whole)
-      let ya = y0 + (CGFloat(b) * bandRows / fewer).rounded(.down), yb = b == bands - 1 ? y1 : y0 + (CGFloat(b + 1) * bandRows / fewer).rounded(.down)
-      if yb <= ya { continue }
-      let region = CGRect(x: x0 / screen / s, y: ya / screen / s, width: (x1 - x0) / screen / s, height: (yb - ya) / screen / s)
-      guard let img = Paint.make(job(l, region: region, pw: max(1, Int(((x1 - x0) * fewer).rounded())), ph: max(1, Int(((yb - ya) * fewer).rounded())))) else { continue }
-      let layer = CALayer()
-      layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
-      layer.isOpaque = true
-      layer.contentsGravity = .resize
-      layer.zPosition = 2
-      layer.frame = onLeaf(region, l)
-      layer.contents = img
-      l.layer.addSublayer(layer)
-      l.patches.append((layer, region, l.ver))
-    }
-    CATransaction.commit()
-  }
-
   /// (the checks) When a part of a sheet was last drawn again at once (a stroke written, erased, moved).
   private(set) var lastPutAt: TimeInterval = 0
   private var downAt: TimeInterval = 0
   private var upAt: TimeInterval = 0
   private var puts: [TimeInterval] = []
   /// (the checks) When the Pencil last came down and lifted, and when parts were drawn again at once (the last 200).
-  func times() -> [String: Any] { ["down": downAt, "up": upAt, "puts": puts] }
+  func times() -> [String: Any] { ["down": downAt, "up": upAt, "puts": puts, "shown": shown, "ready": readyAt] }
 
   /// Each of a sheet's strokes made ready to draw; one it had is the one it has.
   private func regeom(_ l: Leaf) {
@@ -1453,7 +1578,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       puts.append(lastPutAt)
       if puts.count > 200 { puts.removeFirst(puts.count - 200) }
     }
-    if guest { onInk?(l.sheet, dirty) } else if let d = dirty { patch(l, d) }
+    if guest { onInk?(l.sheet, dirty) } else { inkDirty(l, dirty) }
     // (a pageless sheet's strokes run on over the next, and a tall one over those after: as far as they reach now,
     // or reached before this)
     let low = l.geoms.map({ $0.box.maxY }).max()
@@ -1461,7 +1586,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     l.low = low ?? 0
     for n in under(l, low: reached) {
       n.leaf.ver += 1
-      if let d = dirty, d.maxY > n.up { patch(n.leaf, d.offsetBy(dx: 0, dy: -n.up)) }
+      if let d = dirty { if d.maxY > n.up { inkDirty(n.leaf, d.offsetBy(dx: 0, dy: -n.up)) } } else { inkDirty(n.leaf, nil) }
     }
     // (and the long sheet is a little longer than what is written on it)
     if paper.run, let low = low { reach(Double(l.index) * paper.h + Double(low)) }
@@ -1651,7 +1776,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   /// A dev run's: every picture made, for a capture to be of the sheets as they are.
   func whenSharp(_ f: @escaping () -> Void, tries: Int = 80) {
     tend()
-    if (making == 0 && leaves.values.allSatisfy { $0.patches.isEmpty }) || tries <= 0 { f(); return }
+    if (making == 0 && leaves.values.allSatisfy { !$0.inkBusy && $0.inkPending == nil && $0.tileAsked.isEmpty }) || tries <= 0 { f(); return }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.whenSharp(f, tries: tries - 1) }
   }
 
@@ -1876,7 +2001,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     defer {
       // the canvas is emptied only with no Pencil on the glass: emptied under one, the stroke being written is lost;
       // over a book's page, when the book's tiles show the stroke (`inkShown`), so it is never off the glass between
-      if down { taken = all.count } else if guest { holdForTiles() } else { sweep() }
+      if down { taken = all.count } else { holdForTiles() }
     }
     if joined { joined = false; return }
     // the canvas stands over the view: a point of it is a point of the view, as large as the sheets are laid out
@@ -1914,13 +2039,12 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   }
 
   /// PencilKit's own copy of what is ours already taken off the glass (ours is there first: never a frame with neither).
-  private func sweep() {
+  private func sweep(flushing: Bool = true) {
     swept?.cancel()
     swept = nil
     guard taken > 0 || !canvas.drawing.strokes.isEmpty else { return }
-    // (a notebook's sheets show the stroke already: what is pending goes first; a book's tiles show it in this
-    // same transaction, which a flush would part)
-    if !guest { CATransaction.flush() }
+    // (what is pending goes first, but not when the tiles that show the stroke appear in this same transaction)
+    if flushing && !guest { CATransaction.flush() }
     clearing = true
     canvas.drawing = PKDrawing()
     clearing = false
@@ -2136,10 +2260,10 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private func repaint(_ l: Leaf, _ d: CGRect) {
     l.ver += 1
     if guest { onInk?(l.sheet, d); return }
-    patch(l, d)
+    inkDirty(l, d)
     for n in under(l, low: d.maxY) {
       n.leaf.ver += 1
-      if d.maxY > n.up { patch(n.leaf, d.offsetBy(dx: 0, dy: -n.up)) }
+      if d.maxY > n.up { inkDirty(n.leaf, d.offsetBy(dx: 0, dy: -n.up)) }
     }
   }
 
@@ -2437,11 +2561,17 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       let has = l.rest.contents != nil
       var drawn: Double?
       if has, let k = l.restKey, shownW > 0 { drawn = (Double(CGFloat(k[1]) / shownW) * 1000).rounded() / 1000 }
-      if !l.fine.isHidden, let k = l.fineKey, l.fine.contents != nil {
-        let w = l.fine.convert(l.fine.bounds, to: nil).width * sc
-        if w > 0 { drawn = (Double(CGFloat(k[3]) / w) * 1000).rounded() / 1000 }
+      // (its tiles, where there are some of this layout: a pixel of theirs to a pixel of the screen, and how many
+      // pixels they cover; `patches`, the tiles asked for and not yet come)
+      let ts = l.tileLayout == Int((s * 100000).rounded()) ? Array(l.tiles.values) : []
+      var fine: [Int]? = nil
+      if let t = ts.first, let c = t.contents {
+        let w = t.convert(t.bounds, to: nil).width * sc
+        if w > 0 { drawn = (Double(CGFloat((c as! CGImage).width) / w) * 1000).rounded() / 1000 }
+        let u = ts.reduce(CGRect.null) { $0.union($1.frame) }
+        fine = [Int((u.width * sc).rounded()), Int((u.height * sc).rounded())]
       }
-      return LeafState(id: l.id, sheet: l.sheet, device: device(l), strokes: l.model.count, loaded: l.loaded, dirty: l.dirty, rest: has ? l.restKey.map { [$0[1], $0[2]] } : nil, fine: l.fine.isHidden ? nil : l.fineKey.map { [$0[3], $0[4]] }, patches: l.patches.count, drawn: drawn, current: l.index + 1 == current, ours: l.geoms.filter { $0.ours }.count, theirs: l.geoms.filter { !$0.ours }.count)
+      return LeafState(id: l.id, sheet: l.sheet, device: device(l), strokes: l.model.count, loaded: l.loaded, dirty: l.dirty, rest: has ? l.restKey.map { [$0[1], $0[2]] } : nil, fine: fine, patches: l.tileAsked.count, drawn: drawn, current: l.index + 1 == current, ours: l.geoms.filter { $0.ours }.count, theirs: l.geoms.filter { !$0.ours }.count)
     }
     let cv = canvas.convert(canvas.bounds, to: nil)
     let memory = leaves.values.reduce(0) { $0 + $1.bytes() } + Int(canvas.bounds.width * canvas.bounds.height * sc * sc * 4)
@@ -2457,7 +2587,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       let device = CGRect(x: inWindow.minX * sc, y: inWindow.minY * sc, width: inWindow.width * sc, height: inWindow.height * sc)
       var drawn: [Double] = []
       if let k = l.restKey, l.rest.contents != nil, device.width > 0 { drawn.append((Double(CGFloat(k[1]) / device.width) * 100).rounded() / 100) }
-      if !l.fine.isHidden, let k = l.fineKey { let w = l.fine.convert(l.fine.bounds, to: nil).width * sc; if w > 0 { drawn = [(Double(CGFloat(k[3]) / w) * 100).rounded() / 100] } }
+      if let t = l.tiles.values.first, let c = t.contents { let w = t.convert(t.bounds, to: nil).width * sc; if w > 0 { drawn = [(Double(CGFloat((c as! CGImage).width) / w) * 100).rounded() / 100] } }
       return SheetState(id: l.id, strokes: l.model.count, shown: true, dirty: l.dirty, at: Box(l.convert(l.bounds, to: web.scrollView)), pixels: Double(sOf(l) * sc * scroll.zoomScale), blend: look.dark ? "screenBlendMode" : "multiplyBlendMode", device: Box(device), stretch: Double(scroll.zoomScale), drawn: drawn)
     }
   }

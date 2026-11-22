@@ -1983,8 +1983,8 @@ describe('a PDF\'s pages', () => {
     expect(q('svg.paper, .add-page, .pt-readonly, .inkbar')).toBeNull();
     for (const tool of ['contents', 'search', 'more']) expect(q(`.meta [data-tool="${tool}"]`)).not.toBeNull();
     await click(more());
-    expect(menuRows().map((r) => r.dataset.act)).toEqual(['more-notes', 'more-pages', 'more-share', 'more-bookmark', 'more-portal-from', 'more-ruler', 'more-beside']);
-    expect(menuRows().slice(0, 3).map((r) => r.textContent)).toEqual(['create notes', 'all pages', 'export as pdf']);
+    expect(menuRows().map((r) => r.dataset.act)).toEqual(['more-notes', 'more-no-notes', 'more-pages', 'more-share', 'more-bookmark', 'more-portal-from', 'more-ruler', 'more-beside']);
+    expect(menuRows().slice(0, 4).map((r) => r.textContent)).toEqual(['create notes', 'no notes for this book', 'all pages', 'export as pdf']);
     // the overview: its pages as pdf.js draws them, with no paper to choose and nothing to add or change
     await click(menuRow('more-pages')!);
     await wait(20);

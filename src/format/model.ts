@@ -202,6 +202,7 @@ export type Field =
   | { key: 'paper-turn'; value: 'landscape' }
   /** Its sheets run on as one, with no gaps between them. */
   | { key: 'pageless'; value: true }
+  | { key: 'notes'; value: 'none' }
   /** The colour of its paper, `#rrggbb` in lowercase; without it the paper follows the theme (milestone 87). */
   | { key: 'paper-color'; value: string }
   /** The colour of its rules, its grid's lines and its dots, `#rrggbb` in lowercase. */
@@ -261,7 +262,7 @@ export interface Diagnostic {
 }
 
 export const FIELD_KEYS: readonly FieldKey[] = [
-  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
+  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'notes', 'url', 'author', 'published', 'tabs',
   'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam', 'finish',
   'written', 'paper', 'sheets', 'paper-rule', 'paper-margin', 'paper-margin-right', 'paper-left', 'paper-right', 'paper-margin-line', 'paper-margin-color', 'paper-top', 'paper-bottom', 'paper-size', 'paper-turn', 'pageless', 'paper-color', 'paper-line',
 ];

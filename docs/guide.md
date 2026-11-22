@@ -184,9 +184,12 @@ notes, the zoom between `−` and `+` (a press on the number fits the pages
 to the window again), the page (a press goes to a page) and search. Your
 notes on it are a note attached to it, made when you ask: the bar says
 `create notes` until there is one and `open notes` after (the book's `⋯`
-says the same, first in it). Set `notes button` to `hide` in the settings
-and a book with no notes has neither `create notes` nor its `+` on its bar;
-⌘\ and the `⋯` still create them, and a book with notes keeps `open notes`.
+says the same, first in it). A book that is your notes itself, or one you
+will not write notes on: its `⋯` has `no notes for this book`, and its bar
+then has neither `create notes` nor its `+`. That is the book's own, kept
+with it (it syncs, and a second book is not touched); its `⋯` then has
+`create notes`, which brings the word back and makes them as before, and
+⌘\ on it does the same.
 The first time you press that (or ask for a card from the pages) you pick a note that is
 there or make a
 new one, named as you like, in a folder of your choosing; the note names the

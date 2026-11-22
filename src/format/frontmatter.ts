@@ -203,6 +203,7 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
     case 'paper-size': return stripComment(raw) === 'a4' ? { key, value: 'a4' } : null;
     case 'paper-turn': return stripComment(raw) === 'landscape' ? { key, value: 'landscape' } : null;
     case 'pageless': return stripComment(raw) === 'true' ? { key, value: true } : null;
+    case 'notes': return stripComment(raw) === 'none' ? { key, value: 'none' } : null;
     case 'paper-margin-line': {
       const v = stripComment(raw) as MarginLine;
       return MARGIN_LINES.includes(v) ? { key, value: v } : null;
@@ -383,6 +384,7 @@ export function formatField(f: Field): string {
     case 'paper-rule': case 'paper-margin': case 'paper-margin-right': case 'paper-top': case 'paper-bottom': case 'paper-left': case 'paper-right': return `${f.key}: ${formatPoints(f.value)}`;
     case 'paper-size': case 'paper-turn': case 'paper-margin-line': return `${f.key}: ${f.value}`;
     case 'pageless': return 'pageless: true';
+    case 'notes': return 'notes: none';
     case 'paper-color': case 'paper-line': case 'paper-margin-color': return `${f.key}: ${f.value.toLowerCase()}`;
   }
 }
@@ -417,6 +419,8 @@ export interface Meta {
   published?: string;
   /** `tabs: true`: the document's children are tabs in a rail beside its page. */
   tabs?: boolean;
+  /** `notes: none`: its pages have no notes and want none (the app offers no `create notes` on them). */
+  noNotes?: true;
   /** Study options set on this document (§3, *options*); what applies after inheritance is `schedule/options.ts`. */
   newPerDay?: number;
   reviewsPerDay?: number;
@@ -496,6 +500,7 @@ export function meta(doc: Doc): Meta {
       case 'author': out.author = e.value; break;
       case 'published': out.published = e.value; break;
       case 'tabs': out.tabs = e.value; break;
+      case 'notes': out.noNotes = true; break;
       case 'new-per-day': out.newPerDay = e.value; break;
       case 'reviews-per-day': out.reviewsPerDay = e.value; break;
       case 'retention': out.retention = e.value; break;

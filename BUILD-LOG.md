@@ -6,6 +6,23 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-22 — `no notes for this book`, the book's own
+
+The user, on the `notes button` setting of 2026-11-25: "you misunderstood the open notes thing. i meant that some pdfs are my notes themselves or that i'm not interested in writing up notes for some pdfs". So it is per book.
+
+**What it is.** A book with no notes has `no notes for this book` in its `⋯`, under `create notes`. Said, its bar has neither `create notes` nor its `+`, and its `⋯` keeps `create notes`, which clears it and creates notes as before. ⌘\ on it does the same (`openNotes` clears it first, so a picker closed with nothing picked still leaves the word back).
+
+**Where it is kept.** A front-matter field, `notes: none` (FORMAT.md §3, `model.ts`, `frontmatter.ts`: parsed, written, `Meta.noNotes`; another value is warned and kept as written, as any field's). A book with no notes is a PDF on its own, and that has no front matter. Its state is already `reading.json`'s entry (§1), read as front matter (`pdfFront`) and written from it (`pdfStateOf`), so the entry takes `"notes": "none"` beside `read` and `pri`. `reading.json` is a row of the collection like any other under `.ilmi/` and syncs as one; a paired document's front matter is in its text. Nothing in the tables or the CRDT names fields, so neither changed. `setNoNotes(path, none)` is one `setField` for both.
+
+**The setting is gone**: `notesButton`, `setNotesButton` and its tweaks row. A stored value is not read.
+
+**Checks.** Air simulator, `written`, `"part": "notesbar"`:
+- **Set:** two PDFs dropped on their own. The first's `⋯` (create notes, no notes for this book, all pages, …) tapped `no notes for this book`. Its `reading.json` entry got `"notes": "none"`, its bar lost the word and `+`, and its `⋯` now has `create notes` alone. The second still offers both.
+- **After a launch** (`"relaunch": "1"` over the same collection): the first is still so, the second untouched. The first's `⋯` `create notes`: the flag gone, the picker up as before, and on closing it the word and `+` back. Said again, ⌘\ clears it too.
+- `tsc`. `npm test`: `format.test.ts` reads, writes and clears `notes: none`. `vault.test.ts` keeps it in `reading.json` and takes it out. In `book-notes.test.ts` the bar loses the word and comes back. `written-pages.test.ts` covers the `⋯` rows.
+
+---
+
 ## 2026-11-22 — a tool's colours take the row's free room; removing them by a hold, checked
 
 The user: "When i add an extra color and there's room, i'd like for the + and color wheel to be moved down instead of having to scroll", then "make sure i can remove colors as well".

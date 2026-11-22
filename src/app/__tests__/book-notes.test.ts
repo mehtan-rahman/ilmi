@@ -52,7 +52,7 @@ vi.mock('../bookPdf.js', () => ({
 }));
 vi.mock('../pdfjs.js', () => ({ TextLayer: class { render() { return Promise.resolve(); } }, pageBits: async () => [{ str: 'text' }] }));
 const { Pdf } = await import('../Pdf.js');
-const { addNote, attachCancelled, attachNote, noteFor, notesOpen, openNotes } = await import('../book.js');
+const { addNote, attachCancelled, attachNote, noteFor, notesOpen, openNotes, setNoNotes } = await import('../book.js');
 const { setCaretPlace } = await import('../sections.js');
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
@@ -265,12 +265,20 @@ describe('several notes beside the pages', () => {
     expect(plusRow('new-written')?.textContent).toBe('new written notes');
     await fire(window, new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     expect(document.querySelector('.pop-menu')).toBeNull();
-    // the settings' `notes button: hide`: the word and its `+` gone from a book with none (its ⋯ still creates
-    // them, `written-pages.test.ts`), and back with `show`
-    await act(async () => { useApp.getState().setNotesButton(false); });
+    // `no notes for this book` (its ⋯, `written-pages.test.ts`): `notes: none`, for a PDF on its own in its
+    // `reading.json` entry; the word and its `+` gone from its bar, and back once notes are asked for again
+    await act(async () => { await setNoNotes(PDF, true); });
+    await wait(20);
+    expect(JSON.parse(await fsp.readFile(join(dir, '.ilmi/reading.json'), 'utf8'))[PDF]).toMatchObject({ notes: 'none' });
+    expect((await vault.read(PDF)).text).toContain('\nnotes: none\n');
+    // (the app's docs follow the vault's change as `vault.ts` publishes it; here they are set as it would)
+    await act(async () => { useApp.setState((s) => ({ docs: attach({ ...s.docs, [PDF]: { ...s.docs[PDF]!, noNotes: true } }) })); });
     expect(q('.meta .notes-toggle')).toBeNull();
     expect(plus()).toBeNull();
-    await act(async () => { useApp.getState().setNotesButton(true); });
+    await act(async () => { await setNoNotes(PDF, false); });
+    await wait(20);
+    expect(JSON.parse(await fsp.readFile(join(dir, '.ilmi/reading.json'), 'utf8').catch(() => '{}'))[PDF]?.notes).toBeUndefined();
+    await act(async () => { useApp.setState((s) => { const { noNotes: _n, ...info } = s.docs[PDF]!; return { docs: attach({ ...s.docs, [PDF]: info }) }; }); });
     expect(word().textContent).toBe('create notes');
     expect(plus()).not.toBeNull();
   });

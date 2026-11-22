@@ -92,6 +92,13 @@ describe('walk', () => {
     expect(JSON.parse(await vault.fs.readText(vault.abs('.ilmi/reading.json')))).toEqual({ [PDF]: { read: 'due=2026-06-09 ivl=2 reps=2 pos=3 y=0.500', pri: 30 } });
     expect(Buffer.from(await vault.fs.readBytes(vault.abs(PDF))).equals(Buffer.from(bytes))).toBe(true);
     expect(meta((await vault.read(PDF)).doc)).toMatchObject({ pri: 30, read: { due: '2026-06-09', pos: 3, y: 0.5 } });
+    // `notes: none` (2026-11-22) kept beside them, and taken away again
+    await vault.update(PDF, (doc) => setField(doc, 'notes', 'none'));
+    expect(JSON.parse(await vault.fs.readText(vault.abs('.ilmi/reading.json')))).toEqual({ [PDF]: { read: 'due=2026-06-09 ivl=2 reps=2 pos=3 y=0.500', pri: 30, notes: 'none' } });
+    expect(meta((await vault.read(PDF)).doc).noNotes).toBe(true);
+    await vault.update(PDF, (doc) => setField(doc, 'notes', null));
+    expect(JSON.parse(await vault.fs.readText(vault.abs('.ilmi/reading.json')))[PDF].notes).toBeUndefined();
+    expect(meta((await vault.read(PDF)).doc).noNotes).toBeUndefined();
     // the body is not kept: a PDF has none
     await vault.update(PDF, (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'x' }); });
     expect((await vault.read(PDF)).doc.blocks).toEqual([]);

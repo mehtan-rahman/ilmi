@@ -574,3 +574,23 @@ describe('blocks', () => {
     expect(serialize(parse(read('mangled/empty-frontmatter.md')).doc)).toBe('---\n---\n');
   });
 });
+
+describe('`notes: none` (2026-11-22)', () => {
+  it('says the pages want no notes; set and cleared like any field, a value it does not know kept as written', () => {
+    const text = '---\ntype: source\nnotes: none\nshelf: top\n---\n';
+    const { doc, diagnostics } = parse(text);
+    expect(diagnostics).toEqual([]);
+    expect(meta(doc).noNotes).toBe(true);
+    expect(serialize(doc)).toBe(text);
+    setField(doc, 'notes', null);
+    expect(meta(doc).noNotes).toBeUndefined();
+    expect(serialize(doc)).toBe('---\ntype: source\nshelf: top\n---\n');
+    setField(doc, 'notes', 'none');
+    expect(serialize(doc)).toContain('\nnotes: none\n');
+    // another value: warned, kept as written, and not read as none
+    const odd = parse('---\nnotes: some\n---\n');
+    expect(odd.diagnostics.map((d) => d.message)).toEqual(['bad value for "notes"']);
+    expect(meta(odd.doc).noNotes).toBeUndefined();
+    expect(serialize(odd.doc)).toBe('---\nnotes: some\n---\n');
+  });
+});

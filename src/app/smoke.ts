@@ -18930,45 +18930,95 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
   }
 
   if (part === 'notesbar') {
-    // ── `notes button: hide` (`"part": "notesbar"`): a book with no notes, its bar with the word and its +; the
-    // settings' row set to hide, from its own button: gone; the book's ⋯ has `create notes`, and it creates them ──
-    // (shown as it starts, whatever a run before left: the setting is kept with the tweaks)
-    useApp.getState().setNotesButton(true);
-    // (every book of the sample has notes, its chapters: a PDF dropped on its own has none)
+    // ── `no notes for this book` (`"part": "notesbar"`, under the rig; `"relaunch": "1"` the launch after it, over the
+    // same collection): two PDFs dropped on their own, no notes; the first's ⋯ `no notes for this book` tapped: the word
+    // and its + gone from its bar, `notes: none` in its `reading.json` entry, its ⋯ with `create notes`; the second as
+    // it was. After a launch: the first still so, the second still offering; the first's ⋯ `create notes`: the word
+    // back, the flag gone, the picker up; said again, ⌘\ clears it as well ──
+    const again = !!(await invoke<string | null>('dev_env', { name: 'ILMI_RELAUNCH' }));
     const { importPdfNode, currentVault: cv } = await import('./vault.js');
-    const bytes = await cv()!.fs.readBytes(cv()!.abs('library/classical-prose-reader.pdf'));
-    const path = await importPdfNode('fleeting', { title: 'a book alone', bytes: bytes!, text: '' });
-    await poll(() => docsNow()[path]?.pdf === path, `${path} in the collection, on its own`, 20000);
-    openNode(path);
-    const book = await poll(() => { const x = bookOf(path); return x && x.getClientRects().length && q('.meta', x) ? x : null; }, `${path} opens`, 60000);
-    await poll(() => q<HTMLElement>('.meta .notes-toggle', book)?.textContent === 'create notes', 'a book with no notes: create notes', 20000);
-    log(`notesbar: ${path}`);
-    await poll(() => q('.meta [data-tool="more"]', book!), 'its pages drawn: its ⋯', 60000);
-    must(q('.meta .notes-toggle', book!) && q('.meta .notes-add', book!), 'create notes and its + on the bar');
-    await shot('notesbar-shown');
-    useApp.setState({ tweaksOpen: true });
-    const row = await poll(() => q<HTMLElement>('[data-tw="notes-button"]'), 'the settings: notes button', 10000);
+    const { setNoNotes, attachCancelled } = await import('./book.js');
     const tapAt = (el: Element) => { const r = el.getBoundingClientRect(); ask('tap', (r.left + r.width / 2) / window.innerWidth, (r.top + r.height / 2) / window.innerHeight); };
-    row.scrollIntoView({ block: 'center' });
+    const TITLES = ['a book alone', 'another book alone'];
+    const pathOf = (title: string) => Object.keys(docsNow()).find((k) => k.startsWith('fleeting/') && k.endsWith('.pdf') && docsNow()[k]!.title === title) ?? Object.keys(docsNow()).find((k) => k === `fleeting/${title}.pdf`) ?? null;
+    const flagOf = (path: string) => cv()!.pdfState(path)?.notes ?? null;
+    const paths: string[] = [];
+    for (const title of TITLES) {
+      let path = pathOf(title);
+      if (!path) {
+        must(!again, `${title}: there from the run before`);
+        const bytes = await cv()!.fs.readBytes(cv()!.abs('library/classical-prose-reader.pdf'));
+        path = await importPdfNode('fleeting', { title, bytes: bytes!, text: '' });
+        await poll(() => docsNow()[path!]?.pdf === path, `${path} in the collection, on its own`, 20000);
+      } else if (!again && flagOf(path)) await setNoNotes(path, false);
+      paths.push(path);
+    }
+    const [A, B] = paths as [string, string];
+    log(`notesbar: ${A}, ${B}; flags ${flagOf(A)}, ${flagOf(B)}${again ? ' (after a launch)' : ''}`);
+    const open = async (path: string) => {
+      openNode(path);
+      const book = await poll(() => { const x = bookOf(path); return x && x.getClientRects().length && q('.meta [data-tool="more"]', x) ? x : null; }, `${path} opens, its ⋯`, 60000);
+      await sleep(1200);
+      return book;
+    };
+    const bar = (book: HTMLElement) => ({ word: q<HTMLElement>('.meta .notes-toggle', book), plus: q<HTMLElement>('.meta .notes-add', book) });
+    const menu = async (book: HTMLElement) => {
+      tapAt(q('.meta [data-tool="more"]', book)!);
+      await poll(() => q('.pop-menu .ci[data-act="more-notes"]'), 'the book\'s ⋯', 10000);
+      await sleep(500);
+      return qa<HTMLElement>('.pop-menu .ci').filter((x) => !['more-later', 'more-dismiss'].includes(x.dataset.act ?? '')).map((x) => x.textContent ?? '');
+    };
+    const shut = async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await poll(() => !q('.pop-menu'), 'its ⋯ put away', 5000); };
+    if (!again) {
+      let book = await open(A);
+      must(bar(book).word?.textContent === 'create notes' && bar(book).plus, 'a book with no notes: create notes and its + on the bar');
+      await shot('notesbar-a-offered', 3000);
+      const rows = await menu(book);
+      log(`notesbar: its ⋯: ${rows.join(', ')}`);
+      must(rows[0] === 'create notes' && rows[1] === 'no notes for this book', 'its ⋯: create notes, then no notes for this book');
+      await shot('notesbar-a-menu', 3000);
+      tapAt(q('.pop-menu .ci[data-act="more-no-notes"]')!);
+      await poll(() => flagOf(A) === 'none' && docsNow()[A]?.noNotes === true, 'no notes for this book: notes: none, in its reading.json entry', 10000);
+      await poll(() => !bar(book).word && !bar(book).plus, 'the word and its + gone from its bar', 10000);
+      await sleep(600);
+      await shot('notesbar-a-none', 3000);
+      const after = await menu(book);
+      must(after[0] === 'create notes' && !after.includes('no notes for this book'), 'its ⋯ now: create notes, and no longer no notes for this book');
+      await shot('notesbar-a-menu-after', 3000);
+      await shut();
+      book = await open(B);
+      must(bar(book).word?.textContent === 'create notes' && bar(book).plus && !flagOf(B), 'the other book as it was: create notes and its +');
+      await shot('notesbar-b-offered', 3000);
+      log(`notesbar: set; reading.json ${JSON.stringify({ [A]: cv()!.pdfState(A), [B]: cv()!.pdfState(B) ?? null })}`);
+      return;
+    }
+    // after a launch
+    let book = await open(A);
+    must(flagOf(A) === 'none' && docsNow()[A]?.noNotes === true && !bar(book).word && !bar(book).plus, 'after a launch: the first still wants no notes, its bar without the word');
+    await shot('notesbar-again-a', 3000);
+    book = await open(B);
+    must(!flagOf(B) && bar(book).word?.textContent === 'create notes' && bar(book).plus, 'after a launch: the second still offers create notes');
+    await shot('notesbar-again-b', 3000);
+    book = await open(A);
+    await menu(book);
+    tapAt(q('.pop-menu .ci[data-act="more-notes"]')!);
+    await poll(() => !flagOf(A) && !docsNow()[A]?.noNotes, 'create notes: the flag gone', 10000);
+    await poll(() => useApp.getState().paletteOpen && useApp.getState().noteAttach?.pdf === A, 'create notes: the picker, as before', 10000);
+    await sleep(800);
+    await shot('notesbar-again-create', 3000);
+    attachCancelled();
+    useApp.setState({ paletteOpen: false, noteAttach: null });
+    await poll(() => bar(book).word?.textContent === 'create notes' && bar(book).plus, 'the word and its + back on its bar', 10000);
     await sleep(600);
-    tapAt(qa<HTMLElement>('button', row).find((x) => x.textContent === 'hide')!);
-    await poll(() => !useApp.getState().notesButton, 'hide pressed', 10000);
-    await shot('notesbar-setting');
-    useApp.setState({ tweaksOpen: false });
-    await poll(() => !q('.meta .notes-toggle', book!) && !q('.meta .notes-add', book!), 'the word and its + gone from the bar', 10000);
-    await sleep(600);
-    await shot('notesbar-hidden');
-    tapAt(q('.meta [data-tool="more"]', book!)!);
-    const item = await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-notes"]'), 'the book\'s ⋯: create notes', 10000);
-    // (first, after a reading's own `later` and `dismiss`)
-    must(item.textContent === 'create notes' && qa<HTMLElement>('.pop-menu .ci').filter((x) => !['more-later', 'more-dismiss'].includes(x.dataset.act ?? ''))[0] === item, 'first in it, after a reading\'s later and dismiss');
-    await sleep(500);
-    await shot('notesbar-menu');
-    tapAt(item);
-    await sleep(2500);
-    await shot('notesbar-created');
-    log(`notesbar: after create notes: panes ${JSON.stringify(useApp.getState().panes)}; palette ${useApp.getState().paletteOpen}`);
-    useApp.getState().setNotesButton(true);
+    await shot('notesbar-again-back', 3000);
+    // said again, then ⌘\: the flag gone as well
+    await setNoNotes(A, true);
+    await poll(() => docsNow()[A]?.noNotes === true && !bar(book).word, 'said again', 10000);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: '\\', metaKey: true, bubbles: true }));
+    await poll(() => !flagOf(A) && !docsNow()[A]?.noNotes, '⌘\\ clears it too', 10000);
+    attachCancelled();
+    useApp.setState({ paletteOpen: false, noteAttach: null });
+    log(`notesbar: after a launch; reading.json ${JSON.stringify({ [A]: cv()!.pdfState(A) ?? null, [B]: cv()!.pdfState(B) ?? null })}`);
     return;
   }
 

@@ -170,6 +170,7 @@ function infoOf(path: string, doc: Doc, items: QueueItem[], now: Date, pdf: stri
     if (pdf !== null && pdf !== path) out.of = pdf;
   } else if (pdf !== null) out.pdf = pdf;
   if (m.tabs) out.tabs = true;
+  if (m.noNotes) out.noNotes = true;
   if (m.pages) out.pages = { ...m.pages };
   const sections = items.filter((i) => i.kind === 'section' && isDue(i, now)).length;
   if (sections) out.sections = sections;

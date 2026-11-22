@@ -97,13 +97,15 @@ notes/
 
   ```
   {
-    "books/alone.pdf": { "read": "due=2026-06-02 ivl=2 reps=1 pos=2 y=0.250", "pri": 30 }
+    "books/alone.pdf": { "read": "due=2026-06-02 ivl=2 reps=1 pos=2 y=0.250", "pri": 30 },
+    "books/my-notes.pdf": { "notes": "none" }
   }
   ```
 
   keyed by the file's vault-relative path, the keys sorted, `read` the
   attributes exactly as the front matter would write them, `pri` an int
-  0–100; either may be absent, a key with neither is not written, and the
+  0–100, `notes` the string `none` (§3: the PDF wants no notes; since
+  2026-11-22); any may be absent, a key with none is not written, and the
   file goes when nothing is left to hold. Without the file no PDF on its own
   is enrolled. A rename or a move of the file takes its entry with it; a
   PDF that gains an `.md` of its name becomes that document's pages (the
@@ -461,6 +463,7 @@ dropped, with a diagnostic.
 | `author`       | string                      |           | who wrote it                                                       |
 | `published`    | day or instant              |           | when it was published                                              |
 | `tabs`         | `true` `false`              | `false`   | the document's children are tabs in a rail beside its page         |
+| `notes`        | `none`                      |           | the pages have no notes and want none: the app offers no `create notes` on them (a PDF on its own: in `reading.json`, §1) |
 | `new-per-day`  | int 0–9999                  | `20`      | new cards introduced a day (options, below)                        |
 | `reviews-per-day` | int 1–9999               | none      | reviews a day, at most                                             |
 | `retention`    | number 0.7–0.99             | `0.9`     | the recall FSRS schedules for (its request retention)              |

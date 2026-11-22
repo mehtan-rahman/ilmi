@@ -121,7 +121,7 @@ import { notesOf, notesTabsOf, pdfForNotes, titleOf } from './names.js';
 import { besideAt } from './panes.js';
 import {
   addLens, addNote, ensureNote, findCollectionMark, followTo, followed, goToMark, lensChanged, openContents, openNotes, togglePortalsBeside, openWeb, portalPending, setCollectionMark, setMark, setPortalPending, setTrail,
-  takeBesidePlace, takePlace, toggleNotes, trailOf, useFollowed, useFollower, followingAt, useBesidePlace, useMarks, usePlaceWanted, usePortalPending, useTrail, type BookContents, type BookLens,
+  setNoNotes, takeBesidePlace, takePlace, toggleNotes, trailOf, useFollowed, useFollower, followingAt, useBesidePlace, useMarks, usePlaceWanted, usePortalPending, useTrail, type BookContents, type BookLens,
 } from './book.js';
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy, type PDFPageProxy } from './pdfjs.js';
@@ -614,8 +614,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   const hasNotes = useApp((st) => notesTabsOf(id, st.docs).length > 0);
   /** Whether one more note can be attached: the pages' PDF is a document of its own (`+` beside the notes' word). */
   const canAddNote = useApp((st) => pdfForNotes(id, st.docs) !== null);
-  /** The settings' `notes button`: hidden, a book with no notes has no `create notes` nor `+` on its bar (⌘\ and ⋯ still create them). */
-  const notesButton = useApp((st) => st.notesButton);
+  /** `no notes for this book` (`notes: none`, 2026-11-22): a book with no notes has no `create notes` nor `+` on its bar (⌘\ and ⋯'s `create notes` still create them). */
+  const noNotes = useApp((st) => !!st.docs[id]?.noNotes);
   const lastRef = useRef(onLast);
   lastRef.current = onLast;
   const docs = useApp((s) => s.docs);
@@ -3331,8 +3331,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     const topic = info?.read ? (action: 'postpone' | 'done') => void import('./Session.js').then((m) => { const it = m.readingOf(id); if (it) m.actWithNotice(it, action); }).catch(console.error) : null;
     const items: PopItem[] = [
       ...(topic ? [{ label: 'later', act: 'more-later', run: () => topic('postpone') }, { label: 'dismiss', act: 'more-dismiss', run: () => topic('done') }, { label: '-' }] : []),
-      // its notes, as the bar's word has them (whether or not the bar shows it: the settings' `notes button`)
+      // its notes, as the bar's word has them (whether or not the bar shows it: a book with none may want none, and say so)
       ...(!(phone && session) ? [{ label: notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes', act: 'more-notes', run: () => toggleNotes(id) }] : []),
+      ...(!(phone && session) && !written && !hasNotes && !notesOpen && !noNotes ? [{ label: 'no notes for this book', act: 'more-no-notes', run: () => void setNoNotes(id, true).catch(console.error) }] : []),
       { label: 'all pages', act: 'more-pages', run: () => setGrid(true) },
       ...(hash ? [{ label: mobile ? 'share as pdf' : 'export as pdf', act: 'more-share', run: () => sharePdf({ left: r.left, top: r.bottom + 4 }) }] : []),
       { label: '-' },
@@ -4085,8 +4086,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
           {status === 'ok' && trail.back.length > 0 && <button type="button" className="frozen-tag pt-back" data-tool="back" title="back to where you were ⌫" onClick={() => { goBack(); }}>back</button>}
           <h1 className="pt-title" title={id}>{titleOf(id, docs, root)}</h1>
           {/* a written notebook is its own notes: the word is there only when it has a note already */}
-          {!(phone && session) && (!written || hasNotes) && (hasNotes || notesButton) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} data-has={hasNotes ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>{notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes'}</button>}
-          {!phone && canAddNote && (hasNotes || (!written && notesButton)) && <button type="button" className="pt-btn notes-add" data-tool="new-note" title={written ? 'new note' : 'new notes'} aria-label={written ? 'new note' : 'new notes'} aria-haspopup={written ? undefined : 'menu'} onClick={(e) => addMenu(e.currentTarget)}>+</button>}
+          {!(phone && session) && (!written || hasNotes) && (hasNotes || !noNotes) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} data-has={hasNotes ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>{notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes'}</button>}
+          {!phone && canAddNote && (hasNotes || (!written && !noNotes)) && <button type="button" className="pt-btn notes-add" data-tool="new-note" title={written ? 'new note' : 'new notes'} aria-label={written ? 'new note' : 'new notes'} aria-haspopup={written ? undefined : 'menu'} onClick={(e) => addMenu(e.currentTarget)}>+</button>}
           {/* a notebook of paper has its children as tabs as any document has (`tabs`), once it has any */}
           {!isPdfPath(id) && <TabsToggle path={id} />}
           {/* paper is written on where there is a canvas; anywhere else it is shown, and says where it is written */}

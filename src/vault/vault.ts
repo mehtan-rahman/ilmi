@@ -235,32 +235,38 @@ const STATE_FILE = `${STATE_DIR}/state.json`;
  */
 export const READING_FILE = `${STATE_DIR}/reading.json`;
 
-/** What `reading.json` keeps for one PDF: its `read` line and its priority, each as the front matter would write it. */
+/** What `reading.json` keeps for one PDF: its `read` line, its priority, and that it wants no notes, each as the front matter would write it. */
 export interface PdfState {
   read?: string;
   pri?: number;
+  /** `notes: none` (2026-11-22). */
+  notes?: 'none';
 }
+
+const emptyState = (st: PdfState): boolean => st.read === undefined && st.pri === undefined && st.notes === undefined;
 
 /** The front matter a PDF on its own reads as: a source whose pages are itself, with its reading state. */
 export function pdfFront(path: string, st: PdfState | undefined): string {
   const lines = ['---', 'type: source', `pdf: ${baseOf(path)}`];
   if (st?.read !== undefined) lines.push(`read: ${st.read}`);
   if (st?.pri !== undefined) lines.push(`pri: ${st.pri}`);
+  if (st?.notes !== undefined) lines.push(`notes: ${st.notes}`);
   lines.push('---', '');
   return lines.join('\n');
 }
 
-/** The reading state a document's text holds for a PDF on its own: its `read` and `pri` lines, nothing else; null when it holds neither. */
+/** The reading state a document's text holds for a PDF on its own: its `read`, `pri` and `notes` lines, nothing else; null when it holds none. */
 export function pdfStateOf(text: string): PdfState | null {
   const front = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(text)?.[1] ?? '';
   const out: PdfState = {};
   for (const line of front.split('\n')) {
-    const m = /^(read|pri): (.*)$/.exec(line);
+    const m = /^(read|pri|notes): (.*)$/.exec(line);
     if (!m) continue;
     if (m[1] === 'read') out.read = m[2]!.trim();
+    else if (m[1] === 'notes') { if (m[2]!.trim() === 'none') out.notes = 'none'; }
     else { const n = Number(m[2]); if (Number.isInteger(n)) out.pri = n; }
   }
-  return out.read === undefined && out.pri === undefined ? null : out;
+  return emptyState(out) ? null : out;
 }
 
 function cleanReading(raw: unknown): Record<string, PdfState> {
@@ -269,10 +275,11 @@ function cleanReading(raw: unknown): Record<string, PdfState> {
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     if (!isPdfPath(k) || !v || typeof v !== 'object') continue;
     const st: PdfState = {};
-    const { read, pri } = v as { read?: unknown; pri?: unknown };
+    const { read, pri, notes } = v as { read?: unknown; pri?: unknown; notes?: unknown };
     if (typeof read === 'string' && read.trim()) st.read = read.trim();
     if (typeof pri === 'number' && Number.isInteger(pri) && pri >= 0 && pri <= 100) st.pri = pri;
-    if (st.read !== undefined || st.pri !== undefined) out[k] = st;
+    if (notes === 'none') st.notes = 'none';
+    if (!emptyState(st)) out[k] = st;
   }
   return out;
 }

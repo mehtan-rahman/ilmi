@@ -86,6 +86,8 @@ export function notesOpen(pagesId: string): boolean {
  * phone has one page: the one note, in place of the pages.
  */
 export async function openNotes(pagesId: string, want?: string | null): Promise<string | null> {
+  // asked for on pages said to want none (`create notes`, ⌘\): they want them again
+  if (useApp.getState().docs[pagesId]?.noNotes) await setNoNotes(pagesId, false);
   const note = await ensureNote(pagesId);
   if (note === null) return null;
   const s = useApp.getState();
@@ -100,6 +102,17 @@ export async function openNotes(pagesId: string, want?: string | null): Promise<
   for (const tab of notesTabsOf(pagesId, s.docs)) if (besideAt(panes, tab) === null) panes = openBeside(panes, tab);
   useApp.setState({ panes: openBeside(panes, front) });
   return front;
+}
+
+/**
+ * The pages want no notes, or want them again (2026-11-22): `notes: none` in the document's front matter, for a PDF
+ * on its own in its `reading.json` entry (FORMAT.md §1, §3), so it goes where the document goes. Said, its bar has
+ * neither `create notes` nor its `+`, and its ⋯ has `create notes`.
+ */
+export async function setNoNotes(pagesId: string, none: boolean): Promise<void> {
+  const vault = currentVault();
+  if (!vault) return;
+  await vault.update(pagesId, (doc) => setField(doc, 'notes', none ? 'none' : null));
 }
 
 /** Close the notes' tabs beside the pages, where they are open there. */

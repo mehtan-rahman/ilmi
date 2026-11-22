@@ -606,10 +606,16 @@ logs and captures the row with 4, 6, 8 and 12 colours upright and on its
 side, in a notebook and a book with its notes open; `"part":
 "colourremove"` removes them by a finger's hold, down to one, in both. `written`'s `"part":
 "colours"` adds, changes and removes them under the rig and with
-`"relaunch": "1"` finds them after a launch. The settings' `notes button`
-(`notesButton`, a tweak) hides `create notes` and its `+` on a book with no
-notes; the book's `⋯` has the same word first (`more-notes`); `"part":
-"notesbar"` drops a PDF on its own and walks it. A tool's width is its three sizes'
+`"relaunch": "1"` finds them after a launch. A book with no notes may want
+none (2026-11-22): its `⋯`'s `no notes for this book` (`more-no-notes`,
+`setNoNotes` in `book.ts`) writes `notes: none` (FORMAT.md §3; a PDF on its
+own keeps it in its `reading.json` entry, §1), `DocInfo.noNotes` follows,
+and its bar has no `create notes` nor `+`; `openNotes` (the `⋯`'s `create
+notes`, ⌘\) clears it first. It replaced a global `notes button` tweak; a
+stored value of that is ignored. `"part": "notesbar"` drops two PDFs on
+their own, says it of one, and with `"relaunch": "1"` over the same
+collection (`novault=1` and `vault=` its path in the collections home)
+finds it after a launch and clears it both ways. A tool's width is its three sizes'
 (2026-11-25): the size in use pressed again sets `sizing` in
 `useInkTools` (`pressSize`), and its width is a slider under it on the row
 (`SizeSet`) or, where the row is narrow and the sizes are in the tool's

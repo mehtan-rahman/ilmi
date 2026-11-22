@@ -85,6 +85,8 @@ struct PdfSurfaceDoArgs: Decodable {
   /// (the checks) a selection's other end, fractions of `page`.
   let x2: Double?
   let y2: Double?
+  /// (the checks) lines down `page`: each `[x, y, y2]`, fractions of it.
+  let lines: [[Double]]?
 }
 
 extension InkPlugin {
@@ -391,6 +393,33 @@ final class PdfPageView: UIView {
   }
 }
 
+/// (the checks) What the glass shows.
+enum Glass {
+  /// Down a line of `view` (its points) from `p0` to `p1`: each pixel of the screen as red, green, blue, as drawn now.
+  static func column(_ view: UIView, from p0: CGPoint, to p1: CGPoint) -> [[Int]] { columns(view, [(p0, p1)]).first ?? [] }
+
+  /// Several lines from one picture of the glass (quick enough to read a stroke while the Pencil is still down).
+  static func columns(_ view: UIView, _ lines: [(CGPoint, CGPoint)]) -> [[[Int]]] {
+    let sc = view.window?.screen.scale ?? UIScreen.main.scale
+    let fmt = UIGraphicsImageRendererFormat(); fmt.scale = sc; fmt.opaque = true; fmt.preferredRange = .standard
+    let img = UIGraphicsImageRenderer(size: view.bounds.size, format: fmt).image { _ in view.drawHierarchy(in: view.bounds, afterScreenUpdates: true) }
+    guard let cg = img.cgImage, let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return [] }
+    let bpr = cg.bytesPerRow, bpp = cg.bitsPerPixel / 8
+    let bgr = cg.bitmapInfo.contains(.byteOrder32Little)
+    let first = cg.alphaInfo == .premultipliedFirst || cg.alphaInfo == .first || cg.alphaInfo == .noneSkipFirst
+    return lines.map { p0, p1 in
+      let x = Int((p0.x * sc).rounded()), y0 = max(0, Int((min(p0.y, p1.y) * sc).rounded())), y1 = min(cg.height - 1, Int((max(p0.y, p1.y) * sc).rounded()))
+      var out: [[Int]] = []
+      guard x >= 0, x < cg.width, y1 > y0 else { return out }
+      for y in y0...y1 {
+        let o = y * bpr + x * bpp
+        if bgr { out.append([Int(bytes[o + 2]), Int(bytes[o + 1]), Int(bytes[o])]) } else if first { out.append([Int(bytes[o + 1]), Int(bytes[o + 2]), Int(bytes[o + 3])]) } else { out.append([Int(bytes[o]), Int(bytes[o + 1]), Int(bytes[o + 2])]) }
+      }
+      return out
+    }
+  }
+}
+
 /// Takes no touch where the page lays something over the surface: there the web view beneath has it.
 final class HoledView: UIView {
   var holes: [CGRect] = []
@@ -624,6 +653,9 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     let done = { [weak self] (finished: Bool) in
       guard let self = self else { return }
       self.refresh()
+      // (the ink told the zoom too: a zoom asked for ends here, not in `scrollViewDidEndZooming`)
+      self.ink?.pin()
+      self.ink?.zoomEnded()
       // (told as the page's own asking: the page has the zoom already; one cut short by the next says nothing)
       guard finished else { return }
       self.asked = true
@@ -966,32 +998,22 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     case "clear":
       text?.clear()
       return state()
+    case "columns":
+      var st = state()
+      let n = max(first, min(first + frames.count - 1, a.page ?? first))
+      let f = frames[n - first]
+      func at(_ x: Double, _ y: Double) -> CGPoint { content.convert(CGPoint(x: f.minX + f.width * CGFloat(x), y: f.minY + f.height * CGFloat(y)), to: view) }
+      st["columns"] = Glass.columns(view, (a.lines ?? []).filter { $0.count >= 3 }.map { (at($0[0], $0[1]), at($0[0], $0[2])) })
+      return st
     case "column":
-      // (the checks) what the glass shows down a line of a page, from `y` to `y2` at `x` (fractions of it): each
-      // pixel of the screen as its red, green and blue, as drawn now (ink, page, all)
+      // (the checks) what the glass shows down a line of a page, from `y` to `y2` at `x` (fractions of it)
       var st = state()
       let n = max(first, min(first + frames.count - 1, a.page ?? first))
       let f = frames[n - first]
       let p0 = content.convert(CGPoint(x: f.minX + f.width * CGFloat(a.x ?? 0.5), y: f.minY + f.height * CGFloat(a.y ?? 0.4)), to: view)
       let p1 = content.convert(CGPoint(x: f.minX + f.width * CGFloat(a.x ?? 0.5), y: f.minY + f.height * CGFloat(a.y2 ?? 0.5)), to: view)
-      let sc = screen
-      let fmt = UIGraphicsImageRendererFormat(); fmt.scale = sc; fmt.opaque = true; fmt.preferredRange = .standard
-      let img = UIGraphicsImageRenderer(size: view.bounds.size, format: fmt).image { _ in view.drawHierarchy(in: view.bounds, afterScreenUpdates: true) }
-      if let cg = img.cgImage, let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) {
-        let bpr = cg.bytesPerRow, bpp = cg.bitsPerPixel / 8
-        let x = Int((p0.x * sc).rounded()), y0 = max(0, Int((min(p0.y, p1.y) * sc).rounded())), y1 = min(cg.height - 1, Int((max(p0.y, p1.y) * sc).rounded()))
-        var out: [[Int]] = []
-        if x >= 0, x < cg.width, y1 > y0 {
-          let bgr = cg.bitmapInfo.contains(.byteOrder32Little)
-          for y in y0...y1 {
-            let o = y * bpr + x * bpp
-            let first = cg.alphaInfo == .premultipliedFirst || cg.alphaInfo == .first || cg.alphaInfo == .noneSkipFirst
-            if bgr { out.append([Int(bytes[o + 2]), Int(bytes[o + 1]), Int(bytes[o])]) } else if first { out.append([Int(bytes[o + 1]), Int(bytes[o + 2]), Int(bytes[o + 3])]) } else { out.append([Int(bytes[o]), Int(bytes[o + 1]), Int(bytes[o + 2])]) }
-          }
-        }
-        st["column"] = out
-        st["from"] = [Double(p0.x), Double(p0.y), Double(p1.y)]
-      }
+      st["column"] = Glass.column(view, from: p0, to: p1)
+      st["from"] = [Double(p0.x), Double(p0.y), Double(p1.y)]
       return st
     case "where":
       // (the checks) where a point of a page (fractions of it) lies on the web view's glass

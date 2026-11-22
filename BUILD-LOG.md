@@ -6,6 +6,38 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-22 — the kept stroke where, as sharp and as dark as it was written, at any zoom
+
+On branch `native-reader-ink`. Three things the user saw on the iPad (e31ca11): above some zoom the stroke kept
+moved down and right of where it was written; it was still a little less sharp; thin ones were paler.
+
+**Moved down and right: PencilKit's canvas zooms no more than 10.** The canvas over a notebook or a book is told a
+zoom of the screen's points to the sheet's times its own oversampling (two). Told more than 10 it stays at 10, and
+what it handed over was read at the zoom it was told: every stroke kept was scaled about the view's corner by the
+ratio, the farther from the corner the further (measured on a book at 400%, 7.6 screen points to the page's: told
+15.2, the canvas was at 10.000, and the kept stroke was not where the line read for it). Past 5 screen points to
+the sheet's, which a notebook reaches at 400% on a 13-inch iPad and the device's log shows at 8.0 and 9.3. Now
+the oversampling comes down to keep the zoom within 10, and what PencilKit hands over is read at the zoom the
+canvas has (`placeCanvas`, `NoteSurface.pkMost`). Also: a zoom the page asks for (the bar's + and −) now tells
+the ink, as a pinch did; the canvas had stayed at the zoom before it.
+
+**Paler and softer: a book's page lay between the screen's pixels.** Its scroll view leaves it a fraction of a
+pixel off, so its pictures, drawn a pixel for a pixel, were drawn again by the screen between pixels: a thin line
+wider and paler (0.3 pt at 100%: darkest 131 kept, 162 live). They are now drawn on the screen's own pixels as the
+page lies at rest (`phase`). And a pen's stroke kept is drawn 0.08 px wider than its outline (`Paint.edgeGrow`):
+the stroke being written is a shape the screen draws, whose edge reaches a little past it; on a notebook at 100%
+a 0.5 pt stroke kept had 13% less ink than written. A notebook's pens are laid on the paper as they are, only
+highlighters multiplied.
+
+**The check: `pdfink` `"part": "inksharp"` (hard).** On a book's page and a notebook's sheet, at 100%, 250% and
+400%, strokes of the pen as it is and of 1, 0.5 and 0.3 pt, each read off the glass down seven lines across it
+(one picture of the glass, `columns`) while written and once kept: where its middle is, its edge, its darkest
+pixel and all its ink. Kept within a pixel of where written, no softer, its darkest within a tenth and its ink
+within an eighth; the first stroke read again at the other zooms. `ILMI_ON`, `ILMI_ZOOMS`, `ILMI_WIDTHS`,
+`ILMI_INKTHEME=dark` narrow or vary it.
+
+---
+
 ## 2026-11-25 — a tool's width set on its sizes
 
 The user: "it's better if the pen thickness was changed by tapping on the 3 presets for it and not by clicking on the pen. should also be saved in the presets and it'd be nice if the strokes themselves in the preset icons changed accordingly".

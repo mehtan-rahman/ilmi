@@ -160,6 +160,18 @@ The surface answers with events on the `onSurface` channel. Commands go by `ink_
   fitted size and, zoomed in, the part in view drawn at the zoom (a pixel to a pixel), where there is ink in view;
   while a zoom goes on they are stretched. They are bare and laid on the page as ink is (multiplied; screened on a
   dark page).
+- PencilKit's canvas zooms no more than 10 (told 15.2, it stays at 10). The canvas over a book or a notebook is
+  told a zoom of the screen's points to the sheet's times its own oversampling (up to 2); past 10 every stroke kept
+  was read at the zoom it was told and so moved down and right of where it was written, the farther from the
+  view's corner the more. Now the oversampling is lowered to keep the zoom within 10 (at least one pixel to the
+  screen's), and what PencilKit hands over is read at the zoom the canvas has (`placeCanvas`, `pkMost`).
+- A book's page lies wherever its scroll view leaves it, a fraction of a pixel off as often as not: its pictures
+  are drawn on the screen's own pixels as the page lies at rest (`phase`: the fraction is read at rest and the
+  pictures' edges put where the screen's are), so a thin line is not drawn again between pixels, wider and paler
+  than the stroke written. (Moving the pictures the fraction instead moved each stroke up to half a pixel off
+  where it was written, which a thin line's darkest pixel shows.)
+- A pen's stroke kept is drawn 0.08 px wider than its outline (`Paint.edgeGrow`): the stroke being written is a
+  shape the screen draws, whose edge reaches a little past the outline.
 - A page's pictures are clear where nothing is written, so one does not hide another under it: the whole picture
   (coarse at a zoom) is cut away under the part drawn at the zoom and under the patches, and that part under the
   patches (`veil`). Without it the coarse picture showed round the sharp one, a blur round the ink at every zoom

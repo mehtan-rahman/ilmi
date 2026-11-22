@@ -244,6 +244,23 @@ enum Paint {
   }
 
   /// The picture a job asks for. Any thread.
+  /// How much wider than its outline a pen's stroke is drawn, in the picture's pixels: the stroke being written is
+  /// drawn by the screen (a shape, `Live.swift`), whose edge reaches about this much past the outline, so a thin
+  /// stroke kept came out a little paler than written (2026-11-22, `inksharp`: 0.04 to 0.2 px; 0.18 made it heavier than written at most zooms, 0.08 is within a few hundredths either way).
+  static var edgeGrow: CGFloat = 0.08
+
+  /// A pen's stroke widened by `edgeGrow` pixels, as the screen draws it while written.
+  static func edge(_ g: Geom, _ c: CGContext, _ px: CGFloat) {
+    guard edgeGrow > 0, g.ours, !g.marker, px > 0, let o = g.outline(), o.round == 0 else { return }
+    c.saveGState()
+    c.addPath(o.path)
+    c.setStrokeColor(o.colour)
+    c.setLineWidth(edgeGrow / px)
+    c.setLineJoin(.round)
+    c.strokePath()
+    c.restoreGState()
+  }
+
   static func make(_ j: PaintJob) -> CGImage? {
     guard j.pw > 0, j.ph > 0, j.region.width > 0, j.region.height > 0 else { return nil }
     let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
@@ -291,21 +308,35 @@ enum Paint {
     c.translateBy(x: 0, y: CGFloat(j.ph))
     c.scaleBy(x: sx, y: -sy)
     c.translateBy(x: -j.region.minX, y: -j.region.minY)
-    // (one layer of ink laid on the paper: within it a stroke over another is over it, a highlighter's under the rest)
-    if !j.bare {
-      c.setBlendMode(j.look.dark ? .screen : .multiply)
+    // (one layer of ink laid on the paper: within it a stroke over another is over it, a highlighter's under the rest.
+    // On light paper only the highlighters' is laid on as ink is (multiplied: the ruling stays dark under them); a
+    // pen's ink, opaque, lies on the paper as it is: laid on through a layer the thinnest strokes came out a little
+    // paler than written, which ink on a book's page, laid on by the screen, did not (2026-11-22, `inksharp`))
+    let layered = !j.bare && j.look.dark
+    if layered {
+      c.setBlendMode(.screen)
       c.beginTransparencyLayer(auxiliaryInfo: nil)
     }
     for pass in 0..<2 {
+      let marks = !j.bare && !j.look.dark && pass == 0
+      if marks {
+        c.saveGState()
+        c.setBlendMode(.multiply)
+        c.beginTransparencyLayer(auxiliaryInfo: nil)
+      }
       for a in j.above where a.g.marker == (pass == 0) && a.g.box.intersects(j.region.offsetBy(dx: 0, dy: a.up)) {
         c.saveGState()
         c.translateBy(x: 0, y: -a.up)
         a.g.draw(c)
         c.restoreGState()
       }
-      for g in j.strokes where g.marker == (pass == 0) && g.box.intersects(j.region) { g.draw(c) }
+      for g in j.strokes where g.marker == (pass == 0) && g.box.intersects(j.region) { g.draw(c); if pass == 1 { Paint.edge(g, c, sx) } }
+      if marks {
+        c.endTransparencyLayer()
+        c.restoreGState()
+      }
     }
-    if !j.bare { c.endTransparencyLayer() }
+    if layered { c.endTransparencyLayer() }
     return c.makeImage()
   }
 }

@@ -122,6 +122,12 @@ struct SurfaceDoArgs: Decodable {
   var place: PlaceArgs?
   var zoom: Double?
   var animated: Bool?
+  /// (the checks) a point of a sheet, fractions of it, and a line down it to `y2`.
+  var page: Int?
+  var x: Double?
+  var y: Double?
+  var y2: Double?
+  var lines: [[Double]]?
 }
 
 struct LeafState: Encodable {
@@ -214,6 +220,8 @@ final class Leaf: UIView {
   /// (a book's page's sheet) The view's points to a point of the page, and the page's size in its points.
   var sc: CGFloat = 1
   var pts = CGSize(width: 612, height: 792)
+  /// Where its corner fell between the screen's pixels when its pictures were last asked for (`phase`).
+  var phase = CGPoint.zero
   var index = 0
   var model: [PKStroke] = []
   var geoms: [Geom] = []
@@ -877,12 +885,6 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private func placeCanvas() {
     let v = scroll.bounds.size
     guard v.width > 0, v.height > 0 else { return }
-    let px = v.width * v.height * screen * screen
-    let k = max(1, min(2, (Sheet.most / max(px, 1)).squareRoot()))
-    let size = CGSize(width: (v.width * k * screen).rounded() / screen, height: (v.height * k * screen).rounded() / screen)
-    canvas.transform = .identity
-    canvas.bounds = CGRect(origin: .zero, size: size)
-    canvas.transform = CGAffineTransform(scaleX: v.width / size.width, y: v.height / size.height)
     // (PencilKit's own drawing draws in a space `LiveInk.scale` times as large: `LiveInk.pencilKit`)
     // (a book's: the screen's points to a point of the page in the middle of the view, at its zoom)
     if guest {
@@ -892,7 +894,17 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     } else {
       canvasK = s
     }
-    let zz = canvasK * k / LiveInk.drawn(scaled: true)
+    let drawn = LiveInk.drawn(scaled: true)
+    let px = v.width * v.height * screen * screen
+    // as many of its pixels to the screen's as memory allows, up to two; and no more than keeps its zoom within
+    // PencilKit's (`NoteSurface.pkMost`): past it the canvas stays at that zoom, whatever it is told
+    var k = max(1, min(2, (Sheet.most / max(px, 1)).squareRoot()))
+    k = max(1, min(k, NoteSurface.pkMost * drawn / max(canvasK, 0.0001)))
+    let size = CGSize(width: (v.width * k * screen).rounded() / screen, height: (v.height * k * screen).rounded() / screen)
+    canvas.transform = .identity
+    canvas.bounds = CGRect(origin: .zero, size: size)
+    canvas.transform = CGAffineTransform(scaleX: v.width / size.width, y: v.height / size.height)
+    let zz = min(canvasK * k / drawn, NoteSurface.pkMost)
     if abs(canvas.zoomScale - zz) > 0.00001 {
       canvas.maximumZoomScale = max(canvas.maximumZoomScale, zz)
       canvas.minimumZoomScale = min(canvas.minimumZoomScale, zz)
@@ -900,10 +912,17 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       canvas.minimumZoomScale = zz
       canvas.maximumZoomScale = zz
     }
+    // what is taken off the canvas is read at the zoom it has, not the one it was told: told more than PencilKit
+    // allows, it had stayed at ten, and every stroke kept was moved down and right of where it was written, the
+    // farther the more (2026-11-22: "it gets translated towards the bottom right ... after i lift the pen")
+    canvasK = canvas.zoomScale * drawn / (size.width / v.width)
     if canvas.contentSize != size { canvas.contentSize = size }
     if canvas.contentOffset != .zero { canvas.contentOffset = .zero }
     pin()
   }
+
+  /// The most PencilKit's canvas zooms: told more, it stays here (measured: told 15.2, it was 10).
+  static let pkMost: CGFloat = 10
 
   /// What stands still over the pages, put where the view is.
   func pin() {
@@ -1200,23 +1219,30 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       return
     }
     let zooming = !steady
+    let z = scroll.zoomScale
     let fw = (l.frame.width * screen).rounded(), fh = (l.frame.height * screen).rounded()
     let f = fw * fh > NoteSurface.cap ? (NoteSurface.cap / (fw * fh)).squareRoot() : 1
-    let pw = max(1, Int((fw * f).rounded())), ph = max(1, Int((fh * f).rounded()))
-    let key = [l.ver, pw, ph]
+    // (at the fitted size, a pixel for a pixel and on the screen's pixels: a pixel more each way, its corner the
+    // fraction before the page's; at another size it is stretched whatever it is drawn on)
+    let ph0 = f >= 1 && abs(z - 1) < 0.0005 ? phase(l) : .zero
+    let pw = max(1, Int((fw * f).rounded()) + (ph0 == .zero ? 0 : 1)), ph = max(1, Int((fh * f).rounded()) + (ph0 == .zero ? 0 : 1))
+    let key = [l.ver, pw, ph, Int(ph0.x * 64), Int(ph0.y * 64)]
     if l.restKey != key, l.restAsked != key, !(zooming && l.rest.contents != nil && l.restKey?[0] == l.ver) {
       l.restAsked = key
-      paint(job(l, region: CGRect(origin: .zero, size: l.pts), pw: pw, ph: ph)) { [weak self, weak l] img in
+      let k = CGFloat(pw) / max(1, fw * f + (ph0 == .zero ? 0 : 1))
+      let per = screen * f * k * sOf(l)
+      let region = CGRect(x: -ph0.x / per, y: -ph0.y / per, width: CGFloat(pw) / per, height: CGFloat(ph) / per)
+      paint(job(l, region: ph0 == .zero ? CGRect(origin: .zero, size: l.pts) : region, pw: pw, ph: ph)) { [weak self, weak l] img in
         guard let self = self, let l = l, l.restAsked == key, let img = img else { return }
         l.restAsked = nil
         l.restKey = key
+        l.rest.frame = ph0 == .zero ? l.bounds : self.onLeaf(region, l)
         l.rest.contents = img
         self.settle(l)
       }
     }
     // the whole picture is as sharp as the screen shows it: nothing more is drawn
-    let z = scroll.zoomScale
-    if z * (1 / f) < 1.05 {
+    if f >= 1 && abs(z - 1) < 0.0005 {
       if !l.fine.isHidden { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil; settle(l) }
       return
     }
@@ -1227,13 +1253,15 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       return
     }
     let zk = Int((z * 100000).rounded())
-    if l.fineKey?[0] == l.ver, l.fineKey?[5] == zk, !l.fine.isHidden, onLeaf(l.fineRegion, l).offsetBy(dx: l.frame.minX, dy: l.frame.minY).insetBy(dx: -0.5, dy: -0.5).contains(part) { return }
+    let fp = phase(l)
+    if l.fineKey?[0] == l.ver, l.fineKey?[5] == zk, l.fineKey?[6] == Int(fp.x * 64), l.fineKey?[7] == Int(fp.y * 64), !l.fine.isHidden, onLeaf(l.fineRegion, l).offsetBy(dx: l.frame.minX, dy: l.frame.minY).insetBy(dx: -0.5, dy: -0.5).contains(part) { return }
     // (the part in view and a little round it, in the sheet's view's points, drawn at the screen's pixels at this zoom)
     let grown = part.insetBy(dx: -vis.width * 0.2, dy: -vis.height * 0.2).intersection(l.frame).offsetBy(dx: -l.frame.minX, dy: -l.frame.minY)
     let px = screen * z
-    let x0 = (grown.minX * px).rounded(.down), y0 = (grown.minY * px).rounded(.down)
-    let x1 = (grown.maxX * px).rounded(.up), y1 = (grown.maxY * px).rounded(.up)
-    let fkey = [l.ver, Int(x0), Int(y0), Int(x1 - x0), Int(y1 - y0), zk]
+    // (its pixels the screen's: each edge where the screen has one, the page's corner `fp` off them)
+    let x0 = (grown.minX * px + fp.x).rounded(.down) - fp.x, y0 = (grown.minY * px + fp.y).rounded(.down) - fp.y
+    let x1 = (grown.maxX * px + fp.x).rounded(.up) - fp.x, y1 = (grown.maxY * px + fp.y).rounded(.up) - fp.y
+    let fkey = [l.ver, Int(x0.rounded()), Int(y0.rounded()), Int((x1 - x0).rounded()), Int((y1 - y0).rounded()), zk, Int(fp.x * 64), Int(fp.y * 64)]
     if l.fineAsked == fkey || l.fineKey == fkey { return }
     l.fineAsked = fkey
     let sl = sOf(l)
@@ -1243,7 +1271,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       if !l.fine.isHidden { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil; settle(l) }
       return
     }
-    paint(job(l, region: region, pw: Int(x1 - x0), ph: Int(y1 - y0))) { [weak self, weak l] img in
+    paint(job(l, region: region, pw: Int((x1 - x0).rounded()), ph: Int((y1 - y0).rounded()))) { [weak self, weak l] img in
       guard let self = self, let l = l, l.fineAsked == fkey, let img = img else { return }
       l.fineAsked = nil
       l.fineKey = fkey
@@ -1313,6 +1341,21 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     CATransaction.commit()
     placeCanvas()
     tend()
+  }
+
+  /// (a book's page) Where its corner falls between the screen's pixels, as a fraction of one each way. The book's
+  /// scroll and zoom are its scroll view's own, so a page lies wherever they leave it, a fraction of a pixel off as
+  /// often as not; a picture drawn a pixel for a pixel and shown that far off is drawn again by the screen between
+  /// pixels, and a thin line comes out wider and paler than the stroke written (2026-11-22: "when pen strokes are
+  /// pretty thin, it's as if the opacity goes down a little bit"). So its pictures are drawn on the screen's own
+  /// pixels as the page lies at rest: read then, and kept while the pages move (nothing is drawn again for it then).
+  private func phase(_ l: Leaf) -> CGPoint {
+    guard guest, steady, !scroll.isDragging, !scroll.isDecelerating, l.window != nil else { return l.phase }
+    let o = l.convert(CGPoint.zero, to: nil)
+    let sc = screen
+    func frac(_ v: CGFloat) -> CGFloat { let f = v * sc - (v * sc).rounded(.down); return (f * 64).rounded() / 64 }
+    l.phase = CGPoint(x: frac(o.x).truncatingRemainder(dividingBy: 1), y: frac(o.y).truncatingRemainder(dividingBy: 1))
+    return l.phase
   }
 
   /// A book's zoom has ended: the canvas told it, and the pictures made at it.
@@ -1453,8 +1496,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     let d = dirty.insetBy(dx: -2, dy: -2).intersection(whole)
     if d.isNull || d.width <= 0 || d.height <= 0 { return }
     let s = ks(l)
-    let x0 = (d.minX * s * screen).rounded(.down), y0 = (d.minY * s * screen).rounded(.down)
-    let x1 = (d.maxX * s * screen).rounded(.up), y1 = (d.maxY * s * screen).rounded(.up)
+    let pp = guest ? phase(l) : .zero
+    let x0 = (d.minX * s * screen + pp.x).rounded(.down) - pp.x, y0 = (d.minY * s * screen + pp.y).rounded(.down) - pp.y
+    let x1 = (d.maxX * s * screen + pp.x).rounded(.up) - pp.x, y1 = (d.maxY * s * screen + pp.y).rounded(.up) - pp.y
     // (a large part is drawn at once with fewer pixels, four million at most, and sharp a moment later with the
     // sheet's pictures, off the main thread: what the eraser took is off the glass in this turn whatever its size;
     // until 2026-11-22 a part that large was left to the pictures alone)
@@ -1687,6 +1731,15 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       scroll.drawHierarchy(in: CGRect(origin: .zero, size: b), afterScreenUpdates: false)
     }
     return img.jpegData(compressionQuality: 0.9)?.base64EncodedString()
+  }
+
+  /// (the checks) A point of the sheet in place `page` (from 1; fractions of it) on the view, and on the web view's glass.
+  func whereOn(page: Int, x: Double, y: Double) -> (view: CGPoint, glass: CGPoint)? {
+    guard page >= 1, page <= order.count, let l = leaves[order[page - 1]] else { return nil }
+    let sz = sizeOf(l), k = sOf(l)
+    let v = l.convert(CGPoint(x: CGFloat(x) * sz.width * k, y: CGFloat(y) * sz.height * k), to: view)
+    let g = plugin.webView.map { view.convert(v, to: $0.scrollView) } ?? v
+    return (v, g)
   }
 
   /// A dev run's: every picture made, for a capture to be of the sheets as they are.
@@ -2126,8 +2179,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     guard let b = heldBox() else { return }
     let d = b.insetBy(dx: -3, dy: -3)
     let s = ks(l)
-    let x0 = (d.minX * s * screen).rounded(.down), y0 = (d.minY * s * screen).rounded(.down)
-    let x1 = (d.maxX * s * screen).rounded(.up), y1 = (d.maxY * s * screen).rounded(.up)
+    let pp = guest ? phase(l) : .zero
+    let x0 = (d.minX * s * screen + pp.x).rounded(.down) - pp.x, y0 = (d.minY * s * screen + pp.y).rounded(.down) - pp.y
+    let x1 = (d.maxX * s * screen + pp.x).rounded(.up) - pp.x, y1 = (d.maxY * s * screen + pp.y).rounded(.up) - pp.y
     let region = CGRect(x: x0 / screen / s, y: y0 / screen / s, width: (x1 - x0) / screen / s, height: (y1 - y0) / screen / s)
     let most = (16_000_000 / max((x1 - x0) * (y1 - y0), 1)).squareRoot()
     let f = min(1, most)

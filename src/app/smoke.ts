@@ -21382,73 +21382,169 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       return;
     }
     if (part.split(',').includes('inksharp')) {
-      // ── the kept stroke as sharp as the live one (`"part": "inksharp"`; 2026-11-22, "the ink blurs after i write
-      // with it"): at 100%, 250% and 400% (the screen's points to a point of the page about 1.9, 4.7, 7.6: the iPad's
-      // was 7.5), a slow stroke read off the glass down a line across it while it is written and once it is kept;
-      // then the one written at 100% read again at 250% and 400% and at 100% after them. A pixel part ink and part
-      // page is one of the edge's; a blur is many. Hard: the kept stroke's edge no softer than the live one's and two
-      // pixels at most past it. `inksharp:` lines ──
-      // (a device that never said: the native page view, the default on an iPad)
+      // ── the kept stroke as the live one (`"part": "inksharp"`; 2026-11-22, the iPad: "the ink blurs after i write
+      // with it", "zoomed in past a point ... it gets translated towards the bottom right ... after i lift the pen",
+      // "when pen strokes are pretty thin, it's as if the opacity goes down a little bit"): on a book's page and on a
+      // notebook's sheet, at 100%, 250% and 400%, a stroke of the pen as it is and of 1, 0.5 and 0.3 pt, each read off
+      // the glass down a line across it while it is written and once it is kept: where its middle is, how many
+      // pixels are its edge, its darkest pixel and all its ink. Hard: kept where it was written (a pixel at most), no
+      // softer, as dark (a tenth at most lighter at its darkest, the ink in all within an eighth); and a stroke
+      // written at 100% read again at the other zooms. `inksharp:` lines ──
+      const wsX = await invoke<string | null>('dev_env', { name: 'ILMI_WIDTHS' });
+      const widths: (number | null)[] = (wsX || 'pen,1,0.5,0.3').split(',').map((v) => (v === 'pen' ? null : Number(v)));
+      const zooms = ((await invoke<string | null>('dev_env', { name: 'ILMI_ZOOMS' })) || '1,2.5,4').split(',').map(Number);
+      const RED = '#d01c1c';
+      // (`ILMI_ON=book` or `notebook`: only that one)
+      const onlyOn = await invoke<string | null>('dev_env', { name: 'ILMI_ON' });
+      let seq = 900000;
+      let asIs = 0;
+      const pen = async (w: number | null) => {
+        if (!asIs) asIs = (await state()).tool?.width || 2.2;
+        await invoke('ink_tool', { tool: { kind: 'pen', color: RED, width: w ?? asIs, ink: 'pen' }, seq: ++seq });
+        await poll(async () => { const now = (await state()).tool; return now?.color?.toLowerCase() === RED && Math.abs((now.width ?? 0) - (w ?? now.width)) < 0.01 ? now : null; }, `the pen ${w ?? 'as it is'}`, 8000);
+      };
+      /** Down a line through a stroke: its ink, by its colour (the pen's is red, turned on a dark page; paper and
+       *  print have none). */
+      const read = (px: number[][]) => {
+        const ink = px.map(([r, g, b]) => Math.max(r!, g!, b!) - Math.min(r!, g!, b!));
+        const peak = Math.max(...ink);
+        const top = Math.max(60, peak);
+        const core = ink.filter((v) => v >= top * 0.9).length;
+        // (a sixth of the ink's colour at least: a dark page's ruling has a little colour of its own)
+        const soft = ink.filter((v) => v > top * 0.16 && v < top * 0.9).length;
+        let sum = 0, wsum = 0;
+        ink.forEach((v, i) => { if (v >= top * 0.5) { sum += i * v; wsum += v; } });
+        return { core, soft, peak, sum: ink.reduce((a, v) => a + v, 0) / 255, off: wsum > 0 ? sum / wsum - (px.length - 1) / 2 : NaN, n: px.length };
+      };
+      type Read = ReturnType<typeof read>;
+      /** Lines across one stroke as one: each measure the mean of theirs (where it was, the median). */
+      const merge = (rs: Read[]): Read => {
+        const ok = rs.filter((r) => r.core > 0);
+        if (!ok.length) return rs[0]!;
+        const mean = (f: (r: Read) => number) => ok.reduce((a, r) => a + f(r), 0) / ok.length;
+        const offs = ok.map((r) => r.off).sort((a, b) => a - b);
+        return { core: Math.round(mean((r) => r.core)), soft: Math.round(mean((r) => r.soft)), peak: Math.round(mean((r) => r.peak)), sum: mean((r) => r.sum), off: offs[Math.floor(offs.length / 2)]!, n: ok[0]!.n };
+      };
+      const say = (e: Read) => `${e.core} px ink, ${e.soft} px edge, darkest ${e.peak}, ink ${e.sum.toFixed(2)} px, ${e.off.toFixed(1)} px off`;
+      const fails: string[] = [];
+      const judge = (where: string, live: Read | null, kept: Read) => {
+        if (!(kept.core > 0)) { fails.push(`${where}: the kept stroke not on the glass`); return; }
+        if (!live) return;
+        const off = Math.abs(kept.off - live.off);
+        if (off > 1) fails.push(`${where}: kept ${off.toFixed(1)} px from where it was written`);
+        if (kept.soft > Math.max(live.soft, 2) + 1) fails.push(`${where}: kept softer (${kept.soft} px edge, ${live.soft} live)`);
+        if (kept.peak < live.peak * 0.9) fails.push(`${where}: kept lighter at its darkest (${kept.peak}, ${live.peak} live)`);
+        if (Math.abs(kept.sum / live.sum - 1) > 0.125) fails.push(`${where}: kept ink ${kept.sum.toFixed(2)} px, ${live.sum.toFixed(2)} live`);
+      };
+      interface On {
+        name: string;
+        count(): Promise<number>;
+        zoomTo(z: number, animated?: boolean): Promise<void>;
+        top(y: number, x: number): Promise<void>;
+        glass(x: number, y: number): Promise<[number, number]>;
+        column(x: number, y0: number, y1: number): Promise<number[][]>;
+        columns(lines: number[][]): Promise<number[][][]>;
+        y0: number;
+      }
+      const strokes = async (o: On) => {
+        let first: { x: number; y: number } | null = null;
+        for (const [zi, z] of zooms.entries()) {
+          // (each zoom's strokes in a place of their own: the last zoom's are not under the next's lines)
+          const base = o.y0 + 0.36 * zi;
+          await o.zoomTo(z);
+          await o.top(base, 0.5);
+          await sleep(1500);
+          for (const [i, w] of widths.entries()) {
+            await pen(w);
+            const n = await o.count();
+            const yy = base + (0.06 + 0.08 * i) / z;
+            const h = 0.012 / z;
+            const x1 = 0.5 - 0.15 / z, x2 = 0.5 + 0.15 / z, fall = 0.02 / z;
+            const yAt = (x: number) => yy + fall * ((x - x1) / (x2 - x1));
+            // seven lines across it, from a fifth of the way along to a little past the middle: the screen's pixels
+            // fall differently under each, and the stroke is read as all of them together
+            const xs = Array.from({ length: 7 }, (_, k) => 0.5 - 0.09 / z + (k * 0.015) / z);
+            const all = async () => (await o.columns(xs.map((x) => [x, yAt(x) - h, yAt(x) + h]))).map(read);
+            const far = 0.5 + 0.11 / z;
+            ask('drag', ...(await o.glass(x1, yy)), ...(await o.glass(x2, yy + fall)), 8.0);
+            // (live: read once the Pencil has passed the last of them, while it is still down)
+            const live = await poll(async () => {
+              if ((await o.count()) !== n) return null;
+              const got = (await o.columns([...xs, far].map((x) => [x, yAt(x) - h, yAt(x) + h]))).map(read);
+              return got[got.length - 1]!.core > 0 && got.slice(0, -1).every((g) => g.core > 0) && (await o.count()) === n ? got.slice(0, -1) : null;
+            }, `${o.name} at ${z * 100}%, ${w ?? 'the pen'}: the live stroke on the glass`, 15000).catch(() => null);
+            await shot(`inksharp-${o.name}-live-${Math.round(z * 10)}-${i}`);
+            await poll(async () => (await o.count()) === n + 1, `${o.name} at ${z * 100}%, ${w ?? 'the pen'}: kept`, 20000);
+            await sleep(2500);
+            const kept = await all();
+            await shot(`inksharp-${o.name}-kept-${Math.round(z * 10)}-${i}`);
+            const where = `${o.name} at ${z * 100}%, ${w === null ? 'the pen' : `${w} pt`}`;
+            const lv = live ? merge(live) : null, kp = merge(kept);
+            log(`inksharp: ${where}: live ${lv ? say(lv) : 'not read'}; kept ${say(kp)}`);
+            judge(where, lv, kp);
+            if (zi === 0 && i === 0) first = { x: xs[3]!, y: yAt(xs[3]!) };
+          }
+        }
+        // the one written first, read again at the other zooms and back
+        if (first) {
+          for (const z of [...zooms.slice(1), zooms[0]!]) {
+            await o.zoomTo(z, true);
+            await sleep(900);
+            await o.top(Math.max(0, first.y - 0.25 / z), first.x);
+            await sleep(2500);
+            const e = read(await o.column(first.x, first.y - 0.012, first.y + 0.012));
+            log(`inksharp: ${o.name}: the first stroke, now at ${z * 100}%: ${say(e)}`);
+            if (!(e.core > 0) || e.soft > 4) fails.push(`${o.name}: the first stroke at ${z * 100}%: ${say(e)}`);
+          }
+        }
+      };
+      await poll(async () => (await state()).tool?.kind === 'pen', 'the pen held', 8000);
+      // (`ILMI_INKTHEME=dark`: in the dark theme)
+      if ((await invoke<string | null>('dev_env', { name: 'ILMI_INKTHEME' })) === 'dark') { useApp.getState().setTheme('dark'); await sleep(1500); }
+      log(`inksharp: the theme ${document.documentElement.dataset.theme ?? 'light'}`);
+      await invoke('dev_ink_pen', { on: true });
+      // a book's page: with nothing said, the native page view (the default on an iPad)
       try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
       window.dispatchEvent(new Event('ilmi-pdf-native'));
-      const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-surface', x) ? x : null; }, 'with nothing said, the chapter is the native page view', 60000);
-      const sid = q<HTMLElement>('.pdf-surface', b)!.dataset.surface!;
-      const S = (a: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...a } });
-      await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'its pages shown', 30000);
-      await poll(async () => (await state()).tool?.kind === 'pen', 'the pen held', 8000);
-      await invoke('dev_ink_pen', { on: true });
-      const on = async (x: number, y: number) => { const g = await S({ op: 'where', page: PAGEINK_PAGE, x, y }); return [fx(Number(g.gx)), fy(Number(g.gy))] as [number, number]; };
-      /** Down a line of the page through a stroke: how many pixels are wholly ink and how many part ink (its edge). */
-      const edge = async (x: number, y: number, h: number) => {
-        const st = await S({ op: 'column', page: PAGEINK_PAGE, x, y: y - h, y2: y + h });
-        const px = (st.column as number[][]) ?? [];
-        // (ink against the page by its colour: the pen's is red here, the print black or grey)
-        const ink = px.map(([r, g, bb]) => Math.max(0, Math.min(r! - g!, r! - bb!)));
-        const top = Math.max(60, ...ink);
-        const core = ink.filter((v) => v >= top * 0.9).length;
-        const soft = ink.filter((v) => v > top * 0.06 && v < top * 0.9).length;
-        return { core, soft, top, n: px.length };
-      };
-      type Edge = Awaited<ReturnType<typeof edge>>;
-      const say = (e: Edge) => `${e.core} px ink, ${e.soft} px of edge (of ${e.n})`;
-      const written: { z: number; x: number; y: number }[] = [];
-      for (const z of [1, 2.5, 4]) {
-        await S({ op: 'zoom', zoom: z, animated: false });
-        await S({ op: 'go', page: PAGEINK_PAGE, y: 0.12, x: 0.5 });
-        await sleep(1500);
-        const n = (await there())!.strokes;
-        const st = await S({ op: 'state' });
-        const yy = Number(st.y ?? 0.12) + 0.3 / z;
-        const x = 0.5 - 0.08 / z, h = 0.012 / z;
-        // the stroke runs from x1 to x2, falling 0.02/z: at x it is this far down
-        const x1 = 0.5 - 0.15 / z, x2 = 0.5 + 0.15 / z, at = yy + (0.02 / z) * ((x - x1) / (x2 - x1));
-        ask('drag', ...(await on(x1, yy)), ...(await on(x2, yy + 0.02 / z)), 4.0);
-        // (read while the Pencil is still down, past the column: the rig's drag takes its time to begin)
-        const live = await poll(async () => { const e = await edge(x, at, h); return e.core > 0 ? e : null; }, `at ${z * 100}%: the live stroke on the glass`, 4000).catch(() => null);
-        await shot(`inksharp-live-${Math.round(z * 10)}`);
-        await poll(async () => (await there())?.strokes === n + 1, `the stroke at ${z * 100}% kept`, 20000);
-        await sleep(2500);
-        const kept = await edge(x, at, h);
-        await shot(`inksharp-kept-${Math.round(z * 10)}`);
-        log(`inksharp: at ${z * 100}%: live ${live ? say(live) : 'not read'}; kept ${say(kept)}`);
-        must(kept.core > 0, `at ${z * 100}%: the kept stroke is read off the glass`);
-        // (a vector's edge: a pixel or so each side, as the live stroke's)
-        must(kept.soft <= Math.max(live?.soft ?? 2, 2) + 1, `at ${z * 100}%: kept, its edge as sharp as while written (${kept.soft} px of edge, ${live ? live.soft : '-'} live)`);
-        written.push({ z, x, y: at });
+      if (onlyOn !== 'notebook') {
+        const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-surface', x) ? x : null; }, 'with nothing said, the chapter is the native page view', 60000);
+        const sid = q<HTMLElement>('.pdf-surface', b)!.dataset.surface!;
+        const S = (a: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...a } });
+        await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'its pages shown', 30000);
+        await strokes({
+          name: 'book', y0: 0.12,
+          count: async () => (await there())?.strokes ?? -1,
+          zoomTo: async (z, animated) => { await S({ op: 'zoom', zoom: z, animated: !!animated }); },
+          top: async (y, x) => { await S({ op: 'go', page: PAGEINK_PAGE, y, x }); },
+          glass: async (x, y) => { const g = await S({ op: 'where', page: PAGEINK_PAGE, x, y }); return [fx(Number(g.gx)), fy(Number(g.gy))]; },
+          column: async (x, y0, y1) => ((await S({ op: 'column', page: PAGEINK_PAGE, x, y: y0, y2: y1 })).column as number[][]) ?? [],
+          columns: async (lines) => ((await S({ op: 'columns', page: PAGEINK_PAGE, lines })).columns as number[][][]) ?? [],
+        });
       }
-      // the one written at 100%, read again at the others (the ink there all along, the zoom changed under it)
-      const w0 = written[0]!;
-      for (const z of [2.5, 4, 1]) {
-        await S({ op: 'zoom', zoom: z, animated: true });
-        await sleep(900);
-        await S({ op: 'go', page: PAGEINK_PAGE, y: Math.max(0, w0.y - 0.25 / z), x: w0.x });
-        await sleep(2500);
-        const e = await edge(w0.x, w0.y, 0.012);
-        log(`inksharp: the stroke written at 100%, now at ${z * 100}%: ${say(e)}`);
-        must(e.core > 0 && e.soft <= 4, `the stroke written at 100%, zoomed to ${z * 100}%: sharp (${e.soft} px of edge)`);
+      // a notebook's sheet
+      if (onlyOn !== 'book') {
+        const { createWritten } = await import('./written.js');
+        const NBX = await createWritten('fleeting', 'deep ink');
+        openNode(NBX);
+        const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === NBX); return x && x.getClientRects().length && surfaceIn(x) ? x : null; }, 'a notebook, its surface', 60000);
+        const sid = surfaceIn(b)!;
+        const D = (a: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_surface_do', { ask: { id: sid, ...a } });
+        const sheetNow = async () => (await invoke<{ surfaces?: { id: string; sheets: { id: string; strokes: number; loaded: boolean }[] }[] }>('dev_ink_state')).surfaces?.find((f) => f.id === sid)?.sheets[0];
+        await poll(async () => (await sheetNow())?.loaded, 'its sheet given its strokes', 20000);
+        await strokes({
+          name: 'notebook', y0: 0.08,
+          count: async () => (await sheetNow())?.strokes ?? -1,
+          zoomTo: async (z, animated) => { await D({ op: 'zoom', zoom: z, animated: !!animated }); await sleep(animated ? 700 : 200); },
+          top: async (y, x) => { await D({ op: 'go', place: { page: 1, y, x }, animated: false }); },
+          glass: async (x, y) => { const g = await D({ op: 'where', page: 1, x, y }); return [fx(Number(g.gx)), fy(Number(g.gy))]; },
+          column: async (x, y0, y1) => ((await D({ op: 'column', page: 1, x, y: y0, y2: y1 })).column as number[][]) ?? [],
+          columns: async (lines) => ((await D({ op: 'columns', page: 1, lines })).columns as number[][][]) ?? [],
+        });
       }
       await invoke('dev_ink_pen', { on: false });
       try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
+      if (fails.length) throw new Error(`inksharp: ${fails.length} off: ${fails.join('; ')}`);
+      log('ok: every stroke kept where it was written, as sharp and as dark as it was written');
       phase('done');
       finished = true;
       log('done');

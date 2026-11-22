@@ -7839,7 +7839,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
   /** A document with pages opens as its pages alone (milestone 70): no note beside them, no inspector, the pages across the pane. */
   const openBook = async (p: string, first: number) => {
     openNode(p);
-    await poll(() => q(`.pane[data-active="1"] .book .pdf-page[data-page="${first}"] canvas`), `${p.split('/').pop()} opens as its pages, drawn`, 15000);
+    await poll(() => q(`.pane[data-active="1"] .book .pdf-page[data-page="${first}"] :is(canvas, .pg-tiles > img)`), `${p.split('/').pop()} opens as its pages, drawn`, 15000);
     await sleep(500);
     must(alone() && !q('.insp'), `nothing beside them: no note, no inspector (${qa('.pane').length} pane${qa('.pane').length === 1 ? '' : 's'}${notesPane() ? ', a note beside' : ''}${q('.insp') ? ', the inspector' : ''})`);
     const a = across(first);
@@ -8002,7 +8002,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     must((qrow.textContent ?? '').includes('pp. 41–42') && (qrow.textContent ?? '').includes('boxed nov 2'), 'tagged passage, named by its pages, boxed nov 2');
     await shot('book-passage-queue');
     openSession(kept);
-    await poll(() => q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="41"] canvas'), 'its session opens the book', 15000);
+    await poll(() => q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="41"] :is(canvas, .pg-tiles > img)'), 'its session opens the book', 15000);
     const kbox = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .doc-session .pbox.cur[data-kept="1"]`), 'its boxes lit', 10000);
     {
       const pr = q<HTMLElement>('.pane[data-active="1"] .doc-session .book-pages')!.getBoundingClientRect();
@@ -8120,7 +8120,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     refreshQueue();
     const sec = await poll(() => useApp.getState().queue.find((i): i is SectionItem => i.kind === 'section' && i.path === CH3 && i.heading.startsWith('3.2')), 'the partition function is in the day\'s queue', 8000);
     openSession(sec);
-    await poll(() => q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="41"] canvas'), 'its session opens the book', 15000);
+    await poll(() => q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="41"] :is(canvas, .pg-tiles > img)'), 'its session opens the book', 15000);
     await poll(() => useApp.getState().caretHeading?.path === CH3 && useApp.getState().caretHeading?.text === sec.heading, 'at the section, the caret in it', 8000);
     must(notesIn() && !q('.insp'), 'the note beside the pages, the inspector closed');
     const box = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .doc-session .pbox.cur[data-section="${sec.heading}"]`), 'its boxes lit', 8000);
@@ -8190,7 +8190,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     const aloneItem = await poll(() => useApp.getState().queue.find((i): i is ReadItem => i.kind === 'read' && i.path === ALONE), 'it is in the day\'s queue to read', 8000);
     must(aloneItem.pdf === true, 'as a document read by its pages');
     openSession(aloneItem);
-    await poll(() => useApp.getState().sessionEl?.kind === 'read' && q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="1"] canvas'), 'its session opens the pages', 15000);
+    await poll(() => useApp.getState().sessionEl?.kind === 'read' && q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="1"] :is(canvas, .pg-tiles > img)'), 'its session opens the pages', 15000);
     must(alone() && !q('.insp'), 'nothing beside them in the session');
     {
       const sc2 = q<HTMLElement>('.pane[data-active="1"] .doc-session .book-pages')!;
@@ -8486,7 +8486,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
   /** A session at one item; resolves once its bar is drawn in the book. */
   const sessionAt = async (s: SectionItem | ReadItem, page: number) => {
     openSession(s);
-    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, s) && q(`.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="${page}"] canvas`) && q('.pane[data-active="1"] .doc-session') && q('.pane[data-active="1"] .session-bar') ? true : null; }, `the session opens the book at p. ${page}`, 45000); // a covered window draws its pages slowly
+    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, s) && q(`.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="${page}"] :is(canvas, .pg-tiles > img)`) && q('.pane[data-active="1"] .doc-session') && q('.pane[data-active="1"] .session-bar') ? true : null; }, `the session opens the book at p. ${page}`, 45000); // a covered window draws its pages slowly
     await sleep(600);
   };
   const bar = () => q<HTMLElement>('.pane[data-active="1"] .session-bar')!;
@@ -9392,7 +9392,7 @@ export async function smokeReadme(vault: Vault): Promise<void> {
     ['queue', async () => { openNode(queueId('today')); await until(() => q('.queue .qlist li')); await sleep(600); }],
     ['book', async () => {
       await open(CH3);
-      await until(() => q('.pane-body .book .pdf-page canvas'), 20000);
+      await until(() => q('.pane-body .book .pdf-page :is(canvas, .pg-tiles > img)'), 20000);
       await sleep(2500);
       q('.pane-body .book .pdf-page[data-page="24"]')?.scrollIntoView({ block: 'start' });
       await sleep(2500);
@@ -9572,10 +9572,10 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
       // the book opened: its PDF fetched if it is not here, its first page drawn
       const { value, words } = await wordsDuring(async () => {
         // a page of the book that was open before is not this one's
-        for (const c of document.querySelectorAll<HTMLElement>('.pdf-page canvas')) c.dataset.before = '1';
+        for (const c of document.querySelectorAll<HTMLElement>('.pdf-page :is(canvas, .pg-tiles > img)')) c.dataset.before = '1';
         openNode(str('path'));
         await until(() => (activeTab(useApp.getState().panes)?.id === str('path') ? true : null), 8000);
-        await until(() => document.querySelector(`.pane[data-active="1"] .book .pdf-page[data-page="1"] canvas:not([data-before])`), Number(args.ms ?? 30000));
+        await until(() => document.querySelector(`.pane[data-active="1"] .book .pdf-page[data-page="1"] :is(canvas, .pg-tiles > img):not([data-before])`), Number(args.ms ?? 30000));
         return true;
       });
       await sleep(400);
@@ -11057,7 +11057,7 @@ export async function smokeTouch(): Promise<void> {
     await poll(() => activeTab(useApp.getState().panes)?.id === BOOK, 'a tap on the chapter\'s row opens it', 20000);
     await poll(() => !q('.side'), 'and the sheet goes');
     const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens as a book', 15000);
-    await poll(() => q('.pdf-page[data-page="23"] canvas', book) ?? (q('.pdf-page[data-page="23"]', book)?.scrollIntoView({ block: 'start' }), null), 'its book is fetched on opening and the first page drawn', 60000);
+    await poll(() => q('.pdf-page[data-page="23"] :is(canvas, .pg-tiles > img)', book) ?? (q('.pdf-page[data-page="23"]', book)?.scrollIntoView({ block: 'start' }), null), 'its book is fetched on opening and the first page drawn', 60000);
     await filesSettled();
     must(!useApp.getState().away.includes(pdfOf()) && useApp.getState().away.length === 3, 'the book opened is here now, the others still away');
     const sc = q<HTMLElement>('.book-pages', book)!;
@@ -11130,7 +11130,7 @@ export async function smokeTouch(): Promise<void> {
     /** A box on page `n`, as fractions of the page, in window fractions: its two corners. */
     const corners = async (n: number, x: number, y: number, w: number, h: number): Promise<[number, number, number, number]> => {
       // a page far from the view is not drawn: brought near first (a flick's own motion may have carried the pages on)
-      const el = await poll(() => q<HTMLElement>(`.pdf-page[data-page="${n}"] canvas`, book)?.parentElement ?? (q(`.pdf-page[data-page="${n}"]`, book)?.scrollIntoView({ block: 'center' }), null), `page ${n} is drawn`, 30000);
+      const el = await poll(() => q<HTMLElement>(`.pdf-page[data-page="${n}"] :is(canvas, .pg-tiles > img)`, book)?.parentElement ?? (q(`.pdf-page[data-page="${n}"]`, book)?.scrollIntoView({ block: 'center' }), null), `page ${n} is drawn`, 30000);
       const sr = sc.getBoundingClientRect();
       // the passage a third of the way down the view, once a flick's own motion has ended and the page stays where it is put
       const off = () => { const r0 = el.getBoundingClientRect(); return r0.top + (y + h / 2) * r0.height - (sr.top + sr.height / 3); };
@@ -11309,7 +11309,7 @@ export async function smokeTouch(): Promise<void> {
     await poll(() => activeTab(useApp.getState().panes)?.id === ALONE, 'a tap on its row opens it', 20000);
     await poll(() => !q('.side'), 'the sheet goes');
     const abook = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .book[data-path="${CSS.escape(ALONE)}"]`), 'it opens as a book', 15000);
-    await poll(() => q('.pdf-page[data-page="129"] canvas', abook) ?? (q('.pdf-page[data-page="129"]', abook)?.scrollIntoView({ block: 'start' }), null), 'its file is fetched on opening and p. 129 drawn', 60000);
+    await poll(() => q('.pdf-page[data-page="129"] :is(canvas, .pg-tiles > img)', abook) ?? (q('.pdf-page[data-page="129"]', abook)?.scrollIntoView({ block: 'start' }), null), 'its file is fetched on opening and p. 129 drawn', 60000);
     await filesSettled();
     const asc = q<HTMLElement>('.book-pages', abook)!;
     const aword = () => q<HTMLElement>('.meta .notes-toggle', abook)!;
@@ -11440,7 +11440,7 @@ export async function smokeTouch(): Promise<void> {
       refreshQueue();
       const aitem = await poll(() => useApp.getState().queue.find((i) => i.kind === 'read' && i.path === ALONE), 'it is in the queue to read by its own line', 8000);
       openSession(aitem);
-      await poll(() => useApp.getState().sessionEl?.kind === 'read' && q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page canvas'), 'its session is its pages', 20000);
+      await poll(() => useApp.getState().sessionEl?.kind === 'read' && q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page :is(canvas, .pg-tiles > img)'), 'its session is its pages', 20000);
       await sleep(600);
       asc.scrollTop = 0;
       q<HTMLElement>('.pane[data-active="1"] .doc-session .pdf-page[data-page="130"]')?.scrollIntoView({ block: 'end' });
@@ -11541,7 +11541,7 @@ export async function smokeTouch(): Promise<void> {
 
     // ── on its side: the same book, the note beside the pages (milestone 70) ──
     openNode(BOOK);
-    const land = await poll(() => { const b = q<HTMLElement>('.pane[data-active="1"] .book'); return b && q('.pdf-page[data-page="23"] canvas', b) ? b : null; }, 'the chapter again', 20000);
+    const land = await poll(() => { const b = q<HTMLElement>('.pane[data-active="1"] .book'); return b && q('.pdf-page[data-page="23"] :is(canvas, .pg-tiles > img)', b) ? b : null; }, 'the chapter again', 20000);
     ask('turn landscape');
     await poll(() => shape() === 'landscape', 'the iPad turns', 20000);
     await sleep(1500);
@@ -11601,7 +11601,7 @@ export async function smokeTouch(): Promise<void> {
     await sleep(1200);
     openNode(SIDE);
     const sbook = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .book[data-path="${CSS.escape(SIDE)}"]`), 'the second PDF on its own opens as a book', 15000);
-    await poll(() => q('.pdf-page[data-page="129"] canvas', sbook) ?? (q('.pdf-page[data-page="129"]', sbook)?.scrollIntoView({ block: 'start' }), null), 'its file is fetched and p. 129 drawn', 60000);
+    await poll(() => q('.pdf-page[data-page="129"] :is(canvas, .pg-tiles > img)', sbook) ?? (q('.pdf-page[data-page="129"]', sbook)?.scrollIntoView({ block: 'start' }), null), 'its file is fetched and p. 129 drawn', 60000);
     await filesSettled();
     const ssc = q<HTMLElement>('.book-pages', sbook)!;
     {
@@ -11748,7 +11748,7 @@ export async function smokeTouchMac(vault: Vault): Promise<void> {
     must(!(await headings()).some((h) => (parseBoxes(h.read?.boxes ?? '') ?? []).some((b) => b.page === 24 && Math.abs(b.y - 0.67) < 0.05)), 'and no section of the note was made for it');
     openNode(BOOK);
     const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens', 15000);
-    await poll(() => q('.pdf-page[data-page="24"] canvas', book) ?? (q('.pdf-page[data-page="24"]', book)?.scrollIntoView({ block: 'center' }), null), 'p. 24 is drawn', 30000);
+    await poll(() => q('.pdf-page[data-page="24"] :is(canvas, .pg-tiles > img)', book) ?? (q('.pdf-page[data-page="24"]', book)?.scrollIntoView({ block: 'center' }), null), 'p. 24 is drawn', 30000);
     const box = await poll(() => q<HTMLElement>(`.pbox[data-kept="1"][data-section="${CSS.escape(expect)}"]`, book), 'the passage\'s box is drawn on the page');
     box.scrollIntoView({ block: 'center' });
     await sleep(500);
@@ -11772,7 +11772,7 @@ export async function smokeTouchMac(vault: Vault): Promise<void> {
       // `open notes` here: both as tabs of the pane beside
       openNode('library/alone.pdf');
       const abook = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book[data-path="library/alone.pdf"]'), 'the PDF on its own opens', 15000);
-      await poll(() => q('.pdf-page canvas', abook), 'its pages drawn', 30000);
+      await poll(() => q('.pdf-page :is(canvas, .pg-tiles > img)', abook), 'its pages drawn', 30000);
       q<HTMLElement>('.meta .notes-toggle', abook)!.click();
       await poll(() => { const ps = useApp.getState().panes; const p = ps.panes.find((_, i) => i !== ps.active); return abook.dataset.notes === '1' && p?.tabs.map((t) => t.id).join('|') === `${second}|${aloneNote}`; }, 'open notes: both notes are tabs of the pane beside the pages', 10000);
       await shot('touch-mac-notes');
@@ -12233,7 +12233,7 @@ export async function smokePhone(): Promise<void> {
     await sleep(300);
     await tap(q('.name', chRow)!, () => at() === CH && !q('.side'), 'the chapter opens');
     const book = await poll(() => q<HTMLElement>('.book'), 'as its pages', 15000);
-    await poll(() => q('.pdf-page[data-page="23"] canvas', book) ?? (q('.pdf-page[data-page="23"]', book)?.scrollIntoView({ block: 'start' }), null), 'its book fetched and the first page drawn', 60000);
+    await poll(() => q('.pdf-page[data-page="23"] :is(canvas, .pg-tiles > img)', book) ?? (q('.pdf-page[data-page="23"]', book)?.scrollIntoView({ block: 'start' }), null), 'its book fetched and the first page drawn', 60000);
     await filesSettled();
     const pageRect = q<HTMLElement>('.pdf-page[data-page="23"]', book)!.getBoundingClientRect();
     must(pageRect.left >= 0 && pageRect.right <= window.innerWidth + 1, `the page fits the screen (${Math.round(pageRect.width)} of ${window.innerWidth})`);
@@ -13123,7 +13123,7 @@ export async function smokePageInk(): Promise<void> {
       // the book opens where it was left, and a page far from the view is not drawn: brought near first. (The lens is
       // looked for each time: a sync landing as it opens draws it anew, and the one found first is then no longer on the page)
       const now = () => qa<HTMLElement>('.pane[data-active="1"] .book').find((x) => x.dataset.path === BOOK && x.isConnected) ?? null;
-      await poll(() => { const book = now(); return book && (q(`.pdf-page[data-page="${P}"] canvas`, book) ?? (q(`.pdf-page[data-page="${P}"]`, book)?.scrollIntoView({ block: 'start' }), null)); }, `its book is here and p. ${P} drawn`, 60000);
+      await poll(() => { const book = now(); return book && (q(`.pdf-page[data-page="${P}"] :is(canvas, .pg-tiles > img)`, book) ?? (q(`.pdf-page[data-page="${P}"]`, book)?.scrollIntoView({ block: 'start' }), null)); }, `its book is here and p. ${P} drawn`, 60000);
       return now()!;
     };
     /** p. 23 on the screen, ready to be written on: its sheet told to the canvases. */
@@ -13364,10 +13364,10 @@ export async function smokePageInkMac(vault: Vault): Promise<void> {
       openNode(BOOK);
       const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens', 15000);
       // (brought into view if the pages opened elsewhere: a page is drawn where the reader is, not where the pages began)
-      const pageEl = await poll(() => (q(`.pdf-page[data-page="${P}"] canvas`, book) ? q<HTMLElement>(`.pdf-page[data-page="${P}"]`, book) : (q(`.pdf-page[data-page="${P}"]`, book)?.scrollIntoView({ block: 'start' }), null)), `p. ${P} is drawn`, 30000).catch((e: unknown) => {
+      const pageEl = await poll(() => (q(`.pdf-page[data-page="${P}"] :is(canvas, .pg-tiles > img)`, book) ? q<HTMLElement>(`.pdf-page[data-page="${P}"]`, book) : (q(`.pdf-page[data-page="${P}"]`, book)?.scrollIntoView({ block: 'start' }), null)), `p. ${P} is drawn`, 30000).catch((e: unknown) => {
         // (what the book holds when its page did not come: its pages, which of them are drawn, which have their small picture)
         const pages = qa<HTMLElement>('.pdf-page', book);
-        throw new Error(`${e instanceof Error ? e.message : String(e)}; ${pages.length} pages (${pages.map((x) => x.dataset.page).slice(0, 8).join(' ')}), drawn ${pages.filter((x) => x.querySelector('canvas')).map((x) => x.dataset.page).join(' ') || 'none'}, small pictures ${pages.filter((x) => x.querySelector('img.pg-low')).length}; the view ${JSON.stringify(q<HTMLElement>('.pdf-view', book)?.dataset ?? {})}; said "${q('.empty', book)?.textContent ?? ''}"`);
+        throw new Error(`${e instanceof Error ? e.message : String(e)}; ${pages.length} pages (${pages.map((x) => x.dataset.page).slice(0, 8).join(' ')}), drawn ${pages.filter((x) => x.querySelector(':scope > canvas, .pg-tiles > img')).map((x) => x.dataset.page).join(' ') || 'none'}, small pictures ${pages.filter((x) => x.querySelector('img.pg-low')).length}; the view ${JSON.stringify(q<HTMLElement>('.pdf-view', book)?.dataset ?? {})}; said "${q('.empty', book)?.textContent ?? ''}"`);
       });
       // (since the gaps after 89 the Mac draws a PDF's writing as the iPad does: the page's own paths, a stroke each, from what the store holds)
       void wide;
@@ -15043,7 +15043,7 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     const book = Object.keys(useApp.getState().docs).find((p) => useApp.getState().docs[p]?.pdf !== undefined && /ch-3-the-canonical/.test(p));
     must(book, `a book in the sample: ${book}`);
     openNode(book!);
-    const page = await poll(() => q<HTMLElement>('.pdf-page canvas, .pdf-page img') && q<HTMLElement>('.pdf-page'), 'its pages are drawn', 45000);
+    const page = await poll(() => q<HTMLElement>('.pdf-page :is(canvas, .pg-tiles > img), .pdf-page img') && q<HTMLElement>('.pdf-page'), 'its pages are drawn', 45000);
     let scroller: HTMLElement | null = page;
     while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
     must(scroller, 'the pages scroll');
@@ -15447,7 +15447,7 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     await poll(() => useApp.getState().docs[BOOK]?.pdf === BOOK, 'the paper is in the collection, a PDF on its own', 15000);
     useApp.setState({ session: null });
     openNode(BOOK);
-    await poll(() => activeTab(useApp.getState().panes)?.id === BOOK && q('.pdf-page[data-page="1"] canvas') && q('.pdf-page[data-page="1"] .textLayer span'), 'its first page is drawn, with its text', 45000);
+    await poll(() => activeTab(useApp.getState().panes)?.id === BOOK && q('.pdf-page[data-page="1"] :is(canvas, .pg-tiles > img)') && q('.pdf-page[data-page="1"] .textLayer span'), 'its first page is drawn, with its text', 45000);
     await sleep(1200);
     (document.activeElement as HTMLElement | null)?.blur?.();
     const sc = (() => { let e: HTMLElement | null = q<HTMLElement>('.pdf-page'); while (e && !(e.scrollHeight > e.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement; return e!; })();
@@ -15509,7 +15509,7 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     // ── the PDF's own links ──
     const links = await poll(() => { const l = qa<HTMLElement>('.plink[data-page="1"]'); return l.length >= 4 ? l : null; }, 'the first page\'s links are laid over it');
     log(`links on p. 1: ${links.length} (${links.filter((l) => l.dataset.kind === 'inside').length} inside)`);
-    await poll(() => q('.pdf-page[data-page="2"] canvas'), 'the second page is drawn too', 20000);
+    await poll(() => q('.pdf-page[data-page="2"] :is(canvas, .pg-tiles > img)'), 'the second page is drawn too', 20000);
     const web = await poll(() => qa<HTMLElement>('.plink[data-kind="web"]')[0], 'a link to the web is among the second page\'s');
     must(/^https:\/\/en\.wikipedia\.org\/wiki\/Canonical_ensemble/.test(web.dataset.href ?? ''), `named by its address: ${web.dataset.href}`);
     // the contents line for section 3, on the first page: a press follows it
@@ -16245,7 +16245,7 @@ export async function smokeWritten(vault: Vault): Promise<void> {
     // ── it opens as its sheets ──
     openNode(NB);
     await poll(() => book()?.dataset.path === NB && view()?.dataset.written === '1' && q('.pdf-page svg.paper', book()!), 'the notebook opens as pages of paper', 10000);
-    must(!q('.empty', book()!) && !q('.pdf-page canvas', book()!) && !q('.textLayer', book()!), 'at once: nothing loading, no canvas, no text layer');
+    must(!q('.empty', book()!) && !q('.pdf-page :is(canvas, .pg-tiles > img)', book()!) && !q('.textLayer', book()!), 'at once: nothing loading, no canvas, no text layer');
     must(pages().length === 1 && sheetsShown() === '1' && pageLabel() === 'p. 1 / 1' && view()!.dataset.hash === ID, `one page, sheet 1, its ink keyed by the notebook's id (${pageLabel()})`);
     {
       const r = pages()[0]!.getBoundingClientRect();
@@ -16487,7 +16487,7 @@ export async function smokeWritten(vault: Vault): Promise<void> {
       await poll(() => docsNow()[BOOK]?.pdf === BOOK, 'a PDF on its own is in the collection', 15000);
     }
     openNode(BOOK);
-    await poll(() => book()?.dataset.path === BOOK && q('.pdf-page canvas', book()!), 'the book opens as its pages', 30000);
+    await poll(() => book()?.dataset.path === BOOK && q('.pdf-page :is(canvas, .pg-tiles > img)', book()!), 'the book opens as its pages', 30000);
     must(!q('.pt-readonly', book()!) && !q('svg.paper', book()!) && !q('.add-page', book()!) && !!tool('contents') && !!tool('search'), 'a PDF as it was: no paper, nothing about an ipad, its contents and search');
     const plus = await poll(() => q<HTMLButtonElement>('.meta .notes-add', book()!), 'a + beside the notes\' word', 8000);
     plus.click();
@@ -16676,7 +16676,7 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
         await shot('stays-notebook');
         // a PDF's pages the same
         openNode(PAGEINK_BOOK);
-        const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-page canvas', x) && q('.meta', x) ? x : null; }, 'the sample\'s chapter opens', 60000);
+        const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-page :is(canvas, .pg-tiles > img)', x) && q('.meta', x) ? x : null; }, 'the sample\'s chapter opens', 60000);
         setBookZoom(PAGEINK_BOOK, 2);
         await poll(() => Number(q<HTMLElement>('.pdf-view', pb)?.dataset.zoom) === 2, 'at 2 times', 8000);
         await sleep(2500);
@@ -17130,7 +17130,7 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
 
     // ── a PDF's page under the same row ──
     openNode(PAGEINK_BOOK);
-    const pb = await poll(() => { const x = book(); return x?.dataset.path === PAGEINK_BOOK && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
+    const pb = await poll(() => { const x = book(); return x?.dataset.path === PAGEINK_BOOK && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] :is(canvas, .pg-tiles > img)`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
     const pbar = await poll(() => q<HTMLElement>('.meta > .inkbar', pb), 'the same row over a PDF\'s pages', 8000);
     rowIs(pbar, 'over a PDF');
     must(q('[data-ink-tool="pen"]', pbar)?.getAttribute('aria-pressed') === 'true' && q<HTMLElement>('[data-ink-swatch="wheel"]', pbar)?.dataset.color === WHEEL && !!q('.meta [data-tool="search"]', pb), 'holding what the notebook\'s held, over the PDF\'s own bar');
@@ -17696,7 +17696,7 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
   // a PDF's pages, with what is written on them
   {
     openNode(PAGEINK_BOOK);
-    const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-page canvas', x) ? x : null; }, 'the sample\'s chapter', 60000);
+    const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-page :is(canvas, .pg-tiles > img)', x) ? x : null; }, 'the sample\'s chapter', 60000);
     const pages = pagesOf(pb).length;
     await poll(() => q<HTMLElement>('.pdf-view', pb)?.dataset.hash, 'its hash known', 10000);
     q<HTMLElement>('.meta [data-tool="more"]', pb)!.click();
@@ -18788,7 +18788,7 @@ async function writtenPressure(log: (s: string) => void): Promise<void> {
       at: [80, 120],
       open: async () => {
         openNode(PAGEINK_BOOK);
-        const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the chapter', 60000);
+        const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] :is(canvas, .pg-tiles > img)`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the chapter', 60000);
         const hash = await poll(() => q<HTMLElement>('.pdf-view', pb)!.dataset.hash, 'its hash known', 10000);
         q<HTMLElement>(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, pb)!.scrollIntoView({ block: 'start' });
         const sheet = `p.${hash}.${PAGEINK_PAGE}`;
@@ -20345,7 +20345,7 @@ export async function smokeSharp(path: string | null): Promise<void> {
       await invoke('dev_ink_pen', { on: false });
       tools.setTool('pen');
       openNode(PAGEINK_BOOK);
-      const pb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
+      const pb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] :is(canvas, .pg-tiles > img)`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
       const view = q<HTMLElement>('.pdf-view', pb)!;
       const sc = q<HTMLElement>('.book-pages', pb)!;
       must(surfaceIn(pb) === null, 'a PDF\'s pages are the page\'s own');
@@ -20391,7 +20391,7 @@ export async function smokeSharp(path: string | null): Promise<void> {
         log(`zoom ${z}: under the fingers ${under.map((v) => v.toFixed(4)).join(', ')} of the page`);
         must(Math.abs(under[0]! - 0.4) < 0.012 && Math.abs(under[1]! - 0.3) < 0.012, 'what was between the fingers still is');
         must(Math.abs(r1.width / r0.width - z) < 0.01, 'the page as large as the zoom says');
-        await poll(() => !!q('canvas', pageEl) && !!q('.textLayer', pageEl), 'and the page is drawn again at its new size', 30000);
+        await poll(() => !!q(':scope > canvas, :scope > .pg-tiles > img', pageEl) && !!q('.textLayer', pageEl), 'and the page is drawn again at its new size', 30000);
         await shot('pdf-spread');
       }
       {
@@ -20529,7 +20529,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
     tools.setSize('pen', 2);
     tools.setRecent('pen', '#ff0000');
     openNode(PAGEINK_BOOK);
-    const pb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
+    const pb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && (q(`.pdf-page[data-page="${PAGEINK_PAGE}"] :is(canvas, .pg-tiles > img)`, x) ?? (q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x)?.scrollIntoView({ block: 'start' }), null)) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
     const view = q<HTMLElement>('.pdf-view', pb)!;
     const sc = q<HTMLElement>('.book-pages', pb)!;
     const hash = await poll(() => view.dataset.hash, 'its hash known', 10000);
@@ -21149,6 +21149,17 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       const slow = Number((await invoke<string | null>('dev_env', { name: 'ILMI_SLOW' })) ?? 0) || 0;
       (window as unknown as { ilmiSlowDraw?: number }).ilmiSlowDraw = slow;
       log(`each page's drawing held back ${slow} ms a screen's worth`);
+      // (`"tileslow": "<factor>"`, `"workers": "<n>"`: where the app draws the pages, each drawing held back to that
+      // many times as long, on that many threads, as a device's processor would take; `"within": "<ms>"`: each zoom by
+      // the bar all sharp within that, a pinch within it and a second and a half more for the gesture, a hard check)
+      const tileSlow = Number((await invoke<string | null>('dev_env', { name: 'ILMI_TILESLOW' })) ?? 0) || 1;
+      const tileWorkers = Number((await invoke<string | null>('dev_env', { name: 'ILMI_WORKERS' })) ?? 0) || 0;
+      const within = Number((await invoke<string | null>('dev_env', { name: 'ILMI_WITHIN' })) ?? 0) || 0;
+      await invoke('dev_pages_slow', { factor: tileSlow, workers: tileWorkers }).catch(() => {});
+      // (pdf.js's drawings held back alike; `"notiles": "1"` draws with pdf.js as before, for the one against the other)
+      (window as unknown as { ilmiSlowFactor?: number }).ilmiSlowFactor = tileSlow;
+      (window as unknown as { ilmiNoTiles?: boolean }).ilmiNoTiles = (await invoke<string | null>('dev_env', { name: 'ILMI_NOTILES' })) === '1';
+      log(`the app's drawings held back to ${tileSlow} times, on ${tileWorkers || 'all its'} threads; each zoom sharp within ${within || '(no limit)'} ms; the zoom log at ${await invoke<string | null>('zoom_log_path').catch(() => null)}`);
       const { currentVault, setBookZoom } = await import('./vault.js');
       const v = currentVault()!;
       const sfs = v.fs as import('../vault/index.js').StoreFs;
@@ -21158,7 +21169,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       await poll(() => useApp.getState().docs[rel], `${name}.pdf is in the collection`, 120000);
       const bookEl = () => qa<HTMLElement>('.book').find((k) => k.dataset.path === rel) ?? null;
       openNode(rel);
-      const b = await poll(() => { const x = bookEl(); return x && q('.pdf-page canvas', x) ? x : null; }, `${name}.pdf opens, its first pages drawn`, 60000);
+      const b = await poll(() => { const x = bookEl(); return x && q('.pdf-page :is(canvas, .pg-tiles > img)', x) ? x : null; }, `${name}.pdf opens, its first pages drawn`, 60000);
       const sc = q<HTMLElement>('.book-pages', b)!;
       const view = q<HTMLElement>('.pdf-view', b)!;
       const zoomNow = () => Number(view.dataset.zoom);
@@ -21226,7 +21237,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
        * `eye`: the place on the screen whose page point is followed (it may move in the frame a new layout lands, and no more than 2 px a frame after: a jump is more);
        * `moving`: the case moves the pages itself (a scroll), so the point is not followed.
        */
-      const watch = async (what: string, act: () => Promise<void> | void, o: { eye?: [number, number]; moving?: boolean; most?: number } = {}) => {
+      const watch = async (what: string, act: () => Promise<void> | void, o: { eye?: [number, number]; moving?: boolean; most?: number; gesture?: boolean } = {}) => {
         light(++caseNo);
         const most = o.most ?? 9000;
         let frames = 0; let blankF = 0; let lostF = 0; let softF = 0; let late = 0; let worst = 0; let inkMiss = 0; let inkOff = 0; let jumps = 0; let jumpMost = 0; let drop = 0;
@@ -21238,6 +21249,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         const trace: string[] = [];
         let whereWas = '';
         const t0 = performance.now(); let last = t0;
+        delete view.dataset.zoomLog;
         const done = (async () => { await act(); acting = false; })();
         for (;;) {
           await new Promise((res) => { requestAnimationFrame(res); setTimeout(res, 100); });
@@ -21292,12 +21304,23 @@ export async function smokePdfInk(path: string | null): Promise<void> {
           if (now - t0 > most) break;
         }
         await done;
+        // (a pinch: the page may have been sharp all along in its own frames; the zoom log's word is waited for)
+        if (within && !o.moving && !(window as unknown as { ilmiNoTiles?: boolean }).ilmiNoTiles) for (let i = 0; i < 60 && !view.getAttribute('data-zoom-log'); i++) await sleep(50);
         light(0);
         const took = sharpAt > 0 ? `${Math.round(sharpAt - t0)} ms` : `not in ${most} ms`;
         const eyeEnd = eyeAt && o.eye ? at(eyeAt.n, eyeAt.u, eyeAt.v, new Map()) : null;
         const moved = eyeEnd && o.eye ? Math.hypot(eyeEnd.x - o.eye[0], eyeEnd.y - o.eye[1]) : null;
-        log(`zoom: ${name}: ${what}: zoom ${zoomNow()}; ${frames} frames; blank in ${blankF}; detail lost in ${lostF} (by ${drop.toFixed(2)} at most); soft in ${softF}; all sharp after ${took}; the least detail at rest ${least.toFixed(2)}; ${late} frames late, the longest ${worst.toFixed(0)} ms; writing missing in ${inkMiss}, off its page in ${inkOff}; what was under the eye moved after the layout in ${jumps} (${jumpMost.toFixed(1)} px at most)${moved !== null ? `, and lies ${moved.toFixed(1)} px from where it was` : ''}`);
-        const bad = [blankF && `blank in ${blankF}`, lostF && `detail lost in ${lostF}`, inkMiss && `writing missing in ${inkMiss}`, inkOff && `writing off in ${inkOff}`, jumps && `moved after the layout in ${jumps}`].filter(Boolean);
+        log(`zoom: ${name}: ${what}: zoom ${zoomNow()}; ${frames} frames; blank in ${blankF}; detail lost in ${lostF} (by ${drop.toFixed(2)} at most); soft in ${softF}; all sharp after ${took}; the least detail at rest ${least.toFixed(2)}; ${late} frames late, the longest ${worst.toFixed(0)} ms; writing missing in ${inkMiss}, off its page in ${inkOff}; what was under the eye moved after the layout in ${jumps} (${jumpMost.toFixed(1)} px at most)${moved !== null ? `, and lies ${moved.toFixed(1)} px from where it was` : ''}; the zoom log: ${view.getAttribute('data-zoom-log') ?? '-'} (sharp, pictured, ms from the layout)`);
+        // (a pinch's time runs from its layout, as the zoom log says it: the rig's gesture takes a second or two before;
+        // the page may have been sharp all along in its own frames, so the log's word is waited for)
+        const logged = view.getAttribute('data-zoom-log')?.split(' ')[0];
+        // (from the last zoom's layout, as the zoom log has it, where the app draws the pages: several quick steps are
+        // timed from the last; else from the first frame of the case)
+        const tookMs = logged ? (logged !== 'never' ? Number(logged) : -1) : o.gesture ? -1 : sharpAt > 0 ? sharpAt - t0 : -1;
+        const limit = within && !o.moving ? within : 0;
+        const late2 = limit > 0 && (tookMs < 0 || tookMs > limit);
+        if (o.gesture) delete view.dataset.zoomLog;
+        const bad = [blankF && `blank in ${blankF}`, lostF && `detail lost in ${lostF}`, inkMiss && `writing missing in ${inkMiss}`, inkOff && `writing off in ${inkOff}`, jumps && `moved after the layout in ${jumps}`, late2 && `sharp after ${tookMs < 0 ? 'never' : `${Math.round(tookMs)} ms`}, over ${limit} ms`].filter(Boolean);
         if (bad.length) { fails.push(`${what}: ${bad.join(', ')}`); log(`zoom trace: ${trace.join(' | ')}`); }
       };
       const click = (tool: string) => q<HTMLElement>(`.meta [data-tool="${tool}"]`, b)!.click();
@@ -21377,14 +21400,14 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       if (pinching && cases !== 'far') {
         phase('two fingers');
         const [cx, cy] = mid();
-        await watch('two fingers spread, fit to about 250%', async () => { const z0 = zoomNow(); pinch(cx, cy, 160, 400, 0.9); await until((z) => z > z0 * 1.6, 'spread: larger'); }, { eye: [cx, cy], most: 20000 });
+        await watch('two fingers spread, fit to about 250%', async () => { const z0 = zoomNow(); pinch(cx, cy, 160, 400, 0.9); await until((z) => z > z0 * 1.6, 'spread: larger'); }, { eye: [cx, cy], most: 20000, gesture: true });
         await rest();
-        await watch('two fingers closed, back to about fit', async () => { const z0 = zoomNow(); pinch(cx, cy, 400, 170, 0.9); await until((z) => z < z0 * 0.7, 'closed: smaller'); }, { eye: [cx, cy], most: 20000 });
+        await watch('two fingers closed, back to about fit', async () => { const z0 = zoomNow(); pinch(cx, cy, 400, 170, 0.9); await until((z) => z < z0 * 0.7, 'closed: smaller'); }, { eye: [cx, cy], most: 20000, gesture: true });
         await rest();
-        await watch('two fingers closed far, to the least: many pages', async () => { pinch(cx, cy, 500, 120, 0.9); await until((z) => z === 0.5, 'closed: the least'); }, { eye: [cx, cy], most: 20000 });
+        await watch('two fingers closed far, to the least: many pages', async () => { pinch(cx, cy, 500, 120, 0.9); await until((z) => z === 0.5, 'closed: the least'); }, { eye: [cx, cy], most: 20000, gesture: true });
         await rest();
         await shot('zoom-pinched-50');
-        await watch('two fingers spread from the least, to about fit', async () => { pinch(cx, cy, 150, 330, 0.9); await until((z) => z > 0.9, 'spread: about fit'); }, { eye: [cx, cy], most: 20000 });
+        await watch('two fingers spread from the least, to about fit', async () => { pinch(cx, cy, 150, 330, 0.9); await until((z) => z > 0.9, 'spread: about fit'); }, { eye: [cx, cy], most: 20000, gesture: true });
         await rest();
       }
       if (pinching && cases !== 'bar') {
@@ -21394,7 +21417,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         setBookZoom(rel, 2.5);
         await until((z) => z === 2.5, '250%');
         await rest();
-        await watch('from 250%, two fingers closed far: to 50%, pages never drawn coming into view', async () => { pinch(cx, cy, 560, 110, 0.9); await until((z) => z === 0.5, 'closed: the least'); }, { eye: [cx, cy], most: 20000 });
+        await watch('from 250%, two fingers closed far: to 50%, pages never drawn coming into view', async () => { pinch(cx, cy, 560, 110, 0.9); await until((z) => z === 0.5, 'closed: the least'); }, { eye: [cx, cy], most: 20000, gesture: true });
         await rest();
         await shot('zoom-pinched-far');
       }
@@ -21437,8 +21460,9 @@ export async function smokePdfInk(path: string | null): Promise<void> {
             if (pr.bottom < r.top + 40 || pr.top > r.bottom - 40) continue;
             pages++;
             const c = el.querySelector('canvas');
-            const low = el.querySelector<HTMLImageElement>('img.pg-low');
-            if (c && c.width > 1) continue;
+            const low = el.querySelector<HTMLImageElement>('img.pg-low, img.pg-mid');
+            // (the app's tiles of the page are its drawing, where it draws them)
+            if ((c && c.width > 1) || el.querySelector('.pg-tiles > img')) continue;
             if (low && low.complete && low.naturalWidth > 0) soft++; else blank++;
           }
           return { pages, blank, soft, tall: sc.scrollHeight };
@@ -21503,7 +21527,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         await sleep(1200);
         await watch('opened again, at the place it was left', () => { openNode(rel); });
         const at = Number(q<HTMLElement>('.pdf-view', bookEl()!)?.dataset.page ?? 0);
-        log(`feel: ${name}: opened again on p. ${at} (it was left on p. ${far})`);
+        log(`feel: ${name}: opened again on p. ${at} (it was left on p. ${far}); the app's tiles: ${q<HTMLElement>('.pdf-view', bookEl()!)?.dataset.tiles ?? '-'}; p. ${at} holds ${Array.from(q<HTMLElement>(`.pdf-page[data-page="${at}"]`, bookEl()!)?.children ?? []).map((c) => `${c.tagName.toLowerCase()}.${c.className}${c.classList.contains('pg-tiles') ? `[${(c as HTMLElement).dataset.scale}:${c.childElementCount}]` : ''}`).join(' ')}`);
       }
       phase('done');
       finished = true;
@@ -21592,7 +21616,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       const item = await poll(() => useApp.getState().queue.find((i) => i.kind === 'read' && i.path === PAGEINK_BOOK), 'the chapter is in the queue to be read', 20000);
       openSession(item);
       const bar = await poll(() => q<HTMLElement>('.pane[data-active="1"] .session-bar') ?? q<HTMLElement>('.session-bar'), 'the session is on it, with its bar', 30000);
-      await poll(() => q('.doc-session .pdf-page canvas'), 'its pages drawn', 60000);
+      await poll(() => q('.doc-session .pdf-page :is(canvas, .pg-tiles > img)'), 'its pages drawn', 60000);
       await sleep(800);
       const seen = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight + 0.5 && r.left >= 0 && r.right <= window.innerWidth + 0.5; };
       log(`sess: the bar ${Math.round(bar.getBoundingClientRect().top)} to ${Math.round(bar.getBoundingClientRect().bottom)} of ${window.innerHeight}; its buttons: ${qa<HTMLElement>('button[data-act]', bar).map((x) => `${x.dataset.act} "${x.textContent}" ${seen(x) ? 'on the glass' : 'NOT on the glass'} ${Math.round(x.getBoundingClientRect().width)}x${Math.round(x.getBoundingClientRect().height)}`).join('; ')}`);
@@ -21699,7 +21723,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         if (!x || !x.getClientRects().length) return null;
         const said = q<HTMLElement>('.empty', x)?.textContent ?? '';
         if (said && said !== 'opening') return { said, pages: 0 };
-        return q('.pdf-page canvas', x) ? { said: '', pages: qa('.pdf-page', x).length } : null;
+        return q('.pdf-page :is(canvas, .pg-tiles > img)', x) ? { said: '', pages: qa('.pdf-page', x).length } : null;
       }, 'the large PDF opens, or says why not', 600000);
       console.error = was;
       log(`bigpull: ${got.said ? `it says "${got.said}"` : `its first page drawn, ${got.pages} pages`} ${Date.now() - t} ms after it was opened; errors: ${errs.join(' | ') || 'none'}`);
@@ -21735,7 +21759,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         if (!x || !x.getClientRects().length) return null;
         const said = q<HTMLElement>('.empty', x)?.textContent ?? '';
         if (said && said !== 'opening') return { said, pages: 0 };
-        return q('.pdf-page canvas', x) ? { said: '', pages: qa('.pdf-page', x).length } : null;
+        return q('.pdf-page :is(canvas, .pg-tiles > img)', x) ? { said: '', pages: qa('.pdf-page', x).length } : null;
       }, 'the large PDF opens, or says why not', 600000);
       console.error = was;
       log(`big: ${got.said ? `it says "${got.said}"` : `its first page drawn, ${got.pages} pages`} ${Date.now() - t1} ms after it was opened; errors: ${errs.join(' | ') || 'none'}`);
@@ -21750,11 +21774,11 @@ export async function smokePdfInk(path: string | null): Promise<void> {
           const pg = q<HTMLElement>(`.pdf-page[data-page="${i}"]`, bb);
           if (!pg) break;
           pg.scrollIntoView({ block: 'start' });
-          await poll(() => q(`.pdf-page[data-page="${i}"] canvas`, bb), `page ${i} is drawn`, 60000);
+          await poll(() => q(`.pdf-page[data-page="${i}"] :is(canvas, .pg-tiles > img)`, bb), `page ${i} is drawn`, 60000);
           drawn++;
           await sleep(150);
         }
-        log(`big: ${drawn} pages more read through in ${Date.now() - tt} ms; ${qa('.pdf-page canvas', bb).length} pages hold a drawing now; the scroller ${Math.round(sc.scrollHeight)} px long`);
+        log(`big: ${drawn} pages more read through in ${Date.now() - tt} ms; ${qa('.pdf-page :is(canvas, .pg-tiles > img)', bb).length} pages hold a drawing now; the scroller ${Math.round(sc.scrollHeight)} px long`);
       }
       {
         // a file that is here and is no PDF: the page says so in plain words and offers `try again`
@@ -21781,7 +21805,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
           must((await invoke<boolean>('page_fell', {})) === false, 'the page has not gone down in this run of the app');
           localStorage.setItem('ilmi.pdf.opening', T);
           openNode(T);
-          await poll(() => q('.pane[data-active="1"] .book .pdf-page canvas') && !q('.pane[data-active="1"] .pdf-fail'), 'marked as opening by an app that was closed: it opens as ever', 60000);
+          await poll(() => q('.pane[data-active="1"] .book .pdf-page :is(canvas, .pg-tiles > img)') && !q('.pane[data-active="1"] .pdf-fail'), 'marked as opening by an app that was closed: it opens as ever', 60000);
           await poll(() => localStorage.getItem('ilmi.pdf.opening') === null, 'and a few seconds after its pages are drawn it is no longer held to be opening', 15000);
         }
       }
@@ -21802,7 +21826,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       if (!useApp.getState().docs[T]) await importPdfNode('library', { title: 'turned', bytes: new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/turned.pdf` })), text: '' });
       await poll(() => useApp.getState().docs[T], 'a paper of four pages is in the collection', 30000);
       openNode(T);
-      const tb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === T); return x && x.getClientRects().length && q('.pdf-page[data-page="1"] canvas', x) ? x : null; }, 'it opens', 60000);
+      const tb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === T); return x && x.getClientRects().length && q('.pdf-page[data-page="1"] :is(canvas, .pg-tiles > img)', x) ? x : null; }, 'it opens', 60000);
       const tview = q<HTMLElement>('.pdf-view', tb)!;
       await sleep(2500);
       const said = async (what: string) => {
@@ -21981,7 +22005,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       if (!useApp.getState().docs[T]) await importPdfNode('library', { title: 'turned', bytes: new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/turned.pdf` })), text: '' });
       await poll(() => useApp.getState().docs[T], 'a paper with a turned page is in the collection', 30000);
       openNode(T);
-      const tb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === T); return x && x.getClientRects().length && q('.pdf-page[data-page="2"] canvas', x) ? x : null; }, 'it opens, its second page drawn', 60000);
+      const tb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === T); return x && x.getClientRects().length && q('.pdf-page[data-page="2"] :is(canvas, .pg-tiles > img)', x) ? x : null; }, 'it opens, its second page drawn', 60000);
       const tview = q<HTMLElement>('.pdf-view', tb)!;
       const thash = await poll(() => tview.dataset.hash, 'its hash known', 10000);
       const tsc = q<HTMLElement>('.book-pages', tb)!;

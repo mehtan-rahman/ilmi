@@ -5,9 +5,10 @@ fn main() {
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     println!("cargo:rerun-if-changed=native/ink.m");
     println!("cargo:rerun-if-changed=native/stroke.m");
+    println!("cargo:rerun-if-changed=native/pdfpage.m");
     println!("cargo:rerun-if-changed=native/stroke.h");
     if os == "macos" || os == "ios" {
-        cc::Build::new().file("native/ink.m").file("native/stroke.m").flag("-fobjc-arc").compile("ilmi_ink");
+        cc::Build::new().file("native/ink.m").file("native/stroke.m").file("native/pdfpage.m").flag("-fobjc-arc").compile("ilmi_ink");
         for f in ["Foundation", "CoreGraphics", "ImageIO", "PencilKit", if os == "macos" { "AppKit" } else { "UIKit" }] {
             println!("cargo:rustc-link-lib=framework={f}");
         }

@@ -180,8 +180,27 @@ const BASE_MAX_MOBILE = 5_242_880;
 const DETAIL_MAX = 8_000_000;
 /** The widest a page's middle-sized picture from the system is, px (`pg-mid`): what a page shows at once, zoomed out or arriving, until its own drawing comes. */
 const MID_MAX = 1280;
+/** The generations of the tiles asked for, counted for every book open: the app does not draw an asking older than the last it was told. */
+const tileGens = { n: 0, readers: 0 };
 /** How many pages from the one in view a page keeps its middle-sized picture. */
 const MID_KEEP = 4;
+/**
+ * A tile's size, in the pixels of the page as drawn at the size it is shown (the app's drawing, round 2): a band across
+ * the page (up to `TILE_W` wide) rather than a square, since Core Graphics reads the whole page for each tile it draws
+ * and a page of type is mostly reading: a screen is some six bands, one reading each, drawn at once on six cores.
+ */
+const TILE_W = 2048;
+const TILE_H = 384;
+/** How much about the view has its tiles too, of the view's width and height each way: a scroll finds them there. */
+const TILE_MARGIN_X = 0.25;
+const TILE_MARGIN_Y = 0.5;
+/** How a tile comes from the app: a BMP has nothing to compress or decode. */
+const TILE_FORMAT = 'bmp';
+/** The width of a page's middle-sized picture where the app draws tiles: one width, so the app keeps it on disk for every zoom. */
+const MID_W = 1024;
+/** Pages from the one in view that show their middle-sized picture, and further that have it made and kept ahead. */
+const MID_SHOW = 2;
+const MID_WARM = 10;
 /** Zoomed, a page this far outside the view gives its canvas back, px. */
 const FAR = AHEAD * 3;
 /** The pixels to a point a page's writing is drawn with: the least of these that the screen has, for the size the page is drawn at. */
@@ -316,9 +335,12 @@ const lowUrl = (at: { root: string; hash: string }, n: number, w = LOW_W, q = 0.
  * screen's worth of pixels (3.5 MP, an 11-inch iPad's page at fit), set by a smoke (`"slow"`) to see on a simulator,
  * whose processor is a Mac's, what the order of drawing does where each page takes a while.
  */
-async function slowDraw(pixels: number): Promise<void> {
-  const ms = (window as unknown as { ilmiSlowDraw?: number }).ilmiSlowDraw ?? 0;
-  if (ms > 0) await new Promise((r) => setTimeout(r, (ms * pixels) / 3.5e6));
+async function slowDraw(pixels: number, took = 0): Promise<void> {
+  const w = window as unknown as { ilmiSlowDraw?: number; ilmiSlowFactor?: number };
+  const ms = w.ilmiSlowDraw ?? 0;
+  // (or `ilmiSlowFactor` times as long as the drawing took, as the app's own drawings are held back: `dev_pages_slow`)
+  const wait = ms > 0 ? (ms * pixels) / 3.5e6 : took * Math.max(0, (w.ilmiSlowFactor ?? 1) - 1);
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 }
 /** Every page's size as the system reads it, once a file; null where it cannot. */
 const sizesAsked = new Map<string, Promise<Size[] | null>>();
@@ -616,6 +638,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   const toolsShown = useInkTools((s) => s.kept.shown);
   const [sel, setSel] = useState<Sel | null>(null);
   const [current, setCurrent] = useState(1);
+  const currentRef = useRef(current);
+  currentRef.current = current;
   /** The pages before the document's own (FORMAT.md §3 `pages`): a chapter of a book is its pages of the book's PDF, numbered as the book numbers them. */
   const [base, setBase] = useState(0);
   const [point, setPoint] = useState<{ pos: number; y: number } | null>(null);
@@ -1125,8 +1149,22 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       } else if (img && (n < current - behind - 12 || n > current + ahead + 12)) img.remove();
       // (a middle-sized picture is let go as soon as its page is a few pages from the view)
       if (n < current - MID_KEEP || n > current + MID_KEEP) el.querySelector(':scope > img.pg-mid')?.remove();
+      // where the app draws tiles, the pages about the one in view show their middle-sized picture, and those further
+      // on have it made and kept on disk ahead of a zoom out or a scroll, the nearest first (not shown: only asked)
+      else if (tilesRef.current && Math.abs(n - current) <= MID_SHOW) midRef.current(n, el);
+    }
+    if (tilesRef.current) {
+      for (let d = MID_SHOW + 1; d <= MID_WARM; d++) {
+        for (const n of [current + d, current - d]) {
+          if (n < base + 1 || n > base + sizes.length || warmed.current.has(`${at.hash}:${n}`)) continue;
+          warmed.current.add(`${at.hash}:${n}`);
+          void fetch(`${lowUrl(at, n, MID_W, 0.85)}&k=mid&p=${600 + d}`).then((r) => r.arrayBuffer(), () => null).catch(() => null);
+        }
+      }
     }
   }, [status, written, sizes.length, rel, current, hash, base]);
+  /** The middle-sized pictures asked to be made ahead, by book and page. */
+  const warmed = useRef(new Set<string>());
 
   // the pane's width sets the scale (milestone 70): a page is drawn across it, up to the width a page is still
   // read at, and centred past that; the read bar and the gutter's § hang in the pane's padding
@@ -1243,10 +1281,174 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     const y0 = Math.max(0, (r.top - pr.top) / pr.height); const y1 = Math.min(1, (r.bottom - pr.top) / pr.height);
     return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : null;
   };
-  /** What a page wants drawn next: the whole of it, the part in view sharp over it, or nothing. */
-  const wants = (n: number): 'base' | 'detail' | null => {
+  // ── tiles from the system (round 2) ──
+  // Where the app can draw a PDF's pages itself (`ilmipage:`, Core Graphics on a few threads at once), the sharp page
+  // is drawn by it in tiles (`img.pg-tile`, bands `TILE_W` × `TILE_H` at the size the page is shown) for what is in view
+  // and a little about it, nearest the middle of the view first; pdf.js gives only the text, the search and the links.
+  // A zoom keeps the tiles it has (their layer lies over the page by fractions of it, so it stretches with it) under
+  // the new zoom's, and lets them go once the new ones cover the view. The page's middle-sized picture
+  // (`img.pg-mid`, `MID_W` across, kept on disk by the app) lies under the tiles of every page near the view, so a
+  // page zoomed out to, or scrolled to, shows at once.
+  /** Whether this book's pages are the app's drawing (tiles), not pdf.js's canvases. */
+  const tilesRef = useRef(false);
+  // (`window.ilmiNoTiles`, dev: pdf.js's canvases as before, to measure the one against the other)
+  tilesRef.current = !native && !written && useApp.getState().mobile && !!picturesOf(rel) && !(import.meta.env.DEV && (window as unknown as { ilmiNoTiles?: boolean }).ilmiNoTiles);
+  /** The generation of the tiles asked for: a zoom makes a new one, and the app does not draw an older one's asking still waiting. */
+  const tileGen = useRef(0);
+  // (one count for every book open, ever larger: a book opened again asks with a generation past what the app was last told for it)
+  if (tileGen.current === 0) tileGen.current = ++tileGens.n;
+  /** This reader's own name for its generations (a book may be open in two panes). */
+  const tileReader = useRef(0);
+  if (tileReader.current === 0) tileReader.current = ++tileGens.readers;
+  /** The zoom the pages were last laid out at, for the zoom log's `from`. */
+  const zoomWas = useRef<number | null>(null);
+  /** The tiles asked for and not yet come, by their address within the page (`n:scale:x:y`). */
+  const tileAsked = useRef(new Map<string, number>());
+  /** The zoom being followed for the zoom log: from, to, when, and what it has come to so far. */
+  const zoomRec = useRef<{ from: number; to: number; t0: number; pictured: number | null; sharp: number | null; tiles: number; tileMs: number; text: number; most: number } | null>(null);
+  /** The tiles' layer of page `el` for scale `s`, made where there is none: over the pictures and any canvas, under the text. */
+  const layerOf = (el: HTMLElement, s: number): HTMLElement => {
+    const key = String(s);
+    let l = Array.from(el.querySelectorAll<HTMLElement>(':scope > .pg-tiles')).find((x) => x.dataset.scale === key);
+    if (!l) {
+      l = document.createElement('div');
+      l.className = 'pg-tiles';
+      l.dataset.scale = key;
+      const text = el.querySelector(':scope > .textLayer');
+      if (text) text.before(l); else el.append(l);
+    }
+    return l;
+  };
+  /** The tiles a page wants at the scale there is: the ones over what is in view and about it (`MARGIN` of the view each way), nearest first. */
+  const tilesFor = (el: HTMLElement): { x: number; y: number; w: number; h: number; far: number; seen: boolean }[] => {
+    const need = needOf(el);
+    const sc = scrollerOf.current?.();
+    if (!need || !sc) return [];
+    const r = sc.getBoundingClientRect();
+    const pr = el.getBoundingClientRect();
+    if (pr.width < 1) return [];
+    const k = need.w / pr.width;
+    const mx = r.width * TILE_MARGIN_X; const my = r.height * TILE_MARGIN_Y;
+    // the view and what is about it, in the page's pixels as drawn
+    const vx0 = (r.left - pr.left) * k; const vx1 = (r.right - pr.left) * k; const vy0 = (r.top - pr.top) * k; const vy1 = (r.bottom - pr.top) * k;
+    const ax0 = Math.max(0, vx0 - mx * k); const ax1 = Math.min(need.w, vx1 + mx * k); const ay0 = Math.max(0, vy0 - my * k); const ay1 = Math.min(need.h, vy1 + my * k);
+    if (ax1 <= ax0 || ay1 <= ay0) return [];
+    const cx = (vx0 + vx1) / 2; const cy = (vy0 + vy1) / 2;
+    const out: { x: number; y: number; w: number; h: number; far: number; seen: boolean }[] = [];
+    for (let y = Math.floor(ay0 / TILE_H) * TILE_H; y < ay1; y += TILE_H) {
+      for (let x = Math.floor(ax0 / TILE_W) * TILE_W; x < ax1; x += TILE_W) {
+        const w = Math.min(TILE_W, need.w - x); const h = Math.min(TILE_H, need.h - y);
+        const seen = x < vx1 && x + w > vx0 && y < vy1 && y + h > vy0;
+        out.push({ x, y, w, h, far: Math.hypot(x + w / 2 - cx, y + h / 2 - cy) / k, seen });
+      }
+    }
+    return out.sort((a, b) => a.far - b.far);
+  };
+  /** Whether a page's tiles at the scale there is cover what of it is in view. */
+  const tilesCover = (el: HTMLElement): boolean => {
+    const l = el.querySelector<HTMLElement>(`:scope > .pg-tiles[data-scale="${scaleRef.current}"]`);
+    if (!l) return false;
+    const have = new Set(Array.from(l.children).map((t) => (t as HTMLElement).dataset.at));
+    return tilesFor(el).every((t) => !t.seen || have.has(`${t.x},${t.y}`));
+  };
+  /** Whether a page in view shows a picture of itself (a tile, its middle-sized or its small picture, a canvas). */
+  const pictured = (el: HTMLElement): boolean => !!el.querySelector(':scope > canvas') || Array.from(el.querySelectorAll<HTMLImageElement>(':scope > img.pg-low, :scope > img.pg-mid, :scope > .pg-tiles > img')).some((i) => i.complete && i.naturalWidth > 0);
+  /** The tiles every page in view wants, asked for (the app draws them nearest first); those come let older layers go. */
+  const askTiles = () => {
+    const at = picturesOf(relRef.current);
+    const sc = scrollerOf.current?.();
+    if (!at || !sc || !tilesRef.current) return;
+    const r = sc.getBoundingClientRect();
+    const s = scaleRef.current;
+    const g = tileGen.current;
+    let allSharp = true; let allPictured = true; let any = false;
+    for (const [n, el] of pageEls.current) {
+      const pr = el.getBoundingClientRect();
+      const visible = pr.height > 0 && pr.bottom > r.top && pr.top < r.bottom;
+      if (!visible) {
+        // a page a screen or more away keeps no tiles of another zoom
+        if (pr.height > 0 && (pr.bottom < r.top - r.height || pr.top > r.bottom + r.height)) for (const l of Array.from(el.querySelectorAll<HTMLElement>(':scope > .pg-tiles'))) if (l.dataset.scale !== String(s)) l.remove();
+        continue;
+      }
+      any = true;
+      if (!pictured(el)) allPictured = false;
+      const need = needOf(el);
+      if (!need) continue;
+      const want = tilesFor(el);
+      const layer = layerOf(el, s);
+      const have = new Map(Array.from(layer.children).map((t) => [(t as HTMLElement).dataset.at, t as HTMLElement]));
+      // tiles of this zoom that have gone far from the view are let go (a page zoomed far in has hundreds)
+      const keep = new Set(want.map((t) => `${t.x},${t.y}`));
+      for (const [k, t] of have) if (!keep.has(k!)) { const pr2 = t.getBoundingClientRect(); if (pr2.bottom < r.top - r.height * 1.5 || pr2.top > r.bottom + r.height * 1.5 || pr2.right < r.left - r.width || pr2.left > r.right + r.width) t.remove(); }
+      for (const t of want) {
+        const id = `${n}:${s}:${t.x}:${t.y}`;
+        if (have.has(`${t.x},${t.y}`)) continue;
+        if (t.seen) allSharp = false;
+        if (tileAsked.current.has(id)) continue;
+        tileAsked.current.set(id, performance.now());
+        const img = new Image();
+        img.decoding = 'async';
+        img.className = 'pg-tile';
+        img.alt = '';
+        img.draggable = false;
+        img.dataset.at = `${t.x},${t.y}`;
+        Object.assign(img.style, { left: `${(t.x / need.w) * 100}%`, top: `${(t.y / need.h) * 100}%`, width: `${(t.w / need.w) * 100}%`, height: `${(t.h / need.h) * 100}%` });
+        // the lower the sooner: those in view first, nearest the middle first
+        const p = Math.round(t.far / 8) + (t.seen ? 0 : 400);
+        img.src = `ilmipage://localhost/${at.hash}/${n}?root=${encodeURIComponent(at.root)}&w=${need.w}&x=${t.x}&y=${t.y}&tw=${t.w}&th=${t.h}&k=tile&f=${TILE_FORMAT}&q=0.92&p=${p}&g=${g}&gk=${at.hash}:${tileReader.current}`;
+        const asked = performance.now();
+        img.decode().then(() => {
+          tileAsked.current.delete(id);
+          // (another zoom since: its layer is gone or not this one's; what it was asked for is gone)
+          if (scaleRef.current !== s || !layer.isConnected) return;
+          layer.append(img);
+          const rec = zoomRec.current;
+          if (rec) { rec.tiles++; rec.tileMs += performance.now() - asked; }
+          tilesLanded();
+        }, () => { tileAsked.current.delete(id); });
+      }
+    }
+    noteZoom(any, allPictured, allSharp);
+    if (viewRef.current) viewRef.current.dataset.tiles = `${tileAsked.current.size} ${allSharp ? 'sharp' : 'wanting'} g${g}`;
+  };
+  /** A tile has come: where a page's view is covered at this zoom, the layers of other zooms go. */
+  const tilesLanded = () => {
+    const s = String(scaleRef.current);
+    for (const el of pageEls.current.values()) {
+      const old = Array.from(el.querySelectorAll<HTMLElement>(':scope > .pg-tiles')).filter((l) => l.dataset.scale !== s);
+      // (once the new tiles have come in all the way: they come in by opacity)
+      if (old.length && tilesCover(el)) setTimeout(() => { if (tilesCover(el)) for (const l of old) l.remove(); }, 160);
+    }
+    tilesSoon();
+  };
+  /** The zoom being followed, written to the zoom log once its view has all been pictured and all been sharp. */
+  const noteZoom = (any: boolean, allPictured: boolean, allSharp: boolean) => {
+    const rec = zoomRec.current;
+    if (!rec || !any) return;
+    const t = performance.now() - rec.t0;
+    if (allPictured && rec.pictured === null) rec.pictured = t;
+    if (allSharp && rec.sharp === null) rec.sharp = t;
+    if ((rec.sharp !== null && rec.pictured !== null) || t > 20000) {
+      zoomRec.current = null;
+      void import('@tauri-apps/api/core').then((m) => m.invoke('zoom_log', { line: `zoom from=${rec.from} to=${rec.to} sharp=${rec.sharp === null ? 'never' : rec.sharp.toFixed(0)} pictured=${rec.pictured === null ? 'never' : rec.pictured.toFixed(0)} tiles=${rec.tiles} tile_ms_mean=${rec.tiles ? (rec.tileMs / rec.tiles).toFixed(0) : '-'} text=${rec.text} asked_most=${rec.most} mobile=${useApp.getState().mobile ? 1 : 0}` })).catch(() => {});
+      if (viewRef.current) viewRef.current.dataset.zoomLog = `${rec.sharp?.toFixed(0) ?? 'never'} ${rec.pictured?.toFixed(0) ?? 'never'}`;
+    } else rec.most = Math.max(rec.most, tileAsked.current.size);
+  };
+  const tilesTimer = useRef(0);
+  /** The tiles asked for in the next frame (once, however often asked). */
+  const tilesSoon = () => {
+    if (tilesTimer.current || !tilesRef.current) return;
+    tilesTimer.current = requestAnimationFrame(() => { tilesTimer.current = 0; askTiles(); });
+    // (a covered window holds frames back)
+    setTimeout(() => { if (tilesTimer.current) { cancelAnimationFrame(tilesTimer.current); tilesTimer.current = 0; askTiles(); } }, 120);
+  };
+  const tilesSoonRef = useRef(tilesSoon);
+  tilesSoonRef.current = tilesSoon;
+  /** What a page wants drawn next: the whole of it, the part in view sharp over it, or nothing; where the app draws tiles, only its text. */
+  const wants = (n: number): 'base' | 'detail' | 'text' | null => {
     const el = pageEls.current.get(n);
     if (!el) return null;
+    if (tilesRef.current) return rendered.current.has(n) ? null : 'text';
     if (rendered.current.get(n) !== scaleRef.current) return 'base';
     const base = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-base');
     const need = needOf(el);
@@ -1270,7 +1472,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     const at = picturesOf(relRef.current);
     const need = needOf(el);
     if (!at || !need) return;
-    const w = Math.min(MID_MAX, Math.ceil(need.w / 128) * 128);
+    const w = tilesRef.current ? MID_W : Math.min(MID_MAX, Math.ceil(need.w / 128) * 128);
     const base = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-base');
     if (base && base.width >= Math.min(w, need.w) * 0.95) return;
     const was = el.querySelector<HTMLImageElement>(':scope > img.pg-mid');
@@ -1283,7 +1485,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     img.dataset.w = String(w);
     // (an older one, coarser, goes once this one has come)
     img.onload = () => { if (was?.isConnected) was.remove(); };
-    img.src = lowUrl(at, n, w, 0.85);
+    // (a page in view: about as soon as the tiles nearest the middle, it is one picture; else after the tiles in view)
+    img.src = `${lowUrl(at, n, w, 0.85)}&k=mid&p=${(inView(el) ? 40 : 200) + Math.abs(n - currentRef.current)}`;
     const low = el.querySelector(':scope > img.pg-low');
     if (was) was.after(img); else if (low) low.after(img); else el.prepend(img);
   };
@@ -1294,7 +1497,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     if (!el || !pdf || rendering.current.has(n) || !wantsRef.current(n)) return;
     // zoomed out, a page coming into view has its middle-sized picture at once: there it is the page sharp. (At fit
     // and over, the small picture serves the pages a scroll brings, as before; a zoom asks for the pages in view)
-    if (zoomRef.current < 1 && inView(el)) midRef.current(n, el);
+    if ((tilesRef.current || zoomRef.current < 1) && inView(el)) midRef.current(n, el);
+    if (tilesRef.current) tilesSoonRef.current();
     // on a device one page is drawn at a time (a heavy page's drawing takes a great deal of memory while it lasts),
     // and of the pages waiting it is the one nearest the middle of the view that is drawn next: a page the reader
     // has flung past is not drawn at all, and the one they have stopped on does not wait behind those
@@ -1338,6 +1542,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     try {
       const page = await pdf.getPage(n);
       if (what === 'detail') await drawDetail(n, el, page);
+      else if (what === 'text') await drawText(n, el, page);
       else await drawBase(n, el, page);
     } catch (e) {
       console.error(id, `page ${n}`, e);
@@ -1347,6 +1552,38 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     // another zoom while it was drawn, or the part in view to draw after the whole: drawn next
     if (pageEls.current.get(n) === el && wantsRef.current(n)) void renderRef.current(n);
   }, [pdf, id]);
+  /** A page's text, search and links from pdf.js, where the app draws the page itself: kept across zooms (it follows by the scale alone). */
+  const drawText = async (n: number, el: HTMLElement, page: PDFPageProxy) => {
+    const t0 = performance.now();
+    const viewport = page.getViewport({ scale: scaleRef.current });
+    const layer = document.createElement('div');
+    layer.className = 'textLayer';
+    el.style.setProperty('--total-scale-factor', String(scaleRef.current));
+    el.querySelector(':scope > .textLayer')?.remove();
+    el.append(layer);
+    const tl = new TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport });
+    await tl.render();
+    if (!links.current.has(n)) {
+      try {
+        const v1 = page.getViewport({ scale: 1 });
+        const toView = typeof v1.convertToViewportPoint === 'function'
+          ? (r: number[]) => [...v1.convertToViewportPoint(r[0]!, r[1]!), ...v1.convertToViewportPoint(r[2]!, r[3]!)] as number[]
+          : flipRect([0, 0, v1.width, v1.height]);
+        links.current.set(n, pageLinks(await page.getAnnotations(), toView, v1.width, v1.height));
+      } catch {
+        links.current.set(n, []);
+      }
+    }
+    const end = document.createElement('div');
+    end.className = 'endOfContent';
+    layer.append(end);
+    rendered.current.set(n, scaleRef.current);
+    setTick((t) => t + 1);
+    settled();
+    const ms = performance.now() - t0;
+    if (zoomRec.current) zoomRec.current.text++;
+    void import('@tauri-apps/api/core').then((m) => m.invoke('zoom_log', { line: `draw kind=pdfjs-text page=${n} all=${ms.toFixed(1)}` })).catch(() => {});
+  };
   /** A page drawn whole, at the scale there is when it begins. */
   const drawBase = async (n: number, el: HTMLElement, page: PDFPageProxy) => {
     const at = scaleRef.current;
@@ -1365,8 +1602,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     // the print intent draws without animation frames, which WebKit holds back in a covered window
+    const t0 = performance.now();
     await page.render({ canvas, viewport, intent: 'print', transform: [canvas.width / viewport.width, 0, 0, canvas.height / viewport.height, 0, 0] }).promise;
-    if (import.meta.env.DEV) await slowDraw(canvas.width * canvas.height);
+    if (import.meta.env.DEV) await slowDraw(canvas.width * canvas.height, performance.now() - t0);
     const had = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-base');
     // zoomed again while it was drawn: what it is drawn for is gone. It goes in only where it is finer than what is shown
     if (scaleRef.current !== at && had && had.width >= canvas.width) {
@@ -1438,8 +1676,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     canvas.width = px1 - px0;
     canvas.height = py1 - py0;
     const sx = need.w / viewport.width; const sy = need.h / viewport.height;
+    const t0 = performance.now();
     await page.render({ canvas, viewport, intent: 'print', transform: [sx, 0, 0, sy, -px0, -py0] }).promise;
-    if (import.meta.env.DEV) await slowDraw(canvas.width * canvas.height);
+    if (import.meta.env.DEV) await slowDraw(canvas.width * canvas.height, performance.now() - t0);
     // zoomed again meanwhile: what it was drawn for is gone, and what is shown stays
     if (scaleRef.current !== at || !el.isConnected || pageEls.current.get(n) !== el || !el.querySelector(':scope > canvas.pg-base')) { canvas.width = canvas.height = 0; return; }
     Object.assign(canvas.dataset, { scale: String(at), x0: String(px0 / need.w), y0: String(py0 / need.h), x1: String(px1 / need.w), y1: String(py1 / need.h) });
@@ -1506,7 +1745,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     // larger or smaller, and its text follows by the scale alone), and is drawn again only where that is too coarse
     // for the screen now, or so much finer that it is a waste to hold; until then what it has stays. A page far from
     // the view gives its drawing back (its small picture stays under it: a page is never bare paper)
-    {
+    if (tilesRef.current) {
+      // the app's tiles: what is asked of an older zoom is not drawn, and the new zoom's are asked for
+      tileGen.current = ++tileGens.n;
+      const at = picturesOf(rel);
+      if (at) void import('@tauri-apps/api/core').then((m) => m.invoke('pages_generation', { hash: `${at.hash}:${tileReader.current}`, g: tileGen.current })).catch(() => {});
+      const from = zoomWas.current;
+      zoomWas.current = zoom;
+      if (from !== null && from !== zoom) zoomRec.current = { from, to: zoom, t0: performance.now(), pictured: null, sharp: null, tiles: 0, tileMs: 0, text: 0, most: 0 };
+      for (const [n, el] of pageEls.current) if (inView(el)) midFor(n, el);
+      tilesSoon();
+    } else {
       const sc = scroller();
       const view = sc?.getBoundingClientRect();
       for (const [n, s] of rendered.current) {
@@ -1555,6 +1804,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
         if (pr.top <= bottom && (!at || k > at.page)) at = { page: k, y: Math.min(1, Math.max(0, (bottom - pr.top) / pr.height)) };
       }
       setCurrent(n);
+      // the app's tiles for what has come into view
+      tilesSoonRef.current();
       // the place at the top of the view, for when the pages are drawn at another scale
       const from = r.top + placeAt();
       place.current = null;
@@ -2521,7 +2772,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     const hit = hitAt(pages, at);
     if (!hit) return;
     wantHit.current = true;
-    if (rendered.current.get(hit.page) !== scale) scrollTo(hit.page);
+    // (where the app draws the pages, a page's text is kept across zooms: drawn is having it at all)
+    if (tilesRef.current ? !rendered.current.has(hit.page) : rendered.current.get(hit.page) !== scale) scrollTo(hit.page);
   };
 
   // ── smart jump: ⏎ on a selected reference peeks at its target ──

@@ -27,12 +27,18 @@
 .pdf-page > img.pg-low, .pdf-page > img.pg-mid { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; -webkit-user-select: none; user-select: none; }
 /* zoomed in past what a page's whole drawing holds, the part in view drawn sharp over it, where it lies on the page */
 .pdf-page > canvas.pg-detail { position: absolute; pointer-events: none; }
+/* where the app draws the pages (round 2), its tiles at the size the page is shown, a layer a zoom, over the page by
+   fractions of it: an older zoom's stretched under the new one's until they cover the view. A tile comes in by
+   opacity, as Core Animation's tiled layers do */
+.pdf-page > .pg-tiles { position: absolute; inset: 0; pointer-events: none; }
+.pdf-page > .pg-tiles > img.pg-tile { position: absolute; display: block; -webkit-user-select: none; user-select: none; animation: pg-in 120ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .pdf-page > .pg-tiles > img.pg-tile { animation: none; } }
 .pdf-page > canvas.pg-new { animation: pg-in 140ms ease-out; }
 @keyframes pg-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .pdf-page > canvas.pg-new { animation: none; } }
 [data-theme="dark"] .pdf-page { background: #e9e9e6; }
-[data-theme="dark"] .pdf-page canvas, [data-theme="dark"] .pdf-page > img.pg-low, [data-theme="dark"] .pdf-page > img.pg-mid { filter: invert(0.92) hue-rotate(180deg); }
-[data-theme="eink"] .pdf-page canvas, [data-theme="eink"] .pdf-page > img.pg-low, [data-theme="eink"] .pdf-page > img.pg-mid { filter: grayscale(1) contrast(1.1); }
+[data-theme="dark"] .pdf-page canvas, [data-theme="dark"] .pdf-page > img.pg-low, [data-theme="dark"] .pdf-page > img.pg-mid, [data-theme="dark"] .pdf-page img.pg-tile { filter: invert(0.92) hue-rotate(180deg); }
+[data-theme="eink"] .pdf-page canvas, [data-theme="eink"] .pdf-page > img.pg-low, [data-theme="eink"] .pdf-page > img.pg-mid, [data-theme="eink"] .pdf-page img.pg-tile { filter: grayscale(1) contrast(1.1); }
 
 /* the text layer: transparent spans over the canvas, positioned by pdf.js */
 .textLayer {

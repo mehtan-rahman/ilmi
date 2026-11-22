@@ -1049,7 +1049,38 @@ fill the page's box, so they are the same picture larger or smaller, and the
 text follows by `--total-scale-factor`. A page is drawn again only where what
 it has is too coarse for the screen now (`baseWill`, `wants`), and what is
 drawn goes in only once it is drawn, never for something coarser. The bar's
-steps and ⌘= ⌘− zoom about the middle of the view. `"part":
+steps and ⌘= ⌘− zoom about the middle of the view. That is the Mac's way, and
+any device's without the app's drawing.
+
+On a device (iPad, phone) the app draws the pages itself: tiles from
+`ilmipage:` (`img.pg-tile` in a `.pg-tiles` layer a zoom, bands up to 2048 ×
+384 px of the page as drawn at the size it is shown, for what is in view and
+half a view about it), Core Graphics on a few worker threads at once
+(`src-tauri/src/pages.rs`: as many as the cores, two to eight, the asking with
+the least `p` first, an asking of a zoom gone by, `g` older than
+`pages_generation` says, not drawn; `native/pdfpage.m`'s `ilmi_pdf_region`,
+each thread its own open documents). A band rather than a square because
+Core Graphics reads the whole page for each tile, and a page of type is mostly
+reading. A zoom keeps the old layer under the new one's until those cover the
+view. Each page near the view has its middle-sized picture (1024 px, `k=mid`),
+kept on disk among the app's caches (`ilmi-pages`, 160 MB, the oldest let go)
+and the latest pictures in memory (64 MB); the pages a little further on have
+theirs made ahead. pdf.js gives only the text, the search and the links.
+
+The zoom log: a line per drawing (`draw kind=tile|mid|low|pdfjs-text page= w=
+px= from=drawn|disk|memory wait= draw= make= all= depth=`) and a line per
+zoom (`zoom from= to= sharp=<ms until every tile in view was there>
+pictured=<ms until every page in view showed a picture> tiles= ...`), each
+after the time in ms since 1970, in `Library/Caches/ilmi-zoom.log` of the
+app's own container on an iPad (in the app's caches on a Mac), begun anew past
+512 KB with the one before kept as `ilmi-zoom.1.log`. From a device:
+`xcrun devicectl device copy from --device <udid> --domain-type
+appDataContainer --domain-identifier dev.ilmi.app --source
+Library/Caches/ilmi-zoom.log --destination <file>`. `zoomfeel`'s
+`"tileslow": "<factor>"` and `"workers": "<n>"` hold the app's drawings (and
+pdf.js's) to that many times as long on that many threads, `"within":
+"<ms>"` makes the time to sharp a hard check, and `"notiles": "1"` draws with
+pdf.js as before for the one against the other. `"part":
 "live"` (under the rig) is the stroke being written against the one kept,
 for every ink (below, by the canvases), with `inkgeo:` lines for
 `scripts/ink-thin.py`.

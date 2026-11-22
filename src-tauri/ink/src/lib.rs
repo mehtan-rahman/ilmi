@@ -38,6 +38,7 @@ mod native {
         pub fn ilmi_pdf_info(path: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_pdf_sizes(path: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_pdf_page(path: *const u8, len: usize, number: u32, width: u32, quality: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
+        pub fn ilmi_pdf_region(path: *const u8, len: usize, number: u32, page_w: u32, x: u32, y: u32, w: u32, h: u32, fmt: u32, quality: f64, ms: *mut f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_free(p: *mut u8);
         pub fn ilmi_icloud_folder(out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_icloud_down(path: *const u8, len: usize, seconds: u32) -> i32;
@@ -298,6 +299,26 @@ pub fn pdf_page(path: &str, number: u32, width: u32, quality: f64) -> Result<Vec
 }
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub fn pdf_page(_path: &str, _number: u32, _width: u32, _quality: f64) -> Result<Vec<u8>, String> {
+    Err("no pages drawn on this system".to_string())
+}
+
+/// How a piece of a page is given: a JPEG of a quality, a PNG, or a BMP (nothing to compress or decode).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PictureKind { Jpeg(f64), Png, Bmp }
+
+/// A piece of page `number` (from 1) of the PDF at `path` drawn `page_w` pixels across: `w` × `h` pixels from
+/// (`x`, `y`), its top left (the whole page where `w` is 0); with how long the drawing and the picture's making took, ms.
+/// Safe to call from several threads at once: each keeps its own open documents.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn pdf_region(path: &str, number: u32, page_w: u32, at: (u32, u32, u32, u32), kind: PictureKind) -> Result<(Vec<u8>, f64, f64), String> {
+    let (fmt, q) = match kind { PictureKind::Jpeg(q) => (0, q), PictureKind::Png => (1, 1.0), PictureKind::Bmp => (2, 1.0) };
+    let mut ms = [0f64; 2];
+    // SAFETY: as in `split`; `ms` is two doubles the callee writes
+    let b = native::call(|out, len| unsafe { native::ilmi_pdf_region(path.as_ptr(), path.len(), number, page_w, at.0, at.1, at.2, at.3, fmt, q, ms.as_mut_ptr(), out, len) }).map_err(|_| "no such page".to_string())?;
+    Ok((b, ms[0], ms[1]))
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn pdf_region(_path: &str, _number: u32, _page_w: u32, _at: (u32, u32, u32, u32), _kind: PictureKind) -> Result<(Vec<u8>, f64, f64), String> {
     Err("no pages drawn on this system".to_string())
 }
 
@@ -655,6 +676,25 @@ mod tests {
         assert_eq!(u32::from_be_bytes(sharp[16..20].try_into().unwrap()), 400);
         assert_eq!(u32::from_be_bytes(sharp[20..24].try_into().unwrap()), (842.0_f64 * 400.0 / 595.0).round() as u32);
         assert!(pdf_page(out.to_str().unwrap(), 4, 200, 0.6).is_err());
+        // a piece of a page (a tile) is the same pixels as that piece of the whole page drawn at its width, from
+        // several threads at once (each its own document)
+        let path = out.to_str().unwrap().to_string();
+        let (whole, _, _) = pdf_region(&path, 1, 300, (0, 0, 0, 0), PictureKind::Bmp).unwrap();
+        let bmp = |b: &[u8]| (i32::from_le_bytes(b[18..22].try_into().unwrap()), -i32::from_le_bytes(b[22..26].try_into().unwrap()));
+        assert_eq!(bmp(&whole), (300, (792.0_f64 * 300.0 / 612.0).round() as i32));
+        let px = |b: &[u8], x: usize, y: usize| { let (w, _) = bmp(b); let line = (w as usize * 3 + 3) & !3; let at = 54 + y * line + x * 3; [b[at], b[at + 1], b[at + 2]] };
+        let tiles: Vec<_> = (0..4).map(|i| { let p = path.clone(); std::thread::spawn(move || pdf_region(&p, 1, 300, (100 * (i % 2), 120 * (i / 2), 100, 120), PictureKind::Bmp).unwrap()) }).collect();
+        for (i, t) in tiles.into_iter().enumerate() {
+            let (tile, draw, _) = t.join().unwrap();
+            assert_eq!(bmp(&tile), (100, 120));
+            assert!(draw >= 0.0);
+            let (ox, oy) = (100 * (i % 2), 120 * (i / 2));
+            let mut off = 0;
+            for y in (0..120).step_by(7) { for x in (0..100).step_by(7) { let (a, b) = (px(&tile, x, y), px(&whole, ox + x, oy + y)); if a.iter().zip(b.iter()).any(|(p, q)| p.abs_diff(*q) > 8) { off += 1; } } }
+            assert!(off <= 3, "tile {i}: {off} pixels unlike the whole page's");
+        }
+        assert_eq!(&pdf_region(&path, 2, 200, (0, 0, 64, 64), PictureKind::Jpeg(0.9)).unwrap().0[..3], &[0xff, 0xd8, 0xff]);
+        assert!(pdf_region(&path, 1, 300, (400, 0, 64, 64), PictureKind::Bmp).is_err());
         let bytes = std::fs::read(&out).unwrap();
         assert_eq!(&bytes[..5], b"%PDF-");
         // the same pages with nothing written are a smaller file: the ink is in the one

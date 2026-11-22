@@ -6,6 +6,62 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-21 — on a device the app draws a PDF's pages itself, in bands on several cores at once, and writes down every zoom
+
+**Reported** after 003429b, on the iPad Air (M1): "When I zoom in it takes a second to get clearer and when i zoom out it takes a second to load." The layering held; the drawing is slow there, and a simulator on this Mac's processor did not show it.
+
+**What changed.**
+- On a device (iPad, phone) the sharp page is Core Graphics' drawing, not pdf.js's: tiles from `ilmipage:` (`img.pg-tile`, a `.pg-tiles` layer a zoom). They are bands up to 2048 × 384 px of the page as drawn at the size it is shown, for what is in view and half a view about it, nearest the middle first. Bands, not squares: Core Graphics reads the whole page for each tile it draws. On `vector.pdf` a 512 px square took 14 ms (median) against 31 ms for the whole page, so a screen of squares cost about nine pages' reading. A zoom keeps the old layer under the new one's until the new one covers the view, then lets it go once the new tiles have faded in (120 ms).
+- pdf.js gives only the text layer, the search and the links, and they are kept across zooms.
+- `src-tauri/src/pages.rs` is a pool of worker threads, as many as the cores (two to eight; eight on an M1 iPad). The scheme handler was a thread per asking, unbounded. The asking with the least `p` goes first. An asking from a generation older than the reader's latest (`g`, `gk`, `pages_generation`, one per reader and book) is answered 410, not drawn.
+- `native/pdfpage.m`, `ilmi_pdf_region`: any piece of a page, each thread with its own open documents. Its output is BMP, JPEG or PNG; tiles are BMP, with nothing to compress or decode. A unit test checks four tiles drawn on four threads match the whole page pixel for pixel.
+- Whole pages are kept on disk (`<app caches>/ilmi-pages`, 160 MB, oldest first out), and the latest pictures in memory (64 MB).
+- Every page near the view has its 1024 px picture (`k=mid`) under the tiles. The ten pages on each side have theirs made ahead, so zooming out or scrolling there finds them on disk (1.8 ms from disk against 25 to 44 from drawing).
+- The Mac, and any reader without the app's drawing, is as before (pdf.js, round 1).
+
+**The zoom log**, for the device:
+- Location: `Library/Caches/ilmi-zoom.log` in the app's own data container, bundle id `dev.ilmi.app`, never in a collection. Past 512 KB it is begun anew, with the previous log kept as `ilmi-zoom.1.log`.
+- A line per drawing: `draw kind=tile|mid|low|pdfjs-text page= w= px= from=drawn|disk|memory wait= draw= make= all= depth= f= bytes=`.
+- A line per zoom: `zoom from= to= sharp=<ms from the layout until every tile in view was there> pictured=<ms until every page in view showed a picture> tiles= tile_ms_mean= text= asked_most=`.
+- At launch: `start workers= version=`.
+- To fetch it: `xcrun devicectl device copy from --device <udid> --domain-type appDataContainer --domain-identifier dev.ilmi.app --source Library/Caches/ilmi-zoom.log --destination ilmi-zoom.log`.
+
+**Simulator** (Air 11, iOS 27.2, this Mac's M5):
+- Device-like settings: `tileslow` 2.2 (each drawing held to 2.2 times as long, pdf.js's alike) and `workers` 6.
+- d0 is pdf.js, round 1 (`notiles`); d1 is tiles. Time to all sharp is from the first frame of the case, which for a pinch includes the rig's gesture.
+
+| case | d0 pdf.js | d1 tiles |
+|---|---|---|
+| + fit → 125% | 161 ms | 148 ms |
+| + + → 200% | 247 | 262 |
+| + → 250% | 125 | 160 |
+| scroll down 1.5 pages at 250% | 1602, 13 soft frames | 454, 2 |
+| scroll across at 250% | 209, 3 | 11, 0 |
+| + + → 400% | 140 | 284 |
+| fit word 50% → fit | 37 | 125 |
+| pinch 250% → 50%, pages never drawn | 2580, 3 soft | 20, 0 |
+
+So on a simulator, whose script runs on a Mac's processor and whose pdf.js hold does not block its thread as a slow processor does, the zoom steps come out even. The tiles win where pdf.js has to draw what was never drawn: a pinch out to pages not yet drawn, and a scroll while zoomed in.
+
+The hard run (`h4`: `tileslow` 2.2, `workers` 6, `within` 600) passed:
+- No frame blank or losing detail in any case, no drift, and the writing always on its page.
+- Every zoom sharp within 600 ms of its layout, as its log line says it: steps by the bar 79 to 227 ms, pinches 36 to 477 ms. "Pictured" (every page in view showing a picture) came 5 to 136 ms after the layout.
+- `feel` (`f5`): fling, jump and reopening as before.
+- `sharp` `"part": "pdf"` (`s2`): done.
+
+**What to expect on the device, and why.**
+- What it rests on: the M1's pdf.js draws a page on one thread, the page's own, while Core Graphics draws six bands on eight cores and leaves the page's thread free. Core Graphics is also tuned on iOS for real PDFs, keeping fonts and pictures in each worker's open document.
+- Zooming in should sharpen in a few hundred ms rather than about a second.
+- Zooming out should show pages at once: from the 1024 px pictures made ahead, then their tiles.
+- The log will say whether that holds, by its `draw=` and `wait=` per band and `sharp=` per zoom.
+- If `draw=` per band is near what a whole page took, the file is one whose reading dominates, and smaller bands will not help. Then the next step is one band per worker, the full page height divided by the cores.
+
+**Checks.** Typecheck clean; npm test 2672 passed and 2 skipped (perf.test.ts's timing failed once under the simulator's load and passed alone); cargo test 83 passed and the ink crate's 11; the `pages` tests (an address read, priority and generations, the log begun anew) and the ink crate's tile test.
+
+**Not seen.** The device itself (only its log will say), its 120 Hz, the user's own PDF (real type and pictures, not outlines), memory over a long session of tiles (each band is decoded at about 3 MB), and the phone.
+
+---
+
 ## 2026-11-21 — a PDF's zoom never shows less than the frame before: what is drawn stays until its better is drawn, the part in view drawn sharp, pictures from the system for pages zoomed out
 
 **Reported.** On a real iPad, a 47 MB, 604-page PDF: "it'll flicker and whatnot. when i zoom out it'll take a moment to load in" (jumping is fine; zooming in and out is what is less seamless than GoodNotes).

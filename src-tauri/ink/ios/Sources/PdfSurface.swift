@@ -85,7 +85,7 @@ struct PdfSurfaceDoArgs: Decodable {
   /// (the checks) a selection's other end, fractions of `page`.
   let x2: Double?
   let y2: Double?
-  /// (the checks) lines down `page`: each `[x, y, y2]`, fractions of it.
+  /// (the checks) lines down `page`: each `[x, y, y2]`, fractions of it (read at every frame for `ms`, `film`).
   let lines: [[Double]]?
 }
 
@@ -122,6 +122,7 @@ extension InkPlugin {
     let args = try invoke.parseArgs(PdfSurfaceDoArgs.self)
     DispatchQueue.main.async {
       guard let s = PdfSurface.all[args.id] else { invoke.reject("no such surface"); return }
+      if args.op == "film" { s.film(args) { invoke.resolve($0) }; return }
       invoke.resolve(s.handle(args))
     }
   }
@@ -139,6 +140,15 @@ final class PagePainter {
     byPath[path] = p
     return p
   }
+  /// (the ink) A lane of its own for what shows a change of the ink: two threads that nothing else waits in front of,
+  /// so a stroke kept or erased is on the glass in a frame or two however busy the page's painter is.
+  private static var inkByPath: [String: PagePainter] = [:]
+  static func ink(_ path: String) -> PagePainter {
+    if let p = inkByPath[path] { return p }
+    let p = PagePainter(path: path, workers: 2, name: "ink")
+    inkByPath[path] = p
+    return p
+  }
 
   struct Job {
     let key: String
@@ -154,13 +164,13 @@ final class PagePainter {
   private(set) var drawn = 0
   private(set) var drawMs: Double = 0
 
-  private init(path: String) {
+  private init(path: String, workers w: Int? = nil, name: String = "painter") {
     self.path = path
-    workers = max(2, min(8, ProcessInfo.processInfo.activeProcessorCount))
+    workers = w ?? max(2, min(8, ProcessInfo.processInfo.activeProcessorCount))
     for i in 0..<workers {
       let t = Thread { [weak self] in self?.loop() }
-      t.name = "ilmi.pdf.painter.\(i)"
-      t.qualityOfService = .userInitiated
+      t.name = "ilmi.pdf.\(name).\(i)"
+      t.qualityOfService = name == "ink" ? .userInteractive : .userInitiated
       t.start()
     }
   }
@@ -207,8 +217,9 @@ final class PagePainter {
     }
   }
 
-  /// Page `n` drawn `pxW` pixels across, the piece `rect` of it (pixels, its top left), on white, turned for the dark theme.
-  static func draw(_ doc: CGPDFDocument, page n: Int, pxW: CGFloat, rect: CGRect, dark: Bool) -> CGImage? {
+  /// Page `n` drawn `pxW` pixels across, the piece `rect` of it (pixels, its top left), on white, its ink on it,
+  /// and both turned for the dark theme.
+  static func draw(_ doc: CGPDFDocument, page n: Int, pxW: CGFloat, rect: CGRect, dark: Bool, ink: [Geom] = []) -> CGImage? {
     guard let page = doc.page(at: n) else { return nil }
     let crop = page.getBoxRect(.cropBox)
     let rot = ((page.rotationAngle % 360) + 360) % 360
@@ -228,6 +239,15 @@ final class PagePainter {
     ctx.concatenate(page.getDrawingTransform(.cropBox, rect: CGRect(origin: .zero, size: size), rotate: 0, preserveAspectRatio: true))
     ctx.drawPDFPage(page)
     ctx.restoreGState()
+    if !ink.isEmpty {
+      // the ink, in the page's points from its top left (Core Graphics counts from the foot)
+      ctx.saveGState()
+      ctx.translateBy(x: 0, y: CGFloat(h))
+      ctx.scaleBy(x: k, y: -k)
+      ctx.translateBy(x: -rect.minX / k, y: -rect.minY / k)
+      Paint.lay(ink, in: ctx, region: CGRect(x: rect.minX / k, y: rect.minY / k, width: rect.width / k, height: rect.height / k), px: k)
+      ctx.restoreGState()
+    }
     if dark {
       // the web reader's turn (`invert(0.92)`): turned, then from 0.08 to 0.92
       ctx.setBlendMode(.difference)
@@ -311,6 +331,18 @@ final class PageMemory {
     DiskBudget.wrote(url)
   }
 
+  /// What is kept of a page whose ink changed goes (what is on the glass stays, held by its layers, and is drawn again).
+  func drop(page n: Int, of path: String) {
+    lock.lock(); defer { lock.unlock() }
+    let marks = ["\(path)|t|\(n)|", "\(path)|pic|\(n)|"]
+    for k in Array(small.images.keys) + Array(rest.images.keys) where marks.contains(where: { k.hasPrefix($0) }) {
+      for pool in [0, 1] {
+        if pool == 0, let old = small.images.removeValue(forKey: k) { small.bytes -= old.bytesPerRow * old.height; small.order.removeAll { $0 == k } }
+        if pool == 1, let old = rest.images.removeValue(forKey: k) { rest.bytes -= old.bytesPerRow * old.height; rest.order.removeAll { $0 == k } }
+      }
+    }
+  }
+
   /// Short of memory: every picture let go (those on the glass stay, held by their layers).
   func purge() {
     lock.lock(); defer { lock.unlock() }
@@ -329,8 +361,9 @@ final class PdfPageView: UIView {
   var pictureLevel = -2
   /// The tiles, a layer a level, by level.
   var levels: [Int: CALayer] = [:]
-  /// Each level's tiles on the glass, by their place (`x,y` in pixels of that level).
+  /// Each level's tiles on the glass, by their place (`x,y` in pixels of that level), and their layers.
   var tiles: [Int: Set<String>] = [:]
+  var tileLayers: [Int: [String: CALayer]] = [:]
 
   init(number: Int, frame: CGRect) {
     self.number = number
@@ -381,6 +414,7 @@ final class PdfPageView: UIView {
     levels[k]?.removeFromSuperlayer()
     levels[k] = nil
     tiles[k] = nil
+    tileLayers[k] = nil
   }
   override func layoutSubviews() {
     super.layoutSubviews()
@@ -398,17 +432,58 @@ enum Glass {
   /// Down a line of `view` (its points) from `p0` to `p1`: each pixel of the screen as red, green, blue, as drawn now.
   static func column(_ view: UIView, from p0: CGPoint, to p1: CGPoint) -> [[Int]] { columns(view, [(p0, p1)]).first ?? [] }
 
+  /// Lines read off the glass at every frame for `ms` (as it is on the screen, nothing laid out for it): each frame
+  /// its time (the system's uptime) and its lines.
+  static func film(_ view: UIView, _ lines: [(CGPoint, CGPoint)], ms: Double, done: @escaping ([[String: Any]]) -> Void) {
+    let f = Film(view: view, lines: lines, until: CACurrentMediaTime() + ms / 1000, done: done)
+    f.start()
+  }
+
+  private final class Film: NSObject {
+    let view: UIView
+    let lines: [(CGPoint, CGPoint)]
+    let until: CFTimeInterval
+    let done: ([[String: Any]]) -> Void
+    var frames: [[String: Any]] = []
+    var link: CADisplayLink?
+    var me: Film?
+    init(view: UIView, lines: [(CGPoint, CGPoint)], until: CFTimeInterval, done: @escaping ([[String: Any]]) -> Void) {
+      self.view = view; self.lines = lines; self.until = until; self.done = done
+    }
+    func start() {
+      me = self
+      let l = CADisplayLink(target: self, selector: #selector(tick(_:)))
+      l.add(to: .main, forMode: .common)
+      link = l
+    }
+    @objc func tick(_ l: CADisplayLink) {
+      let t = CACurrentMediaTime()
+      frames.append(["t": t, "c": Glass.columns(view, lines, after: true)])
+      if t >= until {
+        l.invalidate()
+        link = nil
+        done(frames)
+        me = nil
+      }
+    }
+  }
+
   /// Several lines from one picture of the glass (quick enough to read a stroke while the Pencil is still down).
-  static func columns(_ view: UIView, _ lines: [(CGPoint, CGPoint)]) -> [[[Int]]] {
+  static func columns(_ view: UIView, _ lines: [(CGPoint, CGPoint)], after: Bool = true) -> [[[Int]]] {
     let sc = view.window?.screen.scale ?? UIScreen.main.scale
+    // (only the part of the glass the lines are in is drawn: quick enough to read at every frame)
+    var box = CGRect.null
+    for (p0, p1) in lines { box = box.union(CGRect(x: p0.x, y: min(p0.y, p1.y), width: 0, height: abs(p1.y - p0.y))) }
+    if box.isNull { return [] }
+    box = CGRect(x: (box.minX - 2).rounded(.down), y: (box.minY - 2).rounded(.down), width: (box.width + 4).rounded(.up), height: (box.height + 4).rounded(.up))
     let fmt = UIGraphicsImageRendererFormat(); fmt.scale = sc; fmt.opaque = true; fmt.preferredRange = .standard
-    let img = UIGraphicsImageRenderer(size: view.bounds.size, format: fmt).image { _ in view.drawHierarchy(in: view.bounds, afterScreenUpdates: true) }
+    let img = UIGraphicsImageRenderer(size: box.size, format: fmt).image { _ in view.drawHierarchy(in: view.bounds.offsetBy(dx: -box.minX, dy: -box.minY), afterScreenUpdates: after) }
     guard let cg = img.cgImage, let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return [] }
     let bpr = cg.bytesPerRow, bpp = cg.bitsPerPixel / 8
     let bgr = cg.bitmapInfo.contains(.byteOrder32Little)
     let first = cg.alphaInfo == .premultipliedFirst || cg.alphaInfo == .first || cg.alphaInfo == .noneSkipFirst
     return lines.map { p0, p1 in
-      let x = Int((p0.x * sc).rounded()), y0 = max(0, Int((min(p0.y, p1.y) * sc).rounded())), y1 = min(cg.height - 1, Int((max(p0.y, p1.y) * sc).rounded()))
+      let x = Int(((p0.x - box.minX) * sc).rounded()), y0 = max(0, Int(((min(p0.y, p1.y) - box.minY) * sc).rounded())), y1 = min(cg.height - 1, Int(((max(p0.y, p1.y) - box.minY) * sc).rounded()))
       var out: [[Int]] = []
       guard x >= 0, x < cg.width, y1 > y0 else { return out }
       for y in y0...y1 {
@@ -509,6 +584,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     let w = NoteSurface(id: id, plugin: plugin, over: view, scroll: scroll, content: content)
     ink = w
     view.ink = w
+    w.onInk = { [weak self] n, r in self?.inkChanged(n, r) }
     plugin.adopt(w)
   }
   /// What is written on the pages.
@@ -608,6 +684,170 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     for (n, v) in views { v.frame = frames[n - first]; v.pictureLevel = -2; for k in Array(v.levels.keys) { v.drop(level: k) } }
     scroll.zoomScale = z
     layInk()
+  }
+
+  /// (the checks) Lines down a page read off the glass at every frame for a while, and when the Pencil came down
+  /// and lifted and the ink was last drawn again at once, on the same clock.
+  func film(_ a: PdfSurfaceDoArgs, done: @escaping ([String: Any]) -> Void) {
+    let n = max(first, min(first + frames.count - 1, a.page ?? first))
+    let f = frames[n - first]
+    func at(_ x: Double, _ y: Double) -> CGPoint { content.convert(CGPoint(x: f.minX + f.width * CGFloat(x), y: f.minY + f.height * CGFloat(y)), to: view) }
+    let lines = (a.lines ?? []).filter { $0.count >= 3 }.map { (at($0[0], $0[1]), at($0[0], $0[2])) }
+    Glass.film(view, lines, ms: a.ms ?? 1000) { [weak self] frames in
+      var t = self?.ink?.times() ?? [:]
+      t["shown"] = self?.inkShows ?? []
+      t["ready"] = self?.inkReady ?? []
+      done(["frames": frames, "ink": t])
+    }
+  }
+
+  // MARK: the ink in the tiles
+
+  /// Each page's ink's generation (it moves with every change), and the changes since a while ago: what of the page
+  /// each touched, in its points (none: all of it).
+  private var inkGen: [Int: Int] = [:]
+  private var inkChanges: [Int: [(gen: Int, rect: CGRect?)]] = [:]
+  /// What has changed of a page and is not yet drawn again, and the pages being drawn again now.
+  private var inkPending: [Int: CGRect?] = [:]
+  private var inkBusy = Set<Int>()
+  /// The painter's jobs for the ink drawn again (kept when the pages near the view are asked for anew).
+  private(set) var inkJobs = Set<String>()
+  private var inkLog: [String] = []
+  /// (the checks) When batches of the ink drawn again came on the glass (the last 200).
+  private var inkShows: [CFTimeInterval] = []
+  private var inkReady: [CFTimeInterval] = []
+  private final class Ready {
+    private let lock = NSLock()
+    private var t: CFTimeInterval = 0
+    func mark() { lock.lock(); t = max(t, CACurrentMediaTime()); lock.unlock() }
+    var at: CFTimeInterval { lock.lock(); defer { lock.unlock() }; return t }
+  }
+
+  /// A page's strokes as they are now, and its ink's generation.
+  private func inkFor(_ n: Int) -> ([Geom], Int) { (ink?.inkOf(page: n) ?? [], inkGen[n] ?? 0) }
+
+  /// A piece of a page (pixels of a level `scale` pixels to the fitted point) in the page's own points.
+  private func ptsOf(_ n: Int, _ b: CGRect, scale: CGFloat, _ pv: PdfPageView) -> CGRect {
+    let k = sizes[n - 1].width / max(1, pv.bounds.width) / scale
+    return CGRect(x: b.minX * k, y: b.minY * k, width: b.width * k, height: b.height * k)
+  }
+
+  /// Whether a page's ink changed after generation `gen` where `r` (its points; none: anywhere) lies: a picture drawn
+  /// before that change is not the page as it is.
+  private func inkChanged(_ n: Int, since gen: Int, in r: CGRect?) -> Bool {
+    guard let cs = inkChanges[n] else { return false }
+    return cs.contains { $0.gen > gen && (r == nil || $0.rect == nil || $0.rect!.insetBy(dx: -2, dy: -2).intersects(r!)) }
+  }
+
+  /// A page's ink changed (`rect` its points; none: all of it): what is kept of it goes, and what is on the glass
+  /// under the change is drawn again.
+  func inkChanged(_ n: Int, _ rect: CGRect?) {
+    let g = (inkGen[n] ?? 0) + 1
+    inkGen[n] = g
+    var cs = inkChanges[n] ?? []
+    cs.append((g, rect))
+    if cs.count > 64 { cs.removeFirst(cs.count - 64) }
+    inkChanges[n] = cs
+    PageMemory.shared.drop(page: n, of: path)
+    if let was = inkPending[n] { inkPending[n] = (was == nil || rect == nil) ? nil : was!.union(rect!) } else { inkPending[n] = rect }
+    inkDraw(n)
+  }
+
+  /// What changed of page `n`'s ink drawn again where it is on the glass, with the page's strokes as they are now.
+  /// First what shows it (the finest tiles there are over what of the change is in view, the whole picture only where
+  /// no tile covers it), all shown in one transaction; then the stroke just written leaves the glass (`inkShown`).
+  /// Then the rest under the change (coarser levels, the whole picture), each shown when drawn unless the ink has
+  /// changed there since. What changes while the first part is drawn goes into the next batch.
+  private func inkDraw(_ n: Int) {
+    guard !inkBusy.contains(n), let pending = inkPending[n] else { return }
+    inkPending[n] = nil
+    guard let pv = views[n] else { ink?.inkShown(); return }
+    let (geoms, gen) = inkFor(n)
+    let dark = self.dark
+    let size = sizes[n - 1]
+    let toView = pv.bounds.width / max(1, size.width)
+    typealias Job = (key: String, draw: (CGPDFDocument) -> CGImage?, show: (CGImage) -> Void)
+    // what of the change is in view (the page view's points)
+    let vis = seen.offsetBy(dx: -pv.frame.minX, dy: -pv.frame.minY).intersection(pv.bounds)
+    let changed = (pending.map { CGRect(x: $0.minX * toView, y: $0.minY * toView, width: $0.width * toView, height: $0.height * toView).insetBy(dx: -2, dy: -2) } ?? pv.bounds).intersection(vis)
+    let probes: [CGPoint] = changed.isNull || changed.isEmpty ? [] : (0..<5).flatMap { i in (0..<5).map { j in CGPoint(x: changed.minX + changed.width * (CGFloat(i) + 0.5) / 5, y: changed.minY + changed.height * (CGFloat(j) + 0.5) / 5) } }
+    // the levels that show it, finest first, as many as cover what of it is in view
+    var front = Set<Int>()
+    var covered = probes.isEmpty
+    for k in pv.tileLayers.keys.sorted(by: >) where k >= 0 && !covered {
+      front.insert(k)
+      let frames = front.flatMap { (pv.tileLayers[$0] ?? [:]).values.map { $0.frame } }
+      covered = probes.allSatisfy { p in frames.contains { $0.contains(p) } }
+    }
+    var first: [Job] = [], later: [Job] = []
+    // the whole picture (it holds all of the page)
+    if pv.pictureLevel >= -1 {
+      let k = pv.pictureLevel
+      let pxW = (pv.bounds.width * screen * (k < 0 ? 0.5 : 1)).rounded()
+      let rect = CGRect(x: 0, y: 0, width: pxW, height: (pxW * size.height / size.width).rounded())
+      let cacheKey = "\(path)|pic|\(n)|\(k)|\(dark ? 1 : 0)|\(Int(pv.bounds.width))"
+      let job: Job = ("\(id)|ink|\(n)|pic\(k)|g\(gen)", { doc in PagePainter.draw(doc, page: n, pxW: pxW, rect: rect, dark: dark, ink: geoms) }, { [weak pv] img in
+        PageMemory.shared.put(cacheKey, img)
+        if let pv = pv, pv.pictureLevel == k { pv.picture.contents = img }
+      })
+      if covered { later.append(job) } else { first.append(job) }
+    }
+    // the tiles under the change, at each level there is
+    for (k, byAt) in pv.tileLayers {
+      let scale = screen * CGFloat(1 << max(0, k))
+      let pxW = (pv.bounds.width * scale).rounded()
+      for (at, t) in byAt {
+        let inPts = CGRect(x: t.frame.minX / toView, y: t.frame.minY / toView, width: t.frame.width / toView, height: t.frame.height / toView)
+        if let r = pending, !r.insetBy(dx: -2, dy: -2).intersects(inPts) { continue }
+        let b = CGRect(x: t.frame.minX * scale, y: t.frame.minY * scale, width: t.frame.width * scale, height: t.frame.height * scale)
+        let cacheKey = "\(path)|t|\(n)|\(k)|\(at)|\(dark ? 1 : 0)|\(Int(pxW))"
+        let job: Job = ("\(id)|ink|\(n)|\(k)|\(at)|g\(gen)", { doc in PagePainter.draw(doc, page: n, pxW: pxW, rect: b, dark: dark, ink: geoms) }, { [weak t] img in
+          PageMemory.shared.put(cacheKey, img)
+          t?.contents = img
+        })
+        if front.contains(k) && t.frame.intersects(changed) { first.append(job) } else { later.append(job) }
+      }
+    }
+    inkLog.append("p\(n) g\(gen) \(pending.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? "all") \(geoms.count) strokes, \(first.count) first, \(later.count) after")
+    // the rest, after, each on its own (unless the ink has changed there since)
+    for j in later {
+      inkJobs.insert(j.key)
+      painter.ask(j.key, priority: 20, draw: j.draw) { [weak self] img in
+        guard let self = self else { return }
+        self.inkJobs.remove(j.key)
+        guard let img = img, !self.inkChanged(n, since: gen, in: pending) else { return }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        j.show(img)
+        CATransaction.commit()
+      }
+    }
+    if first.isEmpty { ink?.inkShown(); return }
+    inkBusy.insert(n)
+    var got: [Int: CGImage] = [:]
+    var left = first.count
+    // (the checks: when the last of them was drawn, on the painter's thread, apart from when the main thread showed it)
+    let ready = Ready()
+    for (i, j) in first.enumerated() {
+      inkJobs.insert(j.key)
+      PagePainter.ink(path).ask(j.key, priority: -1, draw: { doc in let img = j.draw(doc); ready.mark(); return img }) { [weak self] img in
+        guard let self = self else { return }
+        self.inkJobs.remove(j.key)
+        if let img = img { got[i] = img }
+        left -= 1
+        guard left == 0 else { return }
+        // what shows the change, at once, in one transaction, and the stroke just written off the glass with it
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (i, j) in first.enumerated() { if let img = got[i] { j.show(img) } }
+        CATransaction.commit()
+        self.inkShows.append(CACurrentMediaTime())
+        self.inkReady.append(ready.at)
+        if self.inkShows.count > 200 { self.inkShows.removeFirst(self.inkShows.count - 200); self.inkReady.removeFirst(self.inkReady.count - 200) }
+        self.ink?.inkShown()
+        self.inkBusy.remove(n)
+        self.inkDraw(n)
+      }
+    }
   }
 
   /// The ink told where the pages lie and what they are.
@@ -774,7 +1014,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
       }
     }
     CATransaction.commit()
-    painter.keep { !$0.hasPrefix("\(self.id)|") || wanted.contains($0) }
+    painter.keep { !$0.hasPrefix("\(self.id)|") || wanted.contains($0) || self.inkJobs.contains($0) }
     if madeSome { text?.pageShown() }
     drawMarks()
   }
@@ -809,21 +1049,23 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     let dark = self.dark
     let cacheKey = "\(path)|pic|\(n)|-1|\(dark ? 1 : 0)|\(Int(width))"
     if PageMemory.shared.has(cacheKey) { return }
-    let key = "\(id)|pic|\(n)|-1|\(dark ? 1 : 0)"
+    let (geoms, gen) = inkFor(n)
+    let key = "\(id)|pic|\(n)|-1|\(dark ? 1 : 0)|g\(gen)"
     wanted.insert(key)
     let pxW = (width * screen * 0.5).rounded()
     let page = sizes[n - 1]
     let rect = CGRect(x: 0, y: 0, width: pxW, height: (pxW * page.height / page.width).rounded())
-    let disk = PageMemory.disk(path, "pic-\(n)--1-\(dark ? 1 : 0)-\(Int(pxW))")
+    // (the disk keeps a page's pictures with no ink on them only)
+    let disk = geoms.isEmpty ? PageMemory.disk(path, "pic-\(n)--1-\(dark ? 1 : 0)-\(Int(pxW))") : nil
     painter.ask(key, priority: priority, draw: { doc in
       if let u = disk, let img = PageMemory.read(u) { return img }
-      let img = PagePainter.draw(doc, page: n, pxW: pxW, rect: rect, dark: dark)
+      let img = PagePainter.draw(doc, page: n, pxW: pxW, rect: rect, dark: dark, ink: geoms)
       if let img = img, let u = disk { PageMemory.write(img, u) }
       return img
     }, done: { [weak self] img in
-      guard let img = img else { return }
+      guard let img = img, let self = self, !self.inkChanged(n, since: gen, in: nil) else { return }
       PageMemory.shared.put(cacheKey, img)
-      if let self = self, let pv = self.views[n], pv.pictureLevel < -1 { self.show(pv, img, -1) }
+      if let pv = self.views[n], pv.pictureLevel < -1 { self.show(pv, img, -1) }
     })
   }
 
@@ -831,23 +1073,24 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     if pv.pictureLevel >= k { return }
     let n = pv.number
     let dark = self.dark
-    let key = "\(id)|pic|\(n)|\(k)|\(dark ? 1 : 0)"
     let cacheKey = "\(path)|pic|\(n)|\(k)|\(dark ? 1 : 0)|\(Int(pv.bounds.width))"
     if let img = PageMemory.shared.get(cacheKey) { show(pv, img, k); return }
+    let (geoms, gen) = inkFor(n)
+    let key = "\(id)|pic|\(n)|\(k)|\(dark ? 1 : 0)|g\(gen)"
     wanted.insert(key)
     let pxW = (pv.bounds.width * screen * (k < 0 ? 0.5 : 1)).rounded()
     let page = sizes[n - 1]
     let rect = CGRect(x: 0, y: 0, width: pxW, height: (pxW * page.height / page.width).rounded())
-    let disk = PageMemory.disk(path, "pic-\(n)-\(k)-\(dark ? 1 : 0)-\(Int(pxW))")
+    let disk = geoms.isEmpty ? PageMemory.disk(path, "pic-\(n)-\(k)-\(dark ? 1 : 0)-\(Int(pxW))") : nil
     painter.ask(key, priority: priority, draw: { doc in
       if let u = disk, let img = PageMemory.read(u) { return img }
-      let img = PagePainter.draw(doc, page: n, pxW: pxW, rect: rect, dark: dark)
+      let img = PagePainter.draw(doc, page: n, pxW: pxW, rect: rect, dark: dark, ink: geoms)
       if let img = img, let u = disk { PageMemory.write(img, u) }
       return img
     }, done: { [weak self, weak pv] img in
-      guard let img = img else { return }
+      guard let img = img, let self = self, !self.inkChanged(n, since: gen, in: nil) else { return }
       PageMemory.shared.put(cacheKey, img)
-      guard let self = self, let pv = pv, self.views[n] === pv else { return }
+      guard let pv = pv, self.views[n] === pv else { return }
       self.show(pv, img, k)
     })
   }
@@ -893,15 +1136,17 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
       if pv.tiles[k]?.contains(at) == true { continue }
       let cacheKey = "\(path)|t|\(n)|\(k)|\(at)|\(dark ? 1 : 0)|\(Int(pxW))"
       if let img = PageMemory.shared.get(cacheKey) { put(pv, layer, img, b, scale, k, at); continue }
-      let key = "\(id)|t|\(n)|\(k)|\(at)|\(dark ? 1 : 0)|\(Int(pxW))"
+      let (geoms, gen) = inkFor(n)
+      let key = "\(id)|t|\(n)|\(k)|\(at)|\(dark ? 1 : 0)|\(Int(pxW))|g\(gen)"
       wanted.insert(key)
       let far = hypot(b.midX - centre.x, b.midY - centre.y) / scale
+      let inPts = ptsOf(n, b, scale: scale, pv)
       painter.ask(key, priority: base + Double(far / 10), draw: { doc in
-        PagePainter.draw(doc, page: n, pxW: pxW, rect: b, dark: dark)
+        PagePainter.draw(doc, page: n, pxW: pxW, rect: b, dark: dark, ink: geoms)
       }, done: { [weak self, weak pv, weak layer] img in
-        guard let img = img else { return }
+        guard let img = img, let self = self, !self.inkChanged(n, since: gen, in: inPts) else { return }
         PageMemory.shared.put(cacheKey, img)
-        guard let self = self, let pv = pv, let layer = layer, self.views[n] === pv, pv.levels[k] === layer else { return }
+        guard let pv = pv, let layer = layer, self.views[n] === pv, pv.levels[k] === layer else { return }
         self.put(pv, layer, img, b, scale, k, at)
       })
     }
@@ -916,6 +1161,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     t.minificationFilter = .linear
     layer.addSublayer(t)
     pv.tiles[k, default: []].insert(at)
+    pv.tileLayers[k, default: [:]][at] = t
     CATransaction.commit()
   }
 
@@ -1062,7 +1308,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     let (worst, share) = coarse()
     return ["page": n, "y": Double(y), "x": x.map { Double($0) } as Any, "zoom": Double(scroll.zoomScale), "pages": count, "views": views.count, "worst": worst, "coarse": share,
             "drawn": painter.drawn, "drawMs": painter.drawMs, "workers": painter.workers, "memory": PageMemory.shared.bytes, "budget": PageMemory.shared.budget, "level": wantLevel,
-            "seen": seenPages(), "marks": marksShown(), "marksTold": marksByPage.values.reduce(0) { $0 + $1.count }, "boxesTold": marksByPage.values.reduce(0) { $0 + $1.filter { $0.k == "box" }.count },
+            "seen": seenPages(), "inked": views.keys.sorted().map { n in "\(n): gen \(inkGen[n] ?? 0) strokes \(ink?.inkOf(page: n).count ?? -1) pic \(views[n]!.pictureLevel) tiles \(views[n]!.tileLayers.mapValues { $0.count })" }, "inkBusy": inkBusy.count, "inkLog": Array(inkLog.suffix(6)), "inkJobs": inkJobs.count, "marks": marksShown(), "marksTold": marksByPage.values.reduce(0) { $0 + $1.count }, "boxesTold": marksByPage.values.reduce(0) { $0 + $1.filter { $0.k == "box" }.count },
             "opened": openedAt, "laid": laidOut.suffix(6).joined(separator: " "),
             "hits": text?.hitCount ?? 0, "current": text?.current.map { [$0.0, $0.1] } as Any, "selected": text?.selection?.string ?? "",
             "offset": [Double(scroll.contentOffset.x), Double(scroll.contentOffset.y)], "content": [Double(scroll.contentSize.width), Double(scroll.contentSize.height)], "dark": dark, "holes": view.holes.count]

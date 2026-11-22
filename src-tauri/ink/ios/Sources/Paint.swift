@@ -249,6 +249,17 @@ enum Paint {
   /// stroke kept came out a little paler than written (2026-11-22, `inksharp`: 0.04 to 0.2 px; 0.18 made it heavier than written at most zooms, 0.08 is within a few hundredths either way).
   static var edgeGrow: CGFloat = 0.08
 
+  /// Strokes laid on what is drawn in `c` already (a book's page): highlighters multiplied, so the print stays dark
+  /// under them, then pens over, each a hair wider (`edge`). `c` maps the sheet's points, `px` pixels to one.
+  static func lay(_ strokes: [Geom], in c: CGContext, region: CGRect, px: CGFloat) {
+    c.saveGState()
+    c.setBlendMode(.multiply)
+    for g in strokes where g.marker && g.box.intersects(region) { g.draw(c) }
+    c.setBlendMode(.normal)
+    for g in strokes where !g.marker && g.box.intersects(region) { g.draw(c); edge(g, c, px) }
+    c.restoreGState()
+  }
+
   /// A pen's stroke widened by `edgeGrow` pixels, as the screen draws it while written.
   static func edge(_ g: Geom, _ c: CGContext, _ px: CGFloat) {
     guard edgeGrow > 0, g.ours, !g.marker, px > 0, let o = g.outline(), o.round == 0 else { return }

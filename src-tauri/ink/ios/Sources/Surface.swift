@@ -43,9 +43,11 @@
 // sheets are clear views over the book's pages, laid where the book lays them (`lay`), each in its page's own points
 // (`p.<hash>.<page>`, the sheets the web reader's canvases kept: storage and sync are unchanged), drawn bare and laid
 // on the page as ink is (multiplied, or screened on a dark page). The Pencil, the live stroke and its smoothing, the
-// eraser, the lasso, shapes, undo and what the page asks of a sheet are this file's, unchanged. What differs is
-// where: the book's zoom is its scroll view's own and stays, so a guest's sheets are drawn for it (`guestRefresh`),
-// the canvas is told it, and a sheet's points to the screen's are its own (`sOf`), the book's pages being of any size.
+// eraser, the lasso, shapes, undo and what the page asks of a sheet are this file's, unchanged. A guest draws
+// nothing: the book draws each page's ink into its own tiles with the page (`PdfSurface`, `inkOf`), and a guest
+// tells it what changed (`onInk`); the stroke being written leaves the glass when the book says the tiles under it
+// show it (`inkShown`). What differs is where: the book's zoom is its scroll view's own and stays, so the canvas is
+// told it, and a sheet's points to the screen's are its own (`sOf`), the book's pages being of any size.
 
 import PencilKit
 import UIKit
@@ -128,6 +130,7 @@ struct SurfaceDoArgs: Decodable {
   var y: Double?
   var y2: Double?
   var lines: [[Double]]?
+  var ms: Double?
 }
 
 struct LeafState: Encodable {
@@ -220,8 +223,6 @@ final class Leaf: UIView {
   /// (a book's page's sheet) The view's points to a point of the page, and the page's size in its points.
   var sc: CGFloat = 1
   var pts = CGSize(width: 612, height: 792)
-  /// Where its corner fell between the screen's pixels when its pictures were last asked for (`phase`).
-  var phase = CGPoint.zero
   var index = 0
   var model: [PKStroke] = []
   var geoms: [Geom] = []
@@ -455,6 +456,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     guest = true
     super.init()
     made = true
+    live.asPage = true
     // (the Pencil writes; fingers scroll and zoom)
     scroll.panGestureRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
     scroll.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -1150,7 +1152,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       let f = l.frame
       if f.maxY >= near.minY, f.minY <= near.maxY {
         if !l.loaded, !l.asked { l.asked = true; want.append(l.id) }
-        if guest { guestRefresh(l, vis: vis) } else { refresh(l, vis: vis) }
+        if !guest { refresh(l, vis: vis) }
       } else {
         // (a pageless notebook's stroke is kept on the sheet its top lies on and may run down into the view from a
         // sheet well above it: those sheets are given their strokes, no pictures, so what runs on from them is drawn)
@@ -1200,92 +1202,6 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     return PaintJob(paper: paper, look: look, index: l.index, strokes: strokes, above: above, region: region, pw: pw, ph: ph)
   }
 
-  /// A book's page's pictures of its ink: the whole of it at the fitted size, and zoomed in, the part in view at the
-  /// zoom (the book's zoom is its scroll view's own: these are stretched while it moves, and made again at rest).
-  private func guestRefresh(_ l: Leaf, vis: CGRect) {
-    // (nothing written on the page: no picture at all, not a clear one laid over it; most pages of a book)
-    if l.geoms.isEmpty || l.lifted.count == l.geoms.count {
-      if l.rest.contents != nil || l.fine.contents != nil || !l.patches.isEmpty {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        l.rest.contents = nil
-        l.fine.contents = nil
-        l.fine.isHidden = true
-        for q in l.patches { q.layer.removeFromSuperlayer() }
-        l.patches = []
-        CATransaction.commit()
-      }
-      l.restKey = nil; l.fineKey = nil; l.restAsked = nil; l.fineAsked = nil
-      return
-    }
-    let zooming = !steady
-    let z = scroll.zoomScale
-    let fw = (l.frame.width * screen).rounded(), fh = (l.frame.height * screen).rounded()
-    let f = fw * fh > NoteSurface.cap ? (NoteSurface.cap / (fw * fh)).squareRoot() : 1
-    // (at the fitted size, a pixel for a pixel and on the screen's pixels: a pixel more each way, its corner the
-    // fraction before the page's; at another size it is stretched whatever it is drawn on)
-    let ph0 = f >= 1 && abs(z - 1) < 0.0005 ? phase(l) : .zero
-    let pw = max(1, Int((fw * f).rounded()) + (ph0 == .zero ? 0 : 1)), ph = max(1, Int((fh * f).rounded()) + (ph0 == .zero ? 0 : 1))
-    let key = [l.ver, pw, ph, Int(ph0.x * 64), Int(ph0.y * 64)]
-    if l.restKey != key, l.restAsked != key, !(zooming && l.rest.contents != nil && l.restKey?[0] == l.ver) {
-      l.restAsked = key
-      let k = CGFloat(pw) / max(1, fw * f + (ph0 == .zero ? 0 : 1))
-      let per = screen * f * k * sOf(l)
-      let region = CGRect(x: -ph0.x / per, y: -ph0.y / per, width: CGFloat(pw) / per, height: CGFloat(ph) / per)
-      paint(job(l, region: ph0 == .zero ? CGRect(origin: .zero, size: l.pts) : region, pw: pw, ph: ph)) { [weak self, weak l] img in
-        guard let self = self, let l = l, l.restAsked == key, let img = img else { return }
-        l.restAsked = nil
-        l.restKey = key
-        l.rest.frame = ph0 == .zero ? l.bounds : self.onLeaf(region, l)
-        l.rest.contents = img
-        self.settle(l)
-      }
-    }
-    // the whole picture is as sharp as the screen shows it: nothing more is drawn
-    if f >= 1 && abs(z - 1) < 0.0005 {
-      if !l.fine.isHidden { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil; settle(l) }
-      return
-    }
-    if zooming { return }
-    let part = vis.intersection(l.frame)
-    if part.isNull || part.width <= 0 || part.height <= 0 {
-      if !l.fine.isHidden, l.fineKey?[0] != l.ver { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil; settle(l) }
-      return
-    }
-    let zk = Int((z * 100000).rounded())
-    let fp = phase(l)
-    if l.fineKey?[0] == l.ver, l.fineKey?[5] == zk, l.fineKey?[6] == Int(fp.x * 64), l.fineKey?[7] == Int(fp.y * 64), !l.fine.isHidden, onLeaf(l.fineRegion, l).offsetBy(dx: l.frame.minX, dy: l.frame.minY).insetBy(dx: -0.5, dy: -0.5).contains(part) { return }
-    // (the part in view and a little round it, in the sheet's view's points, drawn at the screen's pixels at this zoom)
-    let grown = part.insetBy(dx: -vis.width * 0.2, dy: -vis.height * 0.2).intersection(l.frame).offsetBy(dx: -l.frame.minX, dy: -l.frame.minY)
-    let px = screen * z
-    // (its pixels the screen's: each edge where the screen has one, the page's corner `fp` off them)
-    let x0 = (grown.minX * px + fp.x).rounded(.down) - fp.x, y0 = (grown.minY * px + fp.y).rounded(.down) - fp.y
-    let x1 = (grown.maxX * px + fp.x).rounded(.up) - fp.x, y1 = (grown.maxY * px + fp.y).rounded(.up) - fp.y
-    let fkey = [l.ver, Int(x0.rounded()), Int(y0.rounded()), Int((x1 - x0).rounded()), Int((y1 - y0).rounded()), zk, Int(fp.x * 64), Int(fp.y * 64)]
-    if l.fineAsked == fkey || l.fineKey == fkey { return }
-    l.fineAsked = fkey
-    let sl = sOf(l)
-    let region = CGRect(x: x0 / px / sl, y: y0 / px / sl, width: (x1 - x0) / px / sl, height: (y1 - y0) / px / sl)
-    // (nothing written in view: the whole picture, coarse, has nothing there to be coarse)
-    if !l.geoms.contains(where: { $0.box.intersects(region) }) {
-      if !l.fine.isHidden { l.fine.isHidden = true; l.fine.contents = nil; l.fineKey = nil; l.fineAsked = nil; settle(l) }
-      return
-    }
-    paint(job(l, region: region, pw: Int((x1 - x0).rounded()), ph: Int((y1 - y0).rounded()))) { [weak self, weak l] img in
-      guard let self = self, let l = l, l.fineAsked == fkey, let img = img else { return }
-      l.fineAsked = nil
-      l.fineKey = fkey
-      l.fineRegion = region
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      l.fine.contents = img
-      l.fine.frame = self.onLeaf(region, l)
-      l.fine.isHidden = false
-      CATransaction.commit()
-      self.settle(l)
-    }
-  }
-
   /// A book's pages, where the book lays them (in its content, at its fitted size) and their size in their points:
   /// each a sheet, `p.<key>.<page>`. `dark`: the ink lightens what is under it.
   func lay(key k: String, pages: [(n: Int, frame: CGRect, pts: CGSize)], dark: Bool) {
@@ -1293,10 +1209,6 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     if k != key {
       key = k
       for l in leaves.values { l.id = "p.\(k).\(l.sheet)" }
-    }
-    if dark != look.dark {
-      look.dark = dark
-      for l in leaves.values { l.cache = [:]; regeom(l); l.ver += 1; l.restKey = nil; l.fineKey = nil; l.restAsked = nil; l.fineAsked = nil }
     }
     let blend = dark ? "screenBlendMode" : "multiplyBlendMode"
     canvas.overrideUserInterfaceStyle = dark ? .dark : .light
@@ -1318,20 +1230,10 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       }()
       l.index = i
       if l.frame != p.frame || l.pts != p.pts {
-        let resized = l.frame.size != p.frame.size
         l.frame = p.frame
         l.pts = p.pts
         l.sc = p.frame.width / max(1, p.pts.width)
-        l.rest.frame = l.bounds
-        if resized {
-          // (laid out at another size: its pictures are made again; the one there stays, stretched, until then)
-          l.ver += 1
-          if !l.fine.isHidden { l.fine.frame = onLeaf(l.fineRegion, l) }
-          for q in l.patches { q.layer.frame = onLeaf(q.region, l) }
-          veil(l)
-        }
       }
-      l.layer.compositingFilter = blend
       next[p.n] = l
     }
     for (n, l) in leaves where next[n] == nil { retire(l) }
@@ -1343,28 +1245,37 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     tend()
   }
 
-  /// (a book's page) Where its corner falls between the screen's pixels, as a fraction of one each way. The book's
-  /// scroll and zoom are its scroll view's own, so a page lies wherever they leave it, a fraction of a pixel off as
-  /// often as not; a picture drawn a pixel for a pixel and shown that far off is drawn again by the screen between
-  /// pixels, and a thin line comes out wider and paler than the stroke written (2026-11-22: "when pen strokes are
-  /// pretty thin, it's as if the opacity goes down a little bit"). So its pictures are drawn on the screen's own
-  /// pixels as the page lies at rest: read then, and kept while the pages move (nothing is drawn again for it then).
-  private func phase(_ l: Leaf) -> CGPoint {
-    guard guest, steady, !scroll.isDragging, !scroll.isDecelerating, l.window != nil else { return l.phase }
-    let o = l.convert(CGPoint.zero, to: nil)
-    let sc = screen
-    func frac(_ v: CGFloat) -> CGFloat { let f = v * sc - (v * sc).rounded(.down); return (f * 64).rounded() / 64 }
-    l.phase = CGPoint(x: frac(o.x).truncatingRemainder(dividingBy: 1), y: frac(o.y).truncatingRemainder(dividingBy: 1))
-    return l.phase
-  }
-
   /// A book's zoom has ended: the canvas told it, and the pictures made at it.
   func zoomEnded() {
     guard guest else { return }
     placeCanvas()
-    tend()
     if picked != nil { ring(); tellPicked() }
   }
+
+  /// (a book's) What changed of a page's ink, its rect in the page's points (none: all of it): the book draws the
+  /// tiles under it again.
+  var onInk: ((Int, CGRect?) -> Void)?
+
+  /// (a book's) A page's strokes to draw with the page, as they are now: what the lasso holds is not among them (it
+  /// is carried in a picture of its own), and nothing for a page whose strokes the store has not yet given.
+  func inkOf(page n: Int) -> [Geom] {
+    guard let l = leaves[n] else { return [] }
+    if l.lifted.isEmpty { return l.geoms }
+    return l.geoms.enumerated().filter { !l.lifted.contains($0.offset) }.map { $0.element }
+  }
+
+  /// Whether a page's strokes have been given by the store.
+  func inkLoaded(page n: Int) -> Bool { leaves[n]?.loaded ?? false }
+
+  /// (a book's) The book's tiles show the ink as it is: what PencilKit held of the stroke just written, and ilmi's
+  /// live stroke with it, leave the glass now, in the transaction those tiles appear in.
+  func inkShown() {
+    guard guest, sweepWhenShown, !down else { return }
+    sweepWhenShown = false
+    sweep()
+  }
+  /// The stroke just written waits on the glass for the book's tiles to show it (`inkShown`; at most half a second).
+  private var sweepWhenShown = false
 
   /// A sheet's pictures asked for, where it has none as it is now: the whole of it, and zoomed past what that holds, the part in view.
   private func refresh(_ l: Leaf, vis: CGRect) {
@@ -1452,7 +1363,6 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   /// A sheet's pictures are as it is now: the patches drawn over them meanwhile go.
   private func settle(_ l: Leaf) {
-    defer { if guest { veil(l) } }
     let fineOn = !l.fine.isHidden || l.fineAsked != nil
     let v = min(l.restKey?[0] ?? -1, fineOn ? (l.fineKey?[0] ?? -1) : Int.max)
     let gone = l.patches.filter { $0.ver <= v }
@@ -1464,65 +1374,56 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     CATransaction.commit()
   }
 
-  /// (a book's page) Its pictures are clear where nothing is written, so one over another does not hide it: the
-  /// whole picture, coarse at a zoom, showed round the edge of the sharp one over it, and an erased stroke through a
-  /// patch, a blur round the ink (2026-11-22, "the ink blurs after i write with it"). Each is cut away under what
-  /// lies over it: the whole picture under the part drawn at the zoom and under the patches, that part under the patches.
-  private func veil(_ l: Leaf) {
-    func mask(_ layer: CALayer, _ holes: [CGRect]) {
-      let hs = holes.map { $0.offsetBy(dx: -layer.frame.minX, dy: -layer.frame.minY).intersection(layer.bounds) }.filter { !$0.isNull && $0.width > 0 && $0.height > 0 }
-      if hs.isEmpty { layer.mask = nil; return }
-      let path = UIBezierPath(rect: layer.bounds)
-      for h in hs { path.append(UIBezierPath(rect: h)) }
-      let m = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
-      m.actions = ["path": NSNull(), "bounds": NSNull(), "position": NSNull()]
-      m.fillRule = .evenOdd
-      m.frame = layer.bounds
-      m.path = path.cgPath
-      layer.mask = m
-    }
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    let patches = l.patches.map { $0.layer.frame }
-    let fineOn = !l.fine.isHidden && l.fine.contents != nil
-    mask(l.rest, patches + (fineOn ? [l.fine.frame] : []))
-    if fineOn { mask(l.fine, patches) } else { l.fine.mask = nil }
-    CATransaction.commit()
-  }
-
   /// A part of a sheet (in its points) drawn again now, over its pictures: what was just written, erased or moved is on the glass before the pictures are made again.
   private func patch(_ l: Leaf, _ dirty: CGRect) {
     let whole = CGRect(origin: .zero, size: sizeOf(l))
     let d = dirty.insetBy(dx: -2, dy: -2).intersection(whole)
     if d.isNull || d.width <= 0 || d.height <= 0 { return }
     let s = ks(l)
-    let pp = guest ? phase(l) : .zero
+    // (on the pixels the pictures under it were drawn on: a book's page's corner as it was when they were asked for,
+    // not read again now; read again, it had moved a fraction, and what was round the new stroke shook)
+    let pp = CGPoint.zero
     let x0 = (d.minX * s * screen + pp.x).rounded(.down) - pp.x, y0 = (d.minY * s * screen + pp.y).rounded(.down) - pp.y
     let x1 = (d.maxX * s * screen + pp.x).rounded(.up) - pp.x, y1 = (d.maxY * s * screen + pp.y).rounded(.up) - pp.y
-    // (a large part is drawn at once with fewer pixels, four million at most, and sharp a moment later with the
-    // sheet's pictures, off the main thread: what the eraser took is off the glass in this turn whatever its size;
-    // until 2026-11-22 a part that large was left to the pictures alone)
+    // (a large part is drawn in bands of four million pixels at most, each a pixel for a pixel, so what is round
+    // what was written or erased is not drawn softer for a moment; past sixteen million, with fewer pixels, and sharp
+    // a moment later with the sheet's pictures. Until 2026-11-22 anything past four million had fewer)
     let area = (x1 - x0) * (y1 - y0)
-    let fewer = area > 4_000_000 ? sqrt(4_000_000 / area) : 1
+    let fewer = area > 16_000_000 ? sqrt(16_000_000 / area) : 1
     if fewer < 1 { plugin.eraseSkipped += 1 }
     let t0 = ProcessInfo.processInfo.systemUptime
     defer { plugin.erasePatch.append((ProcessInfo.processInfo.systemUptime - t0) * 1000); plugin.erasePatchPx.append(Int(area * fewer * fewer)) }
-    let region = CGRect(x: x0 / screen / s, y: y0 / screen / s, width: (x1 - x0) / screen / s, height: (y1 - y0) / screen / s)
-    guard let img = Paint.make(job(l, region: region, pw: max(1, Int(((x1 - x0) * fewer).rounded())), ph: max(1, Int(((y1 - y0) * fewer).rounded())))) else { return }
-    let layer = CALayer()
-    layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
-    layer.isOpaque = !guest
-    layer.contentsGravity = .resize
-    layer.zPosition = 2
+    let rows = max(1, (y1 - y0) * fewer)
+    let bandRows = max(1, (4_000_000 / max(1, (x1 - x0) * fewer)).rounded(.down))
+    let bands = Int((rows / bandRows).rounded(.up))
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    layer.frame = onLeaf(region, l)
-    layer.contents = img
-    l.layer.addSublayer(layer)
+    for b in 0..<bands {
+      // (each band whole pixels of the screen: its edges on the same grid as the whole)
+      let ya = y0 + (CGFloat(b) * bandRows / fewer).rounded(.down), yb = b == bands - 1 ? y1 : y0 + (CGFloat(b + 1) * bandRows / fewer).rounded(.down)
+      if yb <= ya { continue }
+      let region = CGRect(x: x0 / screen / s, y: ya / screen / s, width: (x1 - x0) / screen / s, height: (yb - ya) / screen / s)
+      guard let img = Paint.make(job(l, region: region, pw: max(1, Int(((x1 - x0) * fewer).rounded())), ph: max(1, Int(((yb - ya) * fewer).rounded())))) else { continue }
+      let layer = CALayer()
+      layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+      layer.isOpaque = true
+      layer.contentsGravity = .resize
+      layer.zPosition = 2
+      layer.frame = onLeaf(region, l)
+      layer.contents = img
+      l.layer.addSublayer(layer)
+      l.patches.append((layer, region, l.ver))
+    }
     CATransaction.commit()
-    l.patches.append((layer, region, l.ver))
-    if guest { veil(l) }
   }
+
+  /// (the checks) When a part of a sheet was last drawn again at once (a stroke written, erased, moved).
+  private(set) var lastPutAt: TimeInterval = 0
+  private var downAt: TimeInterval = 0
+  private var upAt: TimeInterval = 0
+  private var puts: [TimeInterval] = []
+  /// (the checks) When the Pencil last came down and lifted, and when parts were drawn again at once (the last 200).
+  func times() -> [String: Any] { ["down": downAt, "up": upAt, "puts": puts] }
 
   /// Each of a sheet's strokes made ready to draw; one it had is the one it has.
   private func regeom(_ l: Leaf) {
@@ -1547,7 +1448,12 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     l.model = strokes
     regeom(l)
     l.ver += 1
-    if let d = dirty { patch(l, d) }
+    if dirty != nil {
+      lastPutAt = ProcessInfo.processInfo.systemUptime
+      puts.append(lastPutAt)
+      if puts.count > 200 { puts.removeFirst(puts.count - 200) }
+    }
+    if guest { onInk?(l.sheet, dirty) } else if let d = dirty { patch(l, d) }
     // (a pageless sheet's strokes run on over the next, and a tall one over those after: as far as they reach now,
     // or reached before this)
     let low = l.geoms.map({ $0.box.maxY }).max()
@@ -1800,6 +1706,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       if b.insetBy(dx: -8 / s, dy: -8 / s).contains(at) || hypot(at.x - b.maxX, at.y - b.maxY) <= plugin.gripReach / s { l = k.leaf }
     }
     down = true
+    downAt = ProcessInfo.processInfo.systemUptime
     active = l
     lastActive = l
     spent = false
@@ -1911,6 +1818,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   func penUp(rested: TimeInterval) {
     guard down, let l = active else { return }
     down = false
+    upAt = ProcessInfo.processInfo.systemUptime
     active = nil
     resting?.cancel()
     resting = nil
@@ -1966,8 +1874,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     // only what it has not handed over before is new
     let strokes = Array(all[taken...])
     defer {
-      // the canvas is emptied only with no Pencil on the glass: emptied under one, the stroke being written is lost
-      if down { taken = all.count } else { sweep() }
+      // the canvas is emptied only with no Pencil on the glass: emptied under one, the stroke being written is lost;
+      // over a book's page, when the book's tiles show the stroke (`inkShown`), so it is never off the glass between
+      if down { taken = all.count } else if guest { holdForTiles() } else { sweep() }
     }
     if joined { joined = false; return }
     // the canvas stands over the view: a point of it is a point of the view, as large as the sheets are laid out
@@ -1993,12 +1902,25 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     }
   }
 
+  /// (a book's) The stroke just written stays until the book's tiles show it; half a second at most.
+  private func holdForTiles() {
+    taken = canvas.drawing.strokes.count
+    sweepWhenShown = true
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+      guard let self = self, self.sweepWhenShown, !self.down else { return }
+      self.sweepWhenShown = false
+      self.sweep()
+    }
+  }
+
   /// PencilKit's own copy of what is ours already taken off the glass (ours is there first: never a frame with neither).
   private func sweep() {
     swept?.cancel()
     swept = nil
     guard taken > 0 || !canvas.drawing.strokes.isEmpty else { return }
-    CATransaction.flush()
+    // (a notebook's sheets show the stroke already: what is pending goes first; a book's tiles show it in this
+    // same transaction, which a flush would part)
+    if !guest { CATransaction.flush() }
     clearing = true
     canvas.drawing = PKDrawing()
     clearing = false
@@ -2179,7 +2101,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     guard let b = heldBox() else { return }
     let d = b.insetBy(dx: -3, dy: -3)
     let s = ks(l)
-    let pp = guest ? phase(l) : .zero
+    let pp = CGPoint.zero
     let x0 = (d.minX * s * screen + pp.x).rounded(.down) - pp.x, y0 = (d.minY * s * screen + pp.y).rounded(.down) - pp.y
     let x1 = (d.maxX * s * screen + pp.x).rounded(.up) - pp.x, y1 = (d.maxY * s * screen + pp.y).rounded(.up) - pp.y
     let region = CGRect(x: x0 / screen / s, y: y0 / screen / s, width: (x1 - x0) / screen / s, height: (y1 - y0) / screen / s)
@@ -2213,6 +2135,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   /// A part of a sheet (in its points) is to be drawn again, as it is now: at once over its pictures, and where a pageless notebook's strokes run on over the next sheet, there too.
   private func repaint(_ l: Leaf, _ d: CGRect) {
     l.ver += 1
+    if guest { onInk?(l.sheet, d); return }
     patch(l, d)
     for n in under(l, low: d.maxY) {
       n.leaf.ver += 1

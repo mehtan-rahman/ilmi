@@ -21381,6 +21381,192 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       log('done');
       return;
     }
+    if (part.split(',').includes('inkstill')) {
+      // ── what is written already stays still while more is written, and what the eraser touches goes at once
+      // (`"part": "inkstill"`; 2026-11-22, the iPad: "as i write strokes, earlier or nearby strokes will blur then
+      // quickly unblur ... as though its shaking", "the eraser doesn't immediately erase strokes ... it blurs and then
+      // when i lift pencil it gets removed"): on a book's page and a notebook's sheet at 100%, 250% and 400%, a stroke
+      // A is kept; then lines across A are read off the glass at every frame while a stroke B is written over A's
+      // box (crossing it far from the lines) and kept; then while the eraser crosses B (away from A) and lifts. Hard:
+      // A's pixels the same in every frame (its middle within a third of a pixel, its ink and its darkest within a
+      // twentieth); B gone from the glass within two frames of the eraser taking it, before the lift; and the lift
+      // changes nothing. `inkstill:` lines ──
+      const RED = '#d01c1c';
+      const zooms = ((await invoke<string | null>('dev_env', { name: 'ILMI_ZOOMS' })) || '1,2.5,4').split(',').map(Number);
+      const onlyOn = await invoke<string | null>('dev_env', { name: 'ILMI_ON' });
+      if ((await invoke<string | null>('dev_env', { name: 'ILMI_INKTHEME' })) === 'dark') { useApp.getState().setTheme('dark'); await sleep(1500); }
+      log(`inkstill: the theme ${document.documentElement.dataset.theme ?? 'light'}`);
+      let seq = 950000;
+      // (a pen of a point: the strokes' places here are fractions of the page over the zoom, their widths the page's)
+      const asIs = 1;
+      const tool = async (kind: 'pen' | 'eraser') => {
+        await invoke('ink_tool', { tool: kind === 'pen' ? { kind, color: RED, width: asIs, ink: 'pen' } : { kind, color: '#000000', width: 4, mode: 'stroke' }, seq: ++seq });
+        await poll(async () => (await state()).tool?.kind === kind, `the ${kind}`, 8000);
+      };
+      const read = (px: number[][]) => {
+        const ink = px.map(([r, g, b]) => Math.max(r!, g!, b!) - Math.min(r!, g!, b!));
+        const peak = Math.max(0, ...ink);
+        let sum = 0, wsum = 0;
+        ink.forEach((v, i) => { if (v >= Math.max(30, peak * 0.5)) { sum += i * v; wsum += v; } });
+        return { peak, sum: ink.reduce((a, v) => a + v, 0) / 255, off: wsum > 0 ? sum / wsum : NaN };
+      };
+      type Frame = { t: number; c: number[][][] };
+      type Film = { frames: Frame[]; ink: { down: number; up: number; puts: number[]; shown?: number[]; ready?: number[] } };
+      interface On {
+        name: string; y0: number;
+        count(): Promise<number>;
+        zoomTo(z: number): Promise<void>;
+        top(y: number, x: number): Promise<void>;
+        glass(x: number, y: number): Promise<[number, number]>;
+        film(lines: number[][], ms: number): Promise<Film>;
+        debug?(): Promise<string>;
+      }
+      const fails: string[] = [];
+      const still = async (o: On) => {
+        for (const [zi, z] of zooms.entries()) {
+          const base = o.y0 + 0.3 * zi;
+          await o.zoomTo(z);
+          await o.top(base, 0.5);
+          await sleep(1500);
+          const yA = base + 0.18 / z;
+          const at = `${o.name} at ${z * 100}%`;
+          // A, kept and settled
+          await tool('pen');
+          let n = await o.count();
+          ask('drag', ...(await o.glass(0.5 - 0.12 / z, yA)), ...(await o.glass(0.5 + 0.12 / z, yA)), 0.6);
+          await poll(async () => (await o.count()) === n + 1, `${at}: A kept`, 20000);
+          await sleep(2500);
+          if (o.debug) log(`inkstill: ${await o.debug()}`);
+          await shot(`inkstill-${o.name}-a-${Math.round(z * 10)}`);
+          // lines across A away from where B will cross it; lines across B away from A, where the eraser takes it
+          const hA = 0.006 / z, aXs = [0.5 - 0.09 / z, 0.5 - 0.07 / z, 0.5 + 0.07 / z, 0.5 + 0.09 / z];
+          const bAt = (x: number) => yA - 0.03 / z + (0.06 / z) * ((x - (0.5 - 0.11 / z)) / (0.22 / z));
+          const bXs = [0.5 - 0.09 / z, 0.5 - 0.08 / z];
+          const linesA = aXs.map((x) => [x, yA - hA, yA + hA]);
+          const linesB = bXs.map((x) => [x, bAt(x) - hA, bAt(x) + hA]);
+          const of = (f: Frame, k: number[]) => k.map((i) => read(f.c[i]!));
+          const judgeA = (what: string, film: Film, idx: number[]) => {
+            const fr = film.frames;
+            const before = fr.filter((f) => f.t < film.ink.down - 0.02);
+            if (before.length < 2) { fails.push(`${at}, ${what}: no frames before the Pencil came down (${fr.length})`); return; }
+            const base0 = of(before[before.length - 1]!, idx);
+            log(`inkstill: ${at}, ${what}: A before ${JSON.stringify(base0.map((r) => [r.peak, +r.sum.toFixed(2), +r.off.toFixed(1)]))}, column lengths ${before[before.length - 1]!.c.map((c) => c.length).join(',')}`);
+            let off = 0, sum = 0, peak = 0, worst = -1;
+            fr.forEach((f, i) => {
+              of(f, idx).forEach((r, k) => {
+                const b = base0[k]!;
+                if (!(b.peak > 30)) return;
+                const dOff = Math.abs(r.off - b.off), dSum = Math.abs(r.sum / b.sum - 1), dPeak = Math.abs(r.peak / b.peak - 1);
+                if (dOff > off || dSum > sum || dPeak > peak) worst = i;
+                off = Math.max(off, Number.isFinite(dOff) ? dOff : 99); sum = Math.max(sum, dSum); peak = Math.max(peak, dPeak);
+              });
+            });
+            const span = `${fr.length} frames over ${Math.round((fr[fr.length - 1]!.t - fr[0]!.t) * 1000)} ms, the Pencil down at ${Math.round((film.ink.down - fr[0]!.t) * 1000)} and up at ${Math.round((film.ink.up - fr[0]!.t) * 1000)} ms`;
+            log(`inkstill: ${at}, ${what}: A moved ${off.toFixed(2)} px at most, its ink ${(sum * 100).toFixed(1)}%, its darkest ${(peak * 100).toFixed(1)}% (${span}; the worst frame ${worst})`);
+            if (off > 0.34 || sum > 0.05 || peak > 0.05) fails.push(`${at}, ${what}: A changed (${off.toFixed(2)} px, ink ${(sum * 100).toFixed(1)}%, darkest ${(peak * 100).toFixed(1)}%, frame ${worst})`);
+          };
+          // B written over A's box, crossing it in the middle, while A is read at every frame
+          n = await o.count();
+          const filmB = o.film(linesA, 6000);
+          await sleep(300);
+          ask('drag', ...(await o.glass(0.5 - 0.11 / z, yA - 0.03 / z)), ...(await o.glass(0.5 + 0.11 / z, yA + 0.03 / z)), 1.0);
+          const fb = await filmB;
+          await poll(async () => (await o.count()) === n + 1, `${at}: B kept`, 20000);
+          await sleep(1000);
+          if (o.debug) log(`inkstill: after B ${await o.debug()}`);
+          await shot(`inkstill-${o.name}-b-${Math.round(z * 10)}`);
+          const putB = fb.ink.puts.filter((t) => t > fb.ink.down)[0];
+          if (putB === undefined || putB > fb.frames[fb.frames.length - 1]!.t - 0.3) fails.push(`${at}: B was kept after the frames read (${putB})`);
+          judgeA('B written', fb, [0, 1, 2, 3]);
+          await sleep(2500);
+          // the eraser across B (away from A), A and B read at every frame
+          await tool('eraser');
+          n = await o.count();
+          const filmE = o.film([...linesA, ...linesB], 6000);
+          await sleep(300);
+          // (where B is well clear of A: some 24 screen points at every zoom)
+          const ex = 0.5 + 0.08 / z;
+          ask('drag', ...(await o.glass(ex, bAt(ex) - 0.002 / z)), ...(await o.glass(ex, bAt(ex) + 0.012 / z)), 1.6);
+          const fe = await filmE;
+          await poll(async () => (await o.count()) === n - 1, `${at}: the eraser takes B`, 20000).catch(async (e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}: ${n} before, ${await o.count()} now; ${o.debug ? await o.debug() : ''}`); });
+          judgeA('B erased', fe, [0, 1, 2, 3]);
+          if (o.debug) log(`inkstill: after the eraser ${await o.debug()}`);
+          {
+            const fr = fe.frames;
+            const before = fr.filter((f) => f.t < fe.ink.down - 0.02);
+            const b0 = before.length ? of(before[before.length - 1]!, [4, 5]) : null;
+            const took = fe.ink.puts.filter((t) => t > fe.ink.down - 0.01 && t < fe.ink.up + 0.01)[0];
+            if (!b0 || !(b0[0]!.peak > 30) || took === undefined) { fails.push(`${at}: B's erasing not seen (${b0 ? b0[0]!.peak : 'no frames'}, ${took})`); }
+            else {
+              const gone = (f: Frame) => of(f, [4, 5]).every((r, k) => r.sum < b0[k]!.sum * 0.15);
+              const firstGone = fr.find((f) => f.t > took && gone(f));
+              const after = fr.filter((f) => f.t > took + 0.034);
+              const shownAgain = after.filter((f) => !gone(f)).length;
+              const ms = firstGone ? Math.round((firstGone.t - took) * 1000) : -1;
+              // (on the surface's own clock: the batch drawn again with B gone on the glass this long after the eraser took it)
+              const si = (fe.ink.shown ?? []).findIndex((t) => t >= took);
+              const drawMs = si >= 0 ? Math.round(((fe.ink.ready ?? [])[si]! - took) * 1000) : -1;
+              const showMs = si >= 0 ? Math.round((fe.ink.shown![si]! - took) * 1000) : -1;
+              // (drawn: on the painter's thread; on the glass: when the main thread showed it, which reading the glass
+              // at every frame for this check holds up by a frame or two)
+              log(`inkstill: ${at}, B erased: its tiles drawn again ${drawMs} ms after the eraser took it, on the glass at ${showMs} ms`);
+              if (drawMs < 0 || drawMs > 34) fails.push(`${at}: B's tiles drawn again ${drawMs} ms after the eraser took it (two frames at most)`);
+              const beforeLift = firstGone ? firstGone.t < fe.ink.up : false;
+              log(`inkstill: ${at}, B erased: off the glass ${ms} ms after the eraser took it (${beforeLift ? 'before' : 'after'} the lift, ${Math.round((fe.ink.up - took) * 1000)} ms later); ${shownAgain} frames after the second showed it`);
+              // (frames are read a few times a frame's length apart: B is to be gone from every one read more than two
+              // frames of the screen after the eraser took it)
+              if (!firstGone || !beforeLift || shownAgain > 0) fails.push(`${at}: B not gone at once (${ms} ms, ${beforeLift ? 'before' : 'after'} the lift, ${shownAgain} frames showing it)`);
+            }
+          }
+          await tool('pen');
+        }
+      };
+      await poll(async () => (await state()).tool?.kind === 'pen', 'the pen held', 8000);
+      await invoke('dev_ink_pen', { on: true });
+      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      window.dispatchEvent(new Event('ilmi-pdf-native'));
+      if (onlyOn !== 'notebook') {
+        const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-surface', x) ? x : null; }, 'the chapter as the native page view', 60000);
+        const sid = q<HTMLElement>('.pdf-surface', b)!.dataset.surface!;
+        const S = (a: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...a } });
+        await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'its pages shown', 30000);
+        await still({
+          name: 'book', y0: 0.12,
+          count: async () => (await there())?.strokes ?? -1,
+          zoomTo: async (z) => { await S({ op: 'zoom', zoom: z, animated: false }); },
+          top: async (y, x) => { await S({ op: 'go', page: PAGEINK_PAGE, y, x }); },
+          glass: async (x, y) => { const g = await S({ op: 'where', page: PAGEINK_PAGE, x, y }); return [fx(Number(g.gx)), fy(Number(g.gy))]; },
+          film: async (lines, ms) => (await S({ op: 'film', page: PAGEINK_PAGE, lines, ms })) as unknown as Film,
+          debug: async () => { const st = await S({ op: 'state' }); return JSON.stringify({ inked: st.inked, busy: st.inkBusy, jobs: st.inkJobs, log: st.inkLog }); },
+        });
+      }
+      if (onlyOn !== 'book') {
+        const { createWritten } = await import('./written.js');
+        const NBX = await createWritten('fleeting', 'still ink');
+        openNode(NBX);
+        const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === NBX); return x && x.getClientRects().length && surfaceIn(x) ? x : null; }, 'a notebook, its surface', 60000);
+        const sid = surfaceIn(b)!;
+        const D = (a: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_surface_do', { ask: { id: sid, ...a } });
+        const sheetNow = async () => (await invoke<{ surfaces?: { id: string; sheets: { id: string; strokes: number; loaded: boolean }[] }[] }>('dev_ink_state')).surfaces?.find((f) => f.id === sid)?.sheets[0];
+        await poll(async () => (await sheetNow())?.loaded, 'its sheet given its strokes', 20000);
+        await still({
+          name: 'notebook', y0: 0.06,
+          count: async () => (await sheetNow())?.strokes ?? -1,
+          zoomTo: async (z) => { await D({ op: 'zoom', zoom: z, animated: false }); await sleep(200); },
+          top: async (y, x) => { await D({ op: 'go', place: { page: 1, y, x }, animated: false }); },
+          glass: async (x, y) => { const g = await D({ op: 'where', page: 1, x, y }); return [fx(Number(g.gx)), fy(Number(g.gy))]; },
+          film: async (lines, ms) => (await D({ op: 'film', page: 1, lines, ms })) as unknown as Film,
+        });
+      }
+      await invoke('dev_ink_pen', { on: false });
+      try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
+      if (fails.length) throw new Error(`inkstill: ${fails.length} off: ${fails.join('; ')}`);
+      log('ok: what was written stays still while more is written, and what the eraser touches goes at once');
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('inksharp')) {
       // ── the kept stroke as the live one (`"part": "inksharp"`; 2026-11-22, the iPad: "the ink blurs after i write
       // with it", "zoomed in past a point ... it gets translated towards the bottom right ... after i lift the pen",
@@ -21612,8 +21798,15 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       await S({ op: 'go', page: PAGEINK_PAGE, y: 0.38, x: 0.4 });
       await sleep(1500);
       await drawAt(0.25, 0.45, 0.45, 0.47, 'the pen at 200%');
-      const sharp = await poll(async () => { const c = await there(); const d = c?.drawn?.[0] ?? 0; return d >= 0.95 ? c : null; }, 'drawn at the zoom: a pixel of its picture to a pixel of the screen', 15000);
-      log(`surfaceink: at 200% the sheet is drawn ${sharp.drawn?.[0]} pixels to the screen's, ${sharp.strokes} strokes`);
+      // (drawn into the page's tiles with the page, at their pixels: read off the glass, a vector's edge)
+      const sharp = await poll(async () => {
+        const st = await S({ op: 'column', page: PAGEINK_PAGE, x: 0.35, y: 0.455, y2: 0.475 });
+        const ink = ((st.column as number[][]) ?? []).map(([r, g, b]) => Math.max(r!, g!, b!) - Math.min(r!, g!, b!));
+        const top = Math.max(0, ...ink);
+        const edge = ink.filter((v) => v > top * 0.16 && v < top * 0.9).length;
+        return top > 60 && edge <= 3 ? { top, edge } : null;
+      }, 'drawn at the zoom, sharp: the stroke read off the glass has a vector\'s edge', 15000);
+      log(`surfaceink: at 200% the stroke on the glass: its darkest ${sharp.top}, ${sharp.edge} px of edge`);
       await shot('surfaceink-200');
       await lassoed(0.22, 0.43, 0.48, 0.49, { x1: 0.25, y1: 0.45, x2: 0.45, y2: 0.47 }, 'at 200%');
       // the eraser over it; undo, redo

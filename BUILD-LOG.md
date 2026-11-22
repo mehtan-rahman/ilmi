@@ -6,6 +6,35 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-22 — a book's ink drawn into its page's tiles: one copy, no layers
+
+The user, on the iPad (5780663): strokes near one being written "blur then quickly unblur ... as though its
+shaking", and the eraser "doesn't immediately erase": the touched stroke blurred, and went only at the lift. Then,
+told how the ink was layered over a page (a whole-page ink picture, a sharp one in view, patches, masks between
+them, each put on the screen's pixels): "this just feels like wrong architecture, very un-simple." Replaced.
+
+**Books, done.** A book's page is drawn with its ink in one pass into every picture and tile the page view has
+(`PagePainter.draw`, `Paint.lay`: highlighters multiplied, pens over, then the dark theme's turn over both). The
+ink's engine (`NoteSurface`, a guest) no longer draws: a change tells the surface the rect it touched (`onInk`),
+and the surface draws again the tiles under it with the strokes as they are, first those that show it (in a lane
+of their own, `PagePainter.ink`) in one transaction, the coarser levels and the whole picture after; the stroke
+being written leaves the glass in the transaction its tiles appear in (`inkShown`). Gone from the book's path: the
+ink pictures, the veil, the patches, the phase; the stroke's place, a pinch's coarser level and a page's memory are
+the page's. Design note: `docs/native-reader-plan.md` ("The ink in the page's tiles").
+
+**The check (`pdfink` `"part": "inkstill"`, hard, frame by frame).** On a book's page at 100%, 250% and 400%, light
+and dark: a stroke A kept; lines across A read off the glass at every frame (some 20 a second; one picture of the
+part of the glass they are in, `film`) while a stroke B is written across A's box and kept, then while the eraser
+crosses B and lifts. A changed in no frame (0.00 px, 0.0% of its ink, 0.0% at its darkest); B off the glass in the
+first frame read after the eraser took it, before the lift, and in none after; its tiles drawn again 2 to 13 ms
+after the eraser took it (on the glass 2 to 55 ms later, the check's own reading of the glass holding up the main
+thread). `inksharp` (book), `surfaceink`, `surfacemarks`, `surfacetext`, the zoom check (no frame two levels
+coarse) and `written` pass.
+
+**Notebooks next**, onto the same tiles with their paper drawn where a book draws its PDF page.
+
+---
+
 ## 2026-11-22 — the kept stroke where, as sharp and as dark as it was written, at any zoom
 
 On branch `native-reader-ink`. Three things the user saw on the iPad (e31ca11): above some zoom the stroke kept

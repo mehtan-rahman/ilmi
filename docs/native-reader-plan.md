@@ -144,6 +144,33 @@ The surface answers with events on the `onSurface` channel. Commands go by `ink_
   surface. The keys on a book (`h`, `b`, `v`, `e`, `m`) work as on the web reader; `v` takes its line from the place
   the surface says.
 
+## The ink in the page's tiles (2026-11-22: the design that replaces the layers)
+
+The layers over a page (a whole-page ink picture, a sharp one for the part in view, patches over both, masks between
+them, each nudged onto the screen's pixels) were four copies of the ink kept in step, and between them strokes
+shook while others were written and an erased one stayed, blurred, until the lift. The user: "this just feels like
+wrong architecture, very un-simple." It is replaced by one copy:
+
+- **One copy, in the tiles.** Every picture of a page the surface draws (its small and fitted pictures and each
+  level's bands) is the page and its ink in one pass, at that picture's own pixels: the PDF page, then the ink
+  (highlighters multiplied, pens over), then the dark theme's turn over both. No ink pictures, no masks, no
+  patches, no nudging: a tile is on the screen's pixels as the page is.
+- **A change redraws what it touched.** A stroke kept, an erase's hit, the lasso's move, undo and redo, the store's
+  strokes arriving: the page's ink is newer, and the touched rect is told to the surface. Its tiles and pictures on
+  the glass under that rect are drawn again off the main thread with the ink as it is now (one batch a page at a
+  time: what changes while one is drawn goes into the next, so an eraser's hits come at most once a frame), and
+  each new tile takes its old one's place in one transaction. Nothing else on the page changes a pixel.
+- **The live stroke goes with its tile.** The stroke being written stays on the glass (the canvas, unseen ink and
+  ilmi's live layer, as now) until the tiles under it have been drawn with it, and goes in the same transaction
+  they appear in.
+- **Zoom is the page's.** Ink is in the pyramid's levels like the print, so a zoom shows the coarser level of both
+  until the sharp one comes, and they always match.
+- **The engine is the notebook's.** The ink's model, the Pencil, the tools, undo and the store are `NoteSurface`'s
+  as before (a guest of the book's surface, its sheets clear views used for places and the lasso's held picture);
+  it no longer draws. It tells the surface what changed and gives it the page's strokes to draw.
+- **Notebooks next.** A notebook's sheets become the same tiled surface with its paper (colour and ruling) drawn
+  where a book draws its PDF page, so one renderer draws both.
+
 ## Phase 4 as built (ink)
 
 - The notebook surface's engine is the book's, not a copy: a `NoteSurface` made `over` a `PdfSurface` (a guest)

@@ -21297,6 +21297,89 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       log('done');
       return;
     }
+    if (part.split(',').includes('surfacemarks')) {
+      // ── what the page lays on the native surface's pages (`PdfMarks.swift`; `"part": "surfacemarks"`, taps under the
+      // rig): the sample's chapter as a surface, its passages' boxes and tags drawn; a selection highlighted (`h`) and
+      // drawn, then a tap on it opens its menu and `clear` takes it; a bookmark (`b`) and the ruler (`v`) drawn; a box
+      // drawn as a held finger draws one, its bar (`passage`, `card`) shown, and a tap elsewhere lets it go. Each a hard
+      // check, read from what the surface says it drew on the page. `surfacemarks:` lines ──
+      try { localStorage.setItem('ilmi.pdf.native', '1'); } catch { /* none */ }
+      openNode(queueId('today'));
+      await sleep(800);
+      openNode(PAGEINK_BOOK);
+      const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-surface', x) ? x : null; }, 'the chapter as a native surface', 60000);
+      const sid = q<HTMLElement>('.pdf-surface', b)!.dataset.surface!;
+      const view = q<HTMLElement>('.pdf-view', b)!;
+      const S = (ask: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...ask } });
+      await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'its pages shown', 30000);
+      await S({ op: 'go', page: PAGEINK_PAGE, y: 0 });
+      await sleep(1200);
+      const drawnOn = async (n: number) => { const st = await S({ op: 'state' }); const m = (st.marks as string[]).find((x) => x.startsWith(`${n}:`)); return { st, count: m ? Number(m.split(':')[1]) : -1 }; };
+      const st0 = await drawnOn(PAGEINK_PAGE);
+      log(`surfacemarks: p. ${PAGEINK_PAGE} shows ${st0.count} marks of ${st0.st.marksTold} told (passages' boxes and tags among them)`);
+      await shot('surfacemarks-passages');
+      // a highlight
+      const hl0 = Number(view.dataset.highlights ?? 0);
+      await S({ op: 'select', page: PAGEINK_PAGE, x: 0.12, y: 0.62, x2: 0.8, y2: 0.64 });
+      await poll(() => Number(view.dataset.sel ?? 0) > 5, 'a selection', 10000);
+      const selRect = (view.dataset.selRect ?? '').split(',').map(Number);
+      const q0 = (view.dataset.selQuad ?? '').split(' ').map(Number);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }));
+      await poll(() => Number(view.dataset.highlights ?? 0) === hl0 + 1, 'h highlights the selection', 10000);
+      const st1 = await poll(async () => { const d = await drawnOn(PAGEINK_PAGE); return d.count > st0.count ? d : null; }, 'the surface draws the highlight on its page', 10000);
+      log(`surfacemarks: highlighted; p. ${PAGEINK_PAGE} shows ${st1.count} marks`);
+      await sleep(600);
+      await shot('surfacemarks-highlight');
+      // a tap on it: its menu, and clear
+      // (in the middle of its first line)
+      const onGlass = await S({ op: 'where', page: q0[0], x: q0[1]! + q0[3]! / 2, y: q0[2]! + q0[4]! / 2 });
+      ask('tap', fx(Number(onGlass.gx)), fy(Number(onGlass.gy)));
+      const clear = await poll(() => q<HTMLElement>('.pop-menu [data-act="hl-clear"]'), 'a tap on a highlight opens its menu', 20000).catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; a menu up: ${qa<HTMLElement>('.pop-menu [data-act]').map((x) => x.dataset.act).join(' ') || 'none'}; tapped at ${selRect.join(',')}; the page heard ${view.dataset.tapped ?? 'nothing'}`); });
+      await shot('surfacemarks-hl-menu');
+      clear.click();
+      await poll(() => Number(view.dataset.highlights ?? 0) === hl0, 'clear takes the highlight', 10000);
+      await poll(async () => (await drawnOn(PAGEINK_PAGE)).count < st1.count, 'and the surface no longer draws it', 10000);
+      // a bookmark and the ruler
+      const bm0 = Number(view.dataset.bookmarks ?? 0);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true }));
+      const nameIn = await poll(() => q<HTMLInputElement>('.pb-name', b), 'b asks the bookmark\'s name', 10000);
+      nameIn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await poll(() => Number(view.dataset.bookmarks ?? 0) === bm0 + 1, 'and keeps the bookmark', 10000);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', bubbles: true }));
+      await poll(() => view.dataset.ruler, 'v holds a line under the rule', 10000);
+      const st2 = await poll(async () => { const d = await drawnOn(PAGEINK_PAGE); return d.count > st0.count ? d : null; }, 'the surface draws the rule (and the bookmark)', 10000);
+      log(`surfacemarks: the rule on ${view.dataset.ruler}; p. ${PAGEINK_PAGE} shows ${st2.count} marks`);
+      await shot('surfacemarks-rule');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', bubbles: true }));
+      await poll(() => !view.dataset.ruler, 'and let go', 10000);
+      // a box drawn as a held finger draws one: its bar, then a tap elsewhere lets it go
+      await S({ op: 'box', page: PAGEINK_PAGE, x: 0.1, y: 0.4, x2: 0.6, y2: 0.5 });
+      await poll(() => q('.pdf-surface .pend', b), 'a box drawn on the surface has its bar: passage, card', 10000);
+      await poll(async () => (await drawnOn(PAGEINK_PAGE)).count > st0.count, 'and the surface draws the box', 10000);
+      await shot('surfacemarks-box');
+      const sr = q<HTMLElement>('.pdf-surface', b)!.getBoundingClientRect();
+      // (on bare paper: over the chapter's title, where nothing is laid)
+      const bare = await S({ op: 'where', page: PAGEINK_PAGE, x: 0.5, y: 0.04 });
+      ask('tap', fx(Number(bare.gx)), fy(Number(bare.gy)));
+      await poll(() => !q('.pdf-surface .pend', b), 'a tap elsewhere lets the box go', 20000);
+      // a box again, and its bar's `passage` pressed through the surface (a hole in it): a passage made of it, drawn
+      const told0 = Number((await S({ op: 'state' })).marksTold);
+      await S({ op: 'box', page: PAGEINK_PAGE, x: 0.1, y: 0.4, x2: 0.6, y2: 0.5 });
+      const pe = await poll(() => q<HTMLElement>('.pdf-surface .pend [data-k="e"]', b), 'the bar again', 10000);
+      await sleep(800);
+      delete view.dataset.tapped;
+      const pr = pe.getBoundingClientRect();
+      ask('tap', fx(pr.left + pr.width / 2), fy(pr.top + pr.height / 2));
+      await poll(() => !q('.pdf-surface .pend', b), 'passage, pressed on its bar over the surface, takes the box', 20000);
+      const made = await poll(async () => { const t = Number((await S({ op: 'state' })).marksTold); return t > told0 ? t : null; }, 'and the surface draws the passage made', 20000);
+      log(`surfacemarks: the bar pressed through the surface (the surface heard ${view.dataset.tapped ?? 'no tap'}); marks told ${told0} → ${made}`);
+      await shot('surfacemarks-passage-made');
+      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('surfacetext')) {
       // ── the native surface's text (`PdfText.swift`; `"part": "surfacetext"`, `"links"` naming a PDF with links in
       // it, around.pdf; a held finger under the rig): the sample's chapter as a surface, a selection made and the page

@@ -75,6 +75,29 @@ The live check (ilmi, every ink, the dark theme) still passes, at most 26 of 255
 
 ---
 
+## 2026-11-22 — the native page view, phase 3: highlights, boxes, tags, the ruler, the read point, bookmarks and portals drawn by the surface
+
+On branch `native-reader-marks`. First, the notebook surface's `remove()` lets its canvas go through `CanvasKeep`
+(the PKCanvasView dealloc crash, as the PDF surface and the plugin already did).
+
+**Phase 3.** The page sends its marks with the surface's spec (fractions of a page, the theme's colours); the
+surface draws them as vectors on each page (`PdfMarks.swift`), sharp at any zoom, redrawn only when they change.
+Taps come back with their point on the glass and the page answers them as the web reader does (link, portal,
+passage menu, highlight menu); a held finger off the text draws a box and the `passage`/`card` bar shows under it,
+pressed through a hole in the surface. Details in `docs/native-reader-plan.md` ("Phase 3 as built").
+
+**Verified (Air 11 simulator, `pdfink` with `"part": "surfacemarks"`, hard checks):** the chapter's two passages'
+boxes and tags drawn (p. 23: 4 layers of 8 marks told); `h` on a selection drawn (9 layers), a tap on it opens its
+menu, `clear` takes it and the surface stops drawing it; `b` keeps a bookmark and `v` holds the rule, both drawn; a
+box drawn by a held finger draws, shows its bar; a tap on bare paper lets it go; a box again and `passage` pressed
+on its bar through the surface makes a passage, drawn (marks 9 → 10), with no tap reaching the surface. The zoom
+hard check (`part: surface`) passes unchanged: no frame two levels coarse in any case. `surfacetext` passes. tsc,
+npm test (2672), cargo test pass. Not seen on a device.
+
+**Next:** phase 4 (ink on the surface, the notebook engine shared), then selection drag handles.
+
+---
+
 ## 2026-11-22 — the native page view, phases 1 and 2: a book's pages as the system's own scroll view, behind a setting
 
 **What.** On an iPad with the settings' `book pages: native` (off by default, `ilmi.pdf.native`), a book's pages are `PdfSurface.swift`: a `UIScrollView` over the pane where `Pdf.tsx` puts a `.pdf-surface`. It is told what to show by `ink_pdf` and asked by `ink_pdf_do`.

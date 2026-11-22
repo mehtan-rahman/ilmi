@@ -14,6 +14,8 @@ final class PdfText: NSObject, UIGestureRecognizerDelegate {
   weak var surface: PdfSurface?
   let model: PDFDocument?
   private var anchor: (Int, CGPoint)?
+  /// A box being drawn by a held finger where there was no word: its page and the corner it began at (the page's points).
+  private var boxing: (Int, CGPoint)?
   private(set) var selection: PDFSelection?
   private var selText = ""
   private var menu: AnyObject?
@@ -89,9 +91,18 @@ final class PdfText: NSObject, UIGestureRecognizerDelegate {
     case .began:
       guard let (n, v) = pageAt(p), let page = model.page(at: n - 1) else { return }
       let pt = toPdf(n, v)
+      // no word there: the finger draws a box
+      guard let word = page.selectionForWord(at: pt), !(word.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        anchor = nil
+        boxing = (n, v)
+        drawBox(n, v, v)
+        return
+      }
+      boxing = nil
       anchor = (n, pt)
-      select(page.selectionForWord(at: pt))
+      select(word)
     case .changed:
+      if let b = boxing { let f = s.frames[b.0 - s.first]; let c = s.scroll.convert(p, to: s.content); drawBox(b.0, b.1, CGPoint(x: c.x - f.minX, y: c.y - f.minY)); return }
       guard let a = anchor, let (n, v) = pageAt(p), let pa = model.page(at: a.0 - 1), let pb = model.page(at: n - 1) else { return }
       let pt = toPdf(n, v)
       let forward = n > a.0 || (n == a.0 && (pt.y < a.1.y - 2 || (abs(pt.y - a.1.y) <= 2 && pt.x >= a.1.x)))
@@ -99,12 +110,47 @@ final class PdfText: NSObject, UIGestureRecognizerDelegate {
       if let w = pa.selectionForWord(at: a.1) { sel?.add(w) }
       select(sel)
     case .ended:
+      if let b = boxing { endBox(b, at: p); return }
       tell()
       showMenu()
     case .cancelled, .failed:
+      if boxing != nil { boxing = nil; drawBox(nil, .zero, .zero); return }
       tell()
     default: break
     }
+  }
+
+  /// The box being drawn, from corner `a` to `b` of page `n` (its points), dashed in the accent; none with no page.
+  private func drawBox(_ n: Int?, _ a: CGPoint, _ b: CGPoint) {
+    guard let s = surface else { return }
+    CATransaction.begin(); CATransaction.setDisableActions(true)
+    for (k, pv) in s.views {
+      let l = pv.marks("boxing", color: UIColor(red: 0.71, green: 0.54, blue: 0.16, alpha: 0.08))
+      l.strokeColor = UIColor(red: 0.71, green: 0.54, blue: 0.16, alpha: 1).cgColor
+      l.lineWidth = 1.5
+      l.lineDashPattern = [5, 3]
+      if k == n {
+        let f = pv.bounds
+        let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y)).intersection(f)
+        l.path = UIBezierPath(rect: r).cgPath
+      } else { l.path = nil }
+    }
+    CATransaction.commit()
+  }
+  /// The box drawn is the page's: told it as fractions of its page, and where it lies on the glass.
+  private func endBox(_ b: (Int, CGPoint), at p: CGPoint) {
+    boxing = nil
+    guard let s = surface, let web = s.plugin?.webView else { drawBox(nil, .zero, .zero); return }
+    let f = s.frames[b.0 - s.first]
+    let c = s.scroll.convert(p, to: s.content)
+    let e = CGPoint(x: c.x - f.minX, y: c.y - f.minY)
+    let r = CGRect(x: min(b.1.x, e.x), y: min(b.1.y, e.y), width: abs(e.x - b.1.x), height: abs(e.y - b.1.y)).intersection(CGRect(origin: .zero, size: f.size))
+    drawBox(nil, .zero, .zero)
+    guard r.width > 6, r.height > 6 else { return }
+    let g = s.content.convert(r.offsetBy(dx: f.minX, dy: f.minY), to: web.scrollView)
+    s.plugin?.emit(["kind": "surface", "id": s.id, "what": "pdfbox", "page": b.0,
+                    "x": Double(r.minX / f.width), "y": Double(r.minY / f.height), "w": Double(r.width / f.width), "h": Double(r.height / f.height),
+                    "rect": [Double(g.minX), Double(g.minY), Double(g.width), Double(g.height)]])
   }
 
   @objc private func tapped(_ g: UITapGestureRecognizer) {
@@ -112,9 +158,14 @@ final class PdfText: NSObject, UIGestureRecognizerDelegate {
     let p = g.location(in: s.scroll)
     let had = selection != nil
     if had { select(nil); tell() }
-    guard let (n, v) = pageAt(p) else { return }
+    let onGlass = s.plugin?.webView.map { s.scroll.convert(p, to: $0.scrollView) } ?? p
+    // (between pages, on the desk: told too, as no page: it lets go of the boxes drawn)
+    guard let (n, v) = pageAt(p) else {
+      s.plugin?.emit(["kind": "surface", "id": s.id, "what": "pdftap", "page": 0, "x": 0, "y": 0, "gx": Double(onGlass.x), "gy": Double(onGlass.y), "cleared": had])
+      return
+    }
     let f = s.frames[n - s.first]
-    s.plugin?.emit(["kind": "surface", "id": s.id, "what": "pdftap", "page": n, "x": Double(v.x / f.width), "y": Double(v.y / f.height), "cleared": had])
+    s.plugin?.emit(["kind": "surface", "id": s.id, "what": "pdftap", "page": n, "x": Double(v.x / f.width), "y": Double(v.y / f.height), "gx": Double(onGlass.x), "gy": Double(onGlass.y), "cleared": had])
   }
 
   /// The selection drawn on its pages (a layer a page, under nothing the page lays over it).
@@ -195,6 +246,14 @@ final class PdfText: NSObject, UIGestureRecognizerDelegate {
     let n = model.index(for: page) + 1
     guard n >= s.first, n - s.first < s.frames.count else { return .null }
     return s.content.convert(toView(n, sel.bounds(for: page)).offsetBy(dx: s.frames[n - s.first].minX, dy: s.frames[n - s.first].minY), to: s.scroll)
+  }
+
+  /// (the checks) A box drawn as a held finger would, from one point of a page to another (fractions of it).
+  func boxFrom(page n: Int, _ a: CGPoint, to b: CGPoint) {
+    guard let s = surface, n >= s.first, n - s.first < s.frames.count else { return }
+    let f = s.frames[n - s.first]
+    let pa = CGPoint(x: a.x * f.width, y: a.y * f.height), pb = CGPoint(x: b.x * f.width, y: b.y * f.height)
+    endBox((n, pa), at: s.content.convert(CGPoint(x: pb.x + f.minX, y: pb.y + f.minY), to: s.scroll))
   }
 
   /// (the checks) A selection made as a held finger would, from one point of a page to another (fractions of it).

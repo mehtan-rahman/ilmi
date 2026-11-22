@@ -130,6 +130,20 @@ The surface answers with events on the `onSurface` channel. Commands go by `ink_
   links, and ink as today.
 - Commands from the page: `go`, `zoom` (animated), `select` (clear or set), `flash` a mark, `picture`.
 
+## Phase 3 as built (marks)
+
+- The spec carries `marks`: `hl` (a quad of a highlight, its ink), `box` (a passage's box, its tag on the first, `cur`,
+  `dis`, `flash`), `pend` (a box drawn and not yet made, its number), `rule`, `read`, `bm`, `portal`, all fractions of a
+  page; and `accent`, `fg`, `paper` from the page's theme. `PdfMarks.swift` draws each page's marks as shape and text
+  layers in the page's points (`markLayer`, over the tiles, under a selection), redrawn only when a page's marks change.
+- A tap says `pdftap` with the page, the fraction and the point on the glass (`gx`, `gy`); a tap off the pages says page
+  0. The page answers: a link, else a portal (opened beside), else a passage's box (its menu), else a highlight (its
+  menu: passage, card, clear, the four inks). Any tap lets go of the boxes drawn and not made.
+- A finger held where there is no word draws a box (dashed, live) and says `pdfbox` with its fractions and its rect on
+  the glass; the page adds it to the boxes drawn and puts its `.pend` bar (`passage`, `card`) under it, a hole in the
+  surface. The keys on a book (`h`, `b`, `v`, `e`, `m`) work as on the web reader; `v` takes its line from the place
+  the surface says.
+
 ## Phases after this one
 
 1. **The surface for PDFs, B with our own tiles:** drawing, zoom, scroll, the fitted pictures, the dark turn, place

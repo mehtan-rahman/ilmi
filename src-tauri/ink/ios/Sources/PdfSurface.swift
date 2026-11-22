@@ -58,6 +58,11 @@ struct PdfSurfaceArgs: Decodable {
   /// The pages shown, from `first` to `last` (a chapter cut from its book); all where not said.
   let first: Int?
   let last: Int?
+  /// What the page lays on its pages (phase 3), and its theme's colours for them.
+  let marks: [PdfMarkSpec]?
+  let accent: String?
+  let fg: String?
+  let paper: String?
 }
 
 struct PdfSurfaceDoArgs: Decodable {
@@ -343,6 +348,17 @@ final class PdfPageView: UIView {
     tiles[k] = []
     return l
   }
+  /// The page's marks (highlights, boxes, tags, the ruler, the read point, bookmarks, portals): over the tiles, under a selection.
+  lazy var markLayer: CALayer = {
+    let l = CALayer()
+    l.zPosition = 40
+    l.frame = bounds
+    layer.addSublayer(l)
+    return l
+  }()
+  /// What it was drawn from: drawn again only when that changes.
+  var marksDrawn: [PdfMarkSpec]? = nil
+  var marksSize: CGSize = .zero
   /// A layer of marks over the page (a selection, a search's hits), by name, made where there is none.
   private var named: [String: CAShapeLayer] = [:]
   func marks(_ name: String, color: UIColor) -> CAShapeLayer {
@@ -366,6 +382,7 @@ final class PdfPageView: UIView {
     picture.frame = bounds
     for l in levels.values { l.frame = bounds }
     for l in named.values { l.frame = bounds }
+    markLayer.frame = bounds
     CATransaction.commit()
   }
 }
@@ -401,6 +418,9 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
   var views: [Int: PdfPageView] = [:]
   private var dark = false
   private var shownLast = 1
+  /// The marks by page, and the look they are drawn in.
+  private var marksByPage: [Int: [PdfMarkSpec]] = [:]
+  private var look = PdfLook()
   private var gap: CGFloat = 12
   private var top: CGFloat = 12
   private var side: CGFloat = 0
@@ -480,6 +500,17 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     if rangeChanged { for v in views.values { v.removeFromSuperview() }; views = [:] }
     // the holes: cut out of the view's glass and its touches
     holesFrom(a.holes ?? [])
+    var lk = PdfLook()
+    if let c = a.accent.flatMap({ UIColor(pdfHex: $0) }) { lk.accent = c }
+    if let c = a.fg.flatMap({ UIColor(pdfHex: $0) }) { lk.fg = c }
+    if let c = a.paper.flatMap({ UIColor(pdfHex: $0) }) { lk.paper = c }
+    lk.dark = a.dark ?? false
+    let lookChanged = lk != look
+    look = lk
+    var by: [Int: [PdfMarkSpec]] = [:]
+    for m in a.marks ?? [] { by[m.page, default: []].append(m) }
+    marksByPage = by
+    if lookChanged { for v in views.values { v.marksDrawn = nil } }
     if !opened || abs(wasW - rect.width) > 0.5 || rangeChanged {
       layout()
       if !opened {
@@ -683,6 +714,24 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     CATransaction.commit()
     painter.keep { !$0.hasPrefix("\(self.id)|") || wanted.contains($0) }
     if madeSome { text?.pageShown() }
+    drawMarks()
+  }
+
+  /// Each page there's marks drawn where they are not what it was last drawn with (or its size changed).
+  func drawMarks() {
+    CATransaction.begin(); CATransaction.setDisableActions(true)
+    for (n, pv) in views {
+      let ms = marksByPage[n] ?? []
+      if pv.marksDrawn == ms && pv.marksSize == pv.bounds.size { continue }
+      pv.marksDrawn = ms
+      pv.marksSize = pv.bounds.size
+      PdfMarks.draw(ms, in: pv.markLayer, size: pv.bounds.size, look: look, scale: screen * 4)
+    }
+    CATransaction.commit()
+  }
+  /// (the checks) How many marks each page in view has drawn.
+  func marksShown() -> [String] {
+    views.values.filter { $0.frame.intersects(seen) }.sorted { $0.number < $1.number }.map { "\($0.number):\($0.markLayer.sublayers?.count ?? 0)" }
   }
 
   /// Whether the level `k` (or the whole picture where `k` is under 1) covers what of the page is in view.
@@ -887,6 +936,19 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     case "clear":
       text?.clear()
       return state()
+    case "where":
+      // (the checks) where a point of a page (fractions of it) lies on the web view's glass
+      var st = state()
+      let n = max(first, min(first + frames.count - 1, a.page ?? first))
+      let f = frames[n - first]
+      if let web = plugin?.webView {
+        let g = content.convert(CGPoint(x: f.minX + f.width * CGFloat(a.x ?? 0.5), y: f.minY + f.height * CGFloat(a.y ?? 0.5)), to: web.scrollView)
+        st["gx"] = Double(g.x); st["gy"] = Double(g.y)
+      }
+      return st
+    case "box":
+      text?.boxFrom(page: a.page ?? first, CGPoint(x: a.x ?? 0.2, y: a.y ?? 0.2), to: CGPoint(x: a.x2 ?? 0.6, y: a.y2 ?? 0.4))
+      return state()
     case "links":
       var st = state()
       st["links"] = text?.links(a.page ?? first) ?? []
@@ -921,7 +983,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     let (worst, share) = coarse()
     return ["page": n, "y": Double(y), "x": x.map { Double($0) } as Any, "zoom": Double(scroll.zoomScale), "pages": count, "views": views.count, "worst": worst, "coarse": share,
             "drawn": painter.drawn, "drawMs": painter.drawMs, "workers": painter.workers, "memory": PageMemory.shared.bytes, "budget": PageMemory.shared.budget, "level": wantLevel,
-            "seen": seenPages(),
+            "seen": seenPages(), "marks": marksShown(), "marksTold": marksByPage.values.reduce(0) { $0 + $1.count },
             "opened": openedAt, "laid": laidOut.suffix(6).joined(separator: " "),
             "hits": text?.hitCount ?? 0, "current": text?.current.map { [$0.0, $0.1] } as Any, "selected": text?.selection?.string ?? "",
             "offset": [Double(scroll.contentOffset.x), Double(scroll.contentOffset.y)], "content": [Double(scroll.contentSize.width), Double(scroll.contentSize.height)], "dark": dark, "holes": view.holes.count]

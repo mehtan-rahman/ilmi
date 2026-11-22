@@ -770,6 +770,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   const surfaceId = useMemo(() => `surface:${++surfaceSeq}`, []);
   const pdfSurfId = useMemo(() => `pdf:${++surfaceSeq}`, []);
   const [pdfSurfEl, setPdfSurfEl] = useState<HTMLDivElement | null>(null);
+  /** Where the last box a held finger drew on the surface lies on the glass: its bar goes under it. */
+  const [pdfPend, setPdfPend] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const pdfSurfRef = useRef(false);
   const pdfSurfIdRef = useRef(pdfSurfId);
   const [surfaceEl, setSurfaceEl] = useState<HTMLDivElement | null>(null);
@@ -3372,6 +3374,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
         if (pr.height > 0 && pr.bottom > line) { at = { page: k, y: Math.max(0, (line - pr.top) / pr.height) }; break; }
       }
     }
+    // (the native surface: a third of the way down the view, from the place it says is at its top)
+    if (!at && pdfSurf && place.current) at = { page: place.current.page, y: Math.min(1, place.current.y + 0.25) };
     if (!at) return;
     const bands = await bandsOf(at.page);
     let to: { page: number; line: number } | null = bands.length ? { page: at.page, line: bandNear(bands, at.y) } : await stepLine({ page: at.page, line: -1 }, 1, async (n) => (await bandsOf(n)).length, first, last);
@@ -3792,12 +3796,30 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     el.dataset.open = pdfOpen.current ? `${pdfOpen.current.page} ${pdfOpen.current.y.toFixed(3)}` : 'none';
     if (pdfZoomAt.current === null) pdfZoomAt.current = zoomRef.current;
     const css = getComputedStyle(el);
+    // what the page lays on its pages, drawn by the surface (phase 3): fractions of each page
+    const marksOut: Record<string, unknown>[] = [];
+    for (const [key, h] of highlights) for (const q of h.quads) marksOut.push({ k: 'hl', key, page: q[0], x: q[1], y: q[2], w: q[3], h: q[4], ink: h.ink ?? 1 });
+    for (const d of drawn) {
+      d.boxes.forEach((b, i) => {
+        const name = plainMath(d.name);
+        marksOut.push({ k: 'box', key: d.key, page: b.page, x: b.x, y: b.y, w: b.w, h: b.h, tag: i ? `↳ ${name} (${i + 1}/${d.boxes.length})` : `§ ${name}${d.cards > 0 ? ` ◆${d.cards}` : ''}`, ...(lit === d.key ? { cur: true } : {}), ...(d.dismissed ? { dis: true } : {}), ...(flash?.text === d.key ? { flash: true } : {}) });
+      });
+    }
+    pending.forEach((b, i) => marksOut.push({ k: 'pend', key: `pending:${i}`, page: b.page, x: b.x, y: b.y, w: b.w, h: b.h, ...(pending.length > 1 ? { no: i + 1 } : {}) }));
+    if (ruler) marksOut.push({ k: 'rule', page: ruler.page, x: 0, y: ruler.band.top, w: 1, h: ruler.band.bottom - ruler.band.top });
+    if (readPoint && readPoint.pos >= first && readPoint.pos <= last) marksOut.push({ k: 'read', page: readPoint.pos, x: 0, y: readPoint.y, w: 1, h: 0 });
+    for (const [key, m] of bookmarks) marksOut.push({ k: 'bm', key, page: m.page, x: 0, y: m.y, w: 0, h: 0 });
+    for (const [key, m] of portals) marksOut.push({ k: 'portal', key, page: m.page, x: 1, y: m.y, w: 0, h: 0 });
     sendPdfSurface({
       id: pdfSurfId, x: r.left, y: r.top, w: r.width, h: r.height,
       root: at.root, hash: at.hash,
       zoom: zoomRef.current, open: pdfOpen.current,
       dark: theme === 'dark', desk: hexOf(css.backgroundColor, '#e9e9e9'),
       holes: holesOver(el), top: 12, first, last,
+      marks: marksOut,
+      accent: hexOf(css.getPropertyValue('--accent').trim(), '#b58a2a'),
+      fg: hexOf(css.getPropertyValue('--fg').trim() || css.color, '#333333'),
+      paper: hexOf(css.getPropertyValue('--paper').trim(), '#ffffff'),
     });
   };
   useEffect(() => { if (pdfSurf) pdfSend.current(); });
@@ -3867,6 +3889,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       const boxes = [...byPage].sort((a, b) => a[0] - b[0]).map(([n, rs]) => boxAround(n, rs)).filter((b): b is Box => b !== null);
       const r = m.rect as number[];
       setSel({ text, page: Number(m.page), rect: new DOMRect(r[0], r[1], r[2], r[3]), line: '', boxes, quads });
+      if (viewRef.current) viewRef.current.dataset.selRect = r.map((v) => Math.round(v)).join(',');
+      if (viewRef.current && quads[0]) viewRef.current.dataset.selQuad = quads[0].join(' ');
       return;
     }
     if (m.what === 'pdfact') {
@@ -3874,11 +3898,24 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       else if (m.act === 'card') void cardOrClip().catch(console.error);
       return;
     }
+    if (m.what === 'pdfbox') {
+      // a box drawn by a held finger where there was no word: one of the boxes drawn, for a passage or a card
+      const r = m.rect as number[];
+      setPending((cur) => [...cur, { page: Number(m.page), x: Number(m.x), y: Number(m.y), w: Number(m.w), h: Number(m.h) }]);
+      setPdfPend({ x: r[0]!, y: r[1]!, w: r[2]!, h: r[3]! });
+      return;
+    }
     if (m.what === 'pdftap') {
-      // a link there is followed, as a press on the web reader's page follows it (its links read by pdf.js, as they come)
+      // a link there is followed, as a press on the web reader's page follows it (its links read by pdf.js, as they
+      // come); else a mark there answers: a portal goes, a passage's box or tag opens its menu, a highlight its own
       const n = Number(m.page); const x = Number(m.x); const y = Number(m.y);
+      const gx = Number(m.gx ?? 0); const gy = Number(m.gy ?? 0);
+      const at = { left: gx, top: gy, bottom: gy };
       void (async () => {
         if (!pdf) return;
+        // a tap on the pages lets go of the boxes drawn and not yet made into anything, whatever else it does
+        if (st.current.pending.length) { setPending([]); setPdfPend(null); }
+        if (n < 1) return;
         if (!links.current.has(n)) {
           try {
             const page = await pdf.getPage(n);
@@ -3890,7 +3927,26 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
           } catch { links.current.set(n, []); }
         }
         const l = (links.current.get(n) ?? []).find((k) => x >= k.x && x <= k.x + k.w && y >= k.y && y <= k.y + k.h);
-        if (l) await followLink(l, n);
+        if (viewRef.current) viewRef.current.dataset.tapped = `${n} ${x.toFixed(3)} ${y.toFixed(3)} link:${l ? 1 : 0}`;
+        if (l) { await followLink(l, n); return; }
+        const portal = portals.find(([, p]) => p.page === n && x > 0.9 && Math.abs(p.y - y) < 0.02);
+        if (portal) { await openPortal(portal[1], { getBoundingClientRect: () => new DOMRect(gx - 8, gy - 8, 16, 16) } as unknown as HTMLElement); return; }
+        const hlId = highlightAt(marksRef.current, n, x, y);
+        const hl = hlId !== null ? marksRef.current[hlId] : undefined;
+        if (viewRef.current) viewRef.current.dataset.tapped = `${n} ${x.toFixed(3)} ${y.toFixed(3)} ${hlId ?? '-'}`;
+        if (hlId !== null && hl?.kind === 'highlight') {
+          popMenu(at, [
+            { label: 'passage', act: 'hl-section', run: () => void makeSection(quadBoxes(hl.quads)).catch(console.error) },
+            { label: 'card', act: 'hl-card', run: () => void cardOrClip(quadBoxes(hl.quads)).catch(console.error) },
+            { label: 'clear', act: 'hl-clear', run: () => clearHighlight(hlId) },
+            { label: '-' },
+            ...INK_NAMES.map((name, i): PopItem => ({ label: `${i + 1} · ${name}${hl.ink === i + 1 ? ' ✓' : ''}`, act: `ink-${i + 1}`, run: () => inkHighlight(hlId, i + 1) })),
+          ], 'book-menu');
+          return;
+        }
+        // (a passage's box or tag after a highlight: a highlight lies in a passage more often than not)
+        const d = drawn.find((dd) => dd.boxes.some((b) => b.page === n && x >= b.x && x <= b.x + Math.max(b.w, 0.3) && y >= b.y - 0.02 && y <= b.y + b.h));
+        if (d) { passageMenuAt({ left: gx, bottom: gy }, d); return; }
       })();
     }
   };
@@ -4102,7 +4158,22 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
             </div>
           )}
           {/* an iPad's book with the setting on: its pages are a native surface lying over this place */}
-          {pdfSurf && <div className="note-surface pdf-surface" ref={setPdfSurfEl} data-surface={pdfSurfId} />}
+          {pdfSurf && (
+            <div className="note-surface pdf-surface" ref={setPdfSurfEl} data-surface={pdfSurfId} data-pending={pending.length || undefined}>
+              {pdfPend && pending.length > 0 && pdfSurfEl && (() => {
+                const sr = pdfSurfEl.getBoundingClientRect();
+                const left = Math.max(6, Math.min(pdfPend.x - sr.left, sr.width - 250));
+                const below = pdfPend.y + pdfPend.h + 6 - sr.top;
+                const top = below > sr.height - 52 ? Math.max(6, pdfPend.y - sr.top - 52) : below;
+                return (
+                  <div data-hit="1" data-ink-over="" className="pend" style={{ left, top }}>
+                    <button type="button" data-k="e" {...press(() => void makeSection().then(() => setPdfPend(null)).catch(console.error))}><span className="pe-l">passage{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</span></button>
+                    <button type="button" data-k="m" {...press(() => void cardOrClip().then(() => setPdfPend(null)).catch(console.error))}><span className="pe-l">card</span></button>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
           {!native && !pdfSurf && <div className="pdf-pages" ref={pagesRef} data-run={pageless && colH < tops.total ? '1' : undefined} data-run-len={pageless && runLen ? `${runLen.len} ${runLen.foot.toFixed(1)}` : undefined} style={{ height: colH || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (

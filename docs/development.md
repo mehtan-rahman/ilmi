@@ -822,8 +822,12 @@ picture. `written`'s `"part": "pkside"` puts the two side by side; `pdfink`'s
 live check runs in the mode with `"pk": "1"`; `"part": "pkwidth"` and
 `pencilDev` `pkthin` are the experiments that found where the least lies.
 Each place of ilmi's own stroke is evened along it, centred
-(`LiveInk.along`, 2 screen points), and its force over 15 ms
-(`LiveInk.forceSpan`).
+(`LiveInk.along`, 2 screen points), and its force over 50 ms
+(`LiveInk.forceSpan`, 2026-11-25: the width's ripple on a device's strokes
+was what was left to see), both by `LiveInk.evenOne`. `written`'s `"part":
+"replay"` makes a device's logged strokes again on a notebook (`pencilDev`
+`replay:<sheet>:<surface>:<dx>:<dy>`, the log as `replay.jsonl` in the
+app's temporary folder; `force-<ms>` sets the span for a run).
 `LiveInk.ours = false` (one constant at the top of `Live.swift`) gives the
 stroke being written back to PencilKit's canvas and keeps PencilKit's
 stroke, reshaped, as before. The eraser and the lasso were ours already.

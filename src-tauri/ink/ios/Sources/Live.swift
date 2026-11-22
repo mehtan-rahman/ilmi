@@ -273,7 +273,36 @@ final class LiveInk {
   /// synthesized tremor (BUILD-LOG 2026-11-23): at 250% the turns from 21° (the one-euro filter before) to 12°,
   /// nothing behind at the tip, a sharp corner 0.8 pt rounder.
   static let along: CGFloat = 2
-  static let forceSpan: TimeInterval = 0.015
+  /// The force's, centred the same way: 50 ms (2026-11-25, was 15). On a device's strokes (the log of 2026-11-22,
+  /// replayed) the width's high wiggle, what is left to see of a stroke's unevenness once its middle is evened, from
+  /// 0.19 px RMS (0.86 at the 99th) to 0.07 (0.33); nothing moves, nothing trails the tip. A dev run may set it
+  /// (`pencilDev` `force-<ms>`), to compare.
+  static var forceSpan: TimeInterval = 0.05
+
+  /// One place of a stroke evened, and its force: the mean of the touches either side of it along the stroke (a
+  /// Gaussian of `sigma` screen points, the window as wide on both sides) and over time (`span` seconds). The stroke
+  /// being written and the one kept are made of these, and a dev run's replay of a device's strokes.
+  static func evenOne(_ ts: [Touch], _ i: Int, sigma: CGFloat, span: TimeInterval) -> (CGPoint, CGFloat) {
+    let a = ts[i], first = ts[0], last = ts[ts.count - 1]
+    let h = min(3 * sigma, min(a.along - first.along, last.along - a.along))
+    var sx: CGFloat = 0, sy: CGFloat = 0, sw: CGFloat = 0
+    if sigma > 0, h > 0 {
+      var j = i
+      while j >= 0, a.along - ts[j].along <= h { let w = exp(-0.5 * pow((a.along - ts[j].along) / sigma, 2)); sx += w * ts[j].at.x; sy += w * ts[j].at.y; sw += w; j -= 1 }
+      j = i + 1
+      while j < ts.count, ts[j].along - a.along <= h { let w = exp(-0.5 * pow((ts[j].along - a.along) / sigma, 2)); sx += w * ts[j].at.x; sy += w * ts[j].at.y; sw += w; j += 1 }
+    }
+    let p = sw > 0 ? CGPoint(x: sx / sw, y: sy / sw) : a.at
+    let ht = min(3 * span, min(a.t - first.t, last.t - a.t))
+    var sf: CGFloat = 0, sfw: CGFloat = 0
+    if span > 0, ht > 0 {
+      var j = i
+      while j >= 0, a.t - ts[j].t <= ht { let w = CGFloat(exp(-0.5 * pow((a.t - ts[j].t) / span, 2))); sf += w * ts[j].force; sfw += w; j -= 1 }
+      j = i + 1
+      while j < ts.count, ts[j].t - a.t <= ht { let w = CGFloat(exp(-0.5 * pow((ts[j].t - a.t) / span, 2))); sf += w * ts[j].force; sfw += w; j += 1 }
+    }
+    return (p, sfw > 0 ? sf / sfw : a.force)
+  }
 
   /// The stroke of these touches, evened along itself; `from`: points already made of the same touches, of which
   /// those settled are kept as they are.
@@ -295,24 +324,7 @@ final class LiveInk {
     var nowSettled = start
     for i in start..<ts.count {
       let a = ts[i]
-      let h = min(3 * sigma, min(a.along - first.along, last.along - a.along))
-      var sx: CGFloat = 0, sy: CGFloat = 0, sw: CGFloat = 0
-      if sigma > 0, h > 0 {
-        var j = i
-        while j >= 0, a.along - ts[j].along <= h { let w = exp(-0.5 * pow((a.along - ts[j].along) / sigma, 2)); sx += w * ts[j].at.x; sy += w * ts[j].at.y; sw += w; j -= 1 }
-        j = i + 1
-        while j < ts.count, ts[j].along - a.along <= h { let w = exp(-0.5 * pow((ts[j].along - a.along) / sigma, 2)); sx += w * ts[j].at.x; sy += w * ts[j].at.y; sw += w; j += 1 }
-      }
-      let p = sw > 0 ? CGPoint(x: sx / sw, y: sy / sw) : a.at
-      let ht = min(3 * span, min(a.t - first.t, last.t - a.t))
-      var sf: CGFloat = 0, sfw: CGFloat = 0
-      if span > 0, ht > 0 {
-        var j = i
-        while j >= 0, a.t - ts[j].t <= ht { let w = CGFloat(exp(-0.5 * pow((a.t - ts[j].t) / span, 2))); sf += w * ts[j].force; sfw += w; j -= 1 }
-        j = i + 1
-        while j < ts.count, ts[j].t - a.t <= ht { let w = CGFloat(exp(-0.5 * pow((ts[j].t - a.t) / span, 2))); sf += w * ts[j].force; sfw += w; j += 1 }
-      }
-      let f = sfw > 0 ? sf / sfw : a.force
+      let (p, f) = LiveInk.evenOne(ts, i, sigma: sigma, span: span)
       out.append(point(a, at: p, force: f))
       if from == nil, last.along - a.along > 3 * sigma, a.along - first.along > 3 * sigma, last.t - a.t > 3 * span, i == nowSettled { nowSettled = i + 1 }
     }

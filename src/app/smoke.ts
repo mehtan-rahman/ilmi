@@ -16862,8 +16862,8 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
     const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
-    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside') {
-      if (part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside') await writtenSmoothErase(log, part);
+    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay') {
+      if (part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay') await writtenSmoothErase(log, part);
       else if (part === 'more') await writtenMore(log, vault.root);
       else if (part === 'tabs') await writtenTabs(log);
       else if (part === 'tall') await writtenTall(log);
@@ -18686,6 +18686,35 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
     await invoke('dev_ink_pencil', { what: 'live-ours' });
     await invoke('dev_ink_pen', { on: false });
     tools.setInk('pen');
+    await ink.settled();
+    return;
+  }
+
+  if (part === 'replay') {
+    // ── a device's strokes replayed (`"part": "replay"`; its `ilmi-ink.log` put as `replay.jsonl` in the app's
+    // temporary folder): each made again from its touches by the app's own evening, with the force evened over 15 ms
+    // (as before) in the left column and over 50 ms (now) in the right, on a notebook of blank paper zoomed as near as
+    // it goes to the scale each was written at (a notebook's 4.07 screen points to the point, a PDF's 7.53) ──
+    for (const [surface, onGlassWas] of [['notebook', 4.07], ['pdf', 7.53]] as const) {
+      const { NB, b, sheet } = await notebook(`replayed ${surface} ink`);
+      await zoomTo(NB, b, 1);
+      const at1 = (await onGlass(b, sheet)).k / dpr;
+      const z = Math.min(onGlassWas / at1, 8);
+      // (as near as the notebook goes: a zoom it holds below the one asked is taken as it is)
+      try { await zoomTo(NB, b, z); } catch { await bringPage(b, 1, 20, 0); await sleep(1500); }
+      const g = await onGlass(b, sheet);
+      log(`replay: ${surface} strokes, written at ${onGlassWas} screen points to the point, replayed at ${(g.k / dpr).toFixed(2)} (zoom ${z.toFixed(2)})`);
+      const colW = 100 / (g.k / dpr);
+      for (const [col, ms] of [[0, 15], [1, 50]] as const) {
+        await invoke('dev_ink_pencil', { what: `force-${ms}` });
+        await invoke('dev_ink_pencil', { what: `replay:${sheet}:${surface}:${8 / (g.k / dpr) + col * colW}:${6 / (g.k / dpr)}` });
+        await sleep(800);
+      }
+      await sleep(1500);
+      log(`smoothgeo: ${JSON.stringify({ shot: `replay-${surface}`, x: 0, y: g.at(0, 0)[1] * window.innerHeight * dpr, w: 220 * dpr, h: Math.min(window.innerHeight * dpr - g.at(0, 0)[1] * window.innerHeight * dpr, 1000 * dpr) })}`);
+      await shot(`replay-${surface}`);
+    }
+    await invoke('dev_ink_pencil', { what: 'force-50' });
     await ink.settled();
     return;
   }

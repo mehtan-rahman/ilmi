@@ -6,6 +6,36 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-25 — the pen's width evened over 50 ms: what was left of the jaggedness, found on the device's own strokes
+
+The user, on 4f64bd1: "a tiny bit smoother as well, just a little bit of jaggedness left"; the pen otherwise "works really well now". Their iPad's log (`ilmi-ink.log`, 18 pen strokes): PDF pages with the canvas at 7.53 (no oversampling at that zoom: 15 px to the drawing's point), a notebook at 8.13 (its canvas oversampled twice: 4.07 screen points, 8.1 px).
+
+**Where it was** (`gaps/smooth/loglook*.py`, `gaps/smooth/replay.m`). The log replayed on the Mac through the app's own evening and `stroke.m`'s outline matches the device's kept points within 0.011 px. Measured on the outline as drawn:
+
+- **The middle:** its change of turn from one 2-px piece to the next scores the same for the touches as they came as for the stroke evened (16° RMS). What it sees is the writing's own sharp turns, not tremor: at this zoom a Pencil's precise places, evened over 2 screen points, leave nothing of tremor to see. Evening it more only moves the line (95th from the touches 1.61 px at 2 points, 2.08 at 2.5, 2.58 at 3) and rounds corners.
+- **The outline's pieces:** places 3 px apart at 15 px/pt bow off the curve by under 0.1 px. A finer walk (0.1, 0.05, 0.025 pt) changes nothing measurable.
+- **The ends:** round, at the first and last touch, as before.
+- **The width:** the pen follows the force, and the force was evened over 15 ms. The radius departs from its own 4-px evening by 0.19 px RMS, 0.86 px at the 99th, on lines 10–16 px wide: the edges ripple. That is what was left.
+
+**The change.** The force evened over 50 ms (`LiveInk.forceSpan`), centred as the places are: nothing trails the tip, and the stroke kept is the one last drawn. On the device's strokes:
+
+| force span | width wiggle RMS | 99th | moved from the touches (95th) |
+|---|---|---|---|
+| 15 ms (before) | 0.193 px | 0.860 px | 1.61 px |
+| 30 ms | 0.130 px | 0.588 px | 1.61 px |
+| 50 ms (now) | 0.073 px | 0.331 px | 1.61 px |
+| 80 ms | 0.055 px | 0.242 px | 1.61 px |
+
+The places' evening stays at 2 screen points, so corners and small writing are as crisp as they were. 80 ms evens a little more but starts to flatten a meant swell of the hand.
+
+**On the simulator** (`written` `"part": "replay"`: the log put in the app's temporary folder, each stroke made again from its touches by `LiveInk.evenOne`, the code the stroke being written uses, at the scale it was written at): 15 ms in the left column, 50 ms in the right. The notebook's strokes are at their own 4.07; the PDF's at 4.97, the notebook's furthest, against their 7.53. Captures: `gaps/runs/x1-replay/`, `zoomed.png` for two words magnified.
+
+**Checks.** Air simulator: `pdfink` live (every ink, the dark theme: live against kept at most 33 of 255, the same widths), `written` (25 strokes kept as drawn, 0 as PencilKit's), `ink`: done. Typecheck clean; npm test 169 of 170 files whole, `perf.test.ts` on its time limits, passing alone.
+
+**Not seen.** The user's own eye on the change; strokes from another hand or speed than the log's eighteen.
+
+---
+
 ## 2026-11-24 — PencilKit's own pen, thin, behind a mode; ilmi's stroke evened along itself, centred
 
 The user: "it needs more smoothing", then whether PencilKit's own pen could do it, then "see if there's a way we could get this to work with pencilkit". Two pieces, both under study.

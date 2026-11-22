@@ -1861,6 +1861,43 @@ class InkPlugin: Plugin, PenEars {
   private var erasedSheet = ""
   func eraseNote(hit: Double) { eraseHit.append(hit) }
 
+  /// A dev run's replay of a device's strokes (`replay:<sheet>:<surface>:<dx>:<dy>`, the device's `ilmi-ink.log` as
+  /// `replay.jsonl` in the app's temporary folder): each stroke written on `surface` (`pdf` or `notebook`) made again
+  /// from its touches as they came, by `LiveInk.evenOne` at the scale it was written at (the canvas's zoom, a notebook's
+  /// canvas taken at twice the screen's points), its width asked read off the points it kept, and put on the notebook's
+  /// sheet as it is, in a column from (`dx`, `dy`), one under another.
+  private func replay(_ spec: String) {
+    let parts = spec.split(separator: ":").map(String.init)
+    guard parts.count == 4, let dx = Double(parts[2]), let dy = Double(parts[3]), let (f, l) = self.leaf(parts[0]),
+          let text = try? String(contentsOf: FileManager.default.temporaryDirectory.appendingPathComponent("replay.jsonl"), encoding: .utf8) else { return }
+    var y = dy
+    for line in text.split(separator: "\n") {
+      guard let d = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], (d["surface"] as? String) == parts[1],
+            let zoom = d["zoom"] as? Double, let touches = d["touches"] as? [[String: Any]], let kept = d["points"] as? [[Double]] else { continue }
+      let per = parts[1] == "pdf" ? 1.0 : 2.0
+      let onGlass = CGFloat(zoom / per)
+      var ts: [LiveInk.Touch] = []
+      for t in touches where (t["pred"] as? Int ?? 0) == 0 {
+        let p = CGPoint(x: (t["px"] as? Double ?? 0) / zoom, y: (t["py"] as? Double ?? 0) / zoom)
+        let along = ts.last.map { $0.along + hypot(p.x - $0.at.x, p.y - $0.at.y) * onGlass } ?? 0
+        ts.append(LiveInk.Touch(at: p, along: along, t: t["t"] as? Double ?? 0, force: CGFloat(t["f"] as? Double ?? 1), pencil: true, azimuth: CGFloat(t["az"] as? Double ?? 0), altitude: CGFloat(t["alt"] as? Double ?? .pi / 2)))
+      }
+      guard ts.count >= 2, kept.count == ts.count else { continue }
+      // the width asked, from the device's own points: size = (asked × f + 4) / 2, f = 1 + 0.85 (force − 1)
+      let asks = kept.map { k -> Double in let fm = min(max(1 + 0.85 * (k[3] - 1), 0.3), 2.4); return (2 * k[2] - 4) / fm }.sorted()
+      let asked = CGFloat(asks[asks.count / 2])
+      let made = ts.indices.map { i -> (CGPoint, CGFloat) in LiveInk.evenOne(ts, i, sigma: LiveInk.along, span: LiveInk.forceSpan) }
+      let minX = made.map { $0.0.x }.min() ?? 0, minY = made.map { $0.0.y }.min() ?? 0, maxY = made.map { $0.0.y }.max() ?? 0
+      let pts = zip(ts, made).map { a, m -> PKStrokePoint in
+        let fm = min(max(1 + 0.85 * (m.1 - 1), 0.3), 2.4)
+        let size = (asked * fm + 4) / 2
+        return PKStrokePoint(location: CGPoint(x: m.0.x - minX + CGFloat(dx), y: m.0.y - minY + CGFloat(y)), timeOffset: a.t - ts[0].t, size: CGSize(width: size, height: size), opacity: 1, force: m.1, azimuth: a.azimuth, altitude: a.altitude)
+      }
+      f.write(l, PKStroke(ink: PKInk(.pen, color: .black), path: PKStrokePath(controlPoints: pts, creationDate: Date()), transform: .identity, mask: nil), rest: false)
+      y += Double(maxY - minY) + 4
+    }
+  }
+
   /// A dev run's: what PencilKit's own drawing makes of a thin pen stroke, as stored points and as points four times
   /// as wide under a quarter's transform, as pictures at 8 px to the point (`pkthin-<width>-<scale>.png` in the app's
   /// temporary folder); and each ink's widths as PencilKit's tool takes them (`pkthin.txt`).
@@ -3306,6 +3343,11 @@ class InkPlugin: Plugin, PenEars {
         if old { ilmi_stroke_tune(0.5, 0.012, 0) } else { ilmi_stroke_tune(0.2, 0.004, -1) }
       } else if args.what == "pkthin" {
         self.pkThin()
+      } else if args.what.hasPrefix("force-"), let ms = Double(args.what.dropFirst(6)) {
+        // (a dev run's: the force evened over this many ms, to compare)
+        LiveInk.forceSpan = ms / 1000
+      } else if args.what.hasPrefix("replay:") {
+        self.replay(String(args.what.dropFirst(7)))
       } else if args.what == "compare-on" || args.what == "compare-off" {
         LiveInk.compare = args.what == "compare-on"
       } else if args.what == "erase-reset" {

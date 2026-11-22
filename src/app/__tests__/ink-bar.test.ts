@@ -1253,20 +1253,25 @@ describe('the row of tools', () => {
     expect(kept().ink).toBe('fountain');
     expect(inPop('[data-ink-ink][aria-pressed="true"]').map((b) => b.dataset.inkInk)).toEqual(['fountain']);
     expect(said('ink_tool')).toEqual([{ tool: { ...PEN, ink: 'fountain' } }]);
-    // the size: between what a pen can be, at the width of the size in use
+    // the size is its sizes' (2026-11-25): none here until the size in use is pressed again, and then under them,
+    // between what a pen can be, at the width of the size in use
+    expect(inPop('[data-ink-range="width"]')).toEqual([]);
+    await pressPop('[data-ink-size="1"]');
     const range = () => inPop<HTMLInputElement>('[data-ink-range="width"]')[0]!;
     expect([range().min, range().max, range().step, range().value, range().getAttribute('aria-label')]).toEqual(['0.2', '8', '0.1', '2.2', 'size']);
     expect(inPop('[data-ink-preview]')[0]!.dataset).toMatchObject({ inkPreview: 'pen', width: '2.2' });
-    expect(inPop('.ip-v')[0]!.textContent).toBe('2.2');
+    expect(range().closest('.ip-row')!.querySelector('.ip-v')!.textContent).toBe('2.2');
     calls.length = 0;
     await slide('width', 5);
     expect(kept().widths.pen).toEqual([1.2, 5, 3.6]);
     expect(said('ink_tool')).toEqual([{ tool: { ...PEN, ink: 'fountain', width: 5 } }]);
     expect(range().value).toBe('5');
-    expect(inPop('.ip-v')[0]!.textContent).toBe('5.0');
+    expect(range().closest('.ip-row')!.querySelector('.ip-v')!.textContent).toBe('5.0');
     expect(inPop('[data-ink-preview]')[0]!.dataset.width).toBe('5');
-    // its three sizes: another chosen, the slider is at that one's width, and changes that one
+    // its three sizes: another chosen (the width away), pressed again the slider is at that one's width, and changes that one
     expect(inPop('[data-ink-size][aria-pressed="true"]').map((b) => b.getAttribute('aria-label'))).toEqual(['medium']);
+    await pressPop('[data-ink-size="0"]');
+    expect(inPop('[data-ink-range="width"]')).toEqual([]);
     await pressPop('[data-ink-size="0"]');
     expect(range().value).toBe('1.2');
     await slide('width', 0.7);
@@ -1299,12 +1304,14 @@ describe('the row of tools', () => {
     await show(a);
     await press('[aria-label="pen"]');
     expect(inPop('[data-ink-ink]').map((b) => b.dataset.inkInk)).toEqual(['pen', 'pencil']);
+    await pressPop('[data-ink-size="1"]');
     const range = () => inPop<HTMLInputElement>('[data-ink-range="width"]')[0]!;
     expect([range().min, range().max, range().value]).toEqual(['0.2', '8', '2.2']);
     await pressPop('[data-ink-ink="pencil"]');
     expect([range().min, range().max, range().value]).toEqual(['0.2', '8', '2.2']);
     await press('[aria-label="highlighter"]');
     await press('[aria-label="highlighter"]');
+    await pressPop('[data-ink-size="1"]');
     expect([range().min, range().max, range().value]).toEqual(['9.7', '30', '16']);
     // a device with the one pen has no inks to choose among
     act(() => root!.unmount());
@@ -1329,15 +1336,16 @@ describe('the row of tools', () => {
     await press('[aria-label="highlighter"]');
     expect(pop()!.getAttribute('aria-label')).toBe('highlighter settings');
     expect(inPop('[data-ink-ink], [data-ink-eraser]')).toEqual([]);
+    await pressPop('[data-ink-size="1"]');
     const width = () => inPop<HTMLInputElement>('[data-ink-range="width"]')[0]!;
     const opacity = () => inPop<HTMLInputElement>('[data-ink-range="opacity"]')[0]!;
     expect([width().min, width().max, width().value]).toEqual(['6', '40', '16']);
     expect([opacity().min, opacity().max, opacity().step, opacity().value, opacity().getAttribute('aria-label')]).toEqual(['0.2', '1', '0.05', '1', 'opacity']);
-    expect(inPop('.ip-v').map((v) => v.textContent)).toEqual(['16.0', '100%']);
+    expect(inPop('.ip-v').map((v) => v.textContent)).toEqual(['100%', '16.0']);
     calls.length = 0;
     await slide('opacity', 0.5);
     expect(kept().opacity).toBe(0.5);
-    expect(inPop('.ip-v').map((v) => v.textContent)).toEqual(['16.0', '50%']);
+    expect(inPop('.ip-v').map((v) => v.textContent)).toEqual(['50%', '16.0']);
     expect(said('ink_tool')).toEqual([{ tool: { kind: 'highlighter', color: '#ffe03a', width: 16, opacity: 0.5, snap: true } }]);
     await slide('width', 30);
     expect(kept().widths.highlighter).toEqual([10, 30, 24]);
@@ -1350,6 +1358,7 @@ describe('the row of tools', () => {
     expect(pop()!.getAttribute('aria-label')).toBe('eraser settings');
     expect(inPop('[data-ink-eraser]').map((b) => [b.dataset.inkEraser, b.textContent, b.getAttribute('aria-pressed')])).toEqual([['stroke', 'whole stroke', 'true'], ['part', 'part of a stroke', 'false']]);
     expect(inPop('[data-ink-ink], [data-ink-range="opacity"], [data-ink-swatch], [data-ink-snap], [data-ink-recent]')).toEqual([]);
+    await pressPop('[data-ink-size="1"]');
     expect([width().min, width().max, width().value]).toEqual(['4', '48', '16']);
     expect(inPop('[data-ink-size]').length).toBe(3);
     calls.length = 0;
@@ -1360,6 +1369,48 @@ describe('the row of tools', () => {
     expect(said('ink_tool').map((t) => t.tool)).toEqual([{ kind: 'eraser', color: '#000000', width: 16, mode: 'part' }, { kind: 'eraser', color: '#000000', width: 40, mode: 'part' }]);
     await pressPop('[data-ink-eraser="stroke"]');
     expect(kept().eraser).toBe('stroke');
+  });
+
+  it('a size on the row pressed again has its width set under it, kept in that size; the tool pressed again has no width', async () => {
+    const a = await launch();
+    await a.scene();
+    await show(a);
+    const kept = () => a.tools.useInkTools.getState().kept;
+    const sizePop = () => document.querySelector<HTMLElement>('.ink-size-pop');
+    const rowSize = (i: number) => host.querySelector<HTMLElement>(`.ib-sizes [data-ink-size="${i}"]`)!;
+    // the pen in use: its medium size lit; pressed once more, its width under it
+    expect(lit('.ib-sizes button')).toEqual(['medium']);
+    expect(rowSize(1).getAttribute('aria-expanded')).toBe('false');
+    await act(async () => { rowSize(1).click(); await wait(); });
+    expect(sizePop()?.dataset.inkSizePop).toBe('pen');
+    expect(rowSize(1).getAttribute('aria-expanded')).toBe('true');
+    const range = () => sizePop()!.querySelector<HTMLInputElement>('[data-ink-range="width"]')!;
+    expect([range().min, range().max, range().value]).toEqual(['0.2', '8', '2.2']);
+    calls.length = 0;
+    await slide('width', 3.4);
+    expect(kept().widths.pen[1]).toBe(3.4);
+    expect(said('ink_tool')).toEqual([{ tool: { ...PEN, width: 3.4 } }]);
+    // the size's mark draws its width: wider than the thin one's
+    const markWidth = (i: number) => Number(rowSize(i).querySelector('path')!.getAttribute('stroke-width'));
+    expect(markWidth(1)).toBeGreaterThan(markWidth(0));
+    // another size: chosen, the width away
+    await act(async () => { rowSize(2).click(); await wait(); });
+    expect(sizePop()).toBeNull();
+    expect(lit('.ib-sizes button')).toEqual(['thick']);
+    // pressed again it opens, and again it closes
+    await act(async () => { rowSize(2).click(); await wait(); });
+    expect(sizePop()).not.toBeNull();
+    await act(async () => { rowSize(2).click(); await wait(); });
+    expect(sizePop()).toBeNull();
+    // the pen pressed again: its settings, with its inks and no width
+    await press('[aria-label="pen"]');
+    expect(pop()!.dataset.inkPop).toBe('pen');
+    expect(inPop('[data-ink-range="width"]')).toEqual([]);
+    // kept on this device: the next launch has the medium size at 3.4
+    act(() => root!.unmount());
+    host.remove();
+    const b = await launch();
+    expect(b.tools.useInkTools.getState().kept.widths.pen[1]).toBe(3.4);
   });
 
   it('the colours lately taken from the wheel are in the settings once there are some, and one pressed is in use again', async () => {

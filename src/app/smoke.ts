@@ -16855,15 +16855,19 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     if (!path) throw new Error('ILMI_VAULT (smoke.json: "vault") names the sample\'s copy');
     const vault = await openVault(await devCollection(path));
     const fs = vault.fs as StoreFs;
-    // the tools as they start, whatever a run before left chosen on this device
-    try { localStorage.removeItem(tools.INK_KEY); } catch { /* none */ }
-    tools.useInkTools.setState({ kept: { ...tools.DEFAULTS, tool: 'eraser' } });
+    // the tools as they start, whatever a run before left chosen on this device (not for a launch that is to find
+    // what the one before it kept, `"part": "presets"` again)
+    const keepTools = ((await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '') === 'presets' && !!(await invoke<string | null>('dev_env', { name: 'ILMI_RELAUNCH' }));
+    if (!keepTools) {
+      try { localStorage.removeItem(tools.INK_KEY); } catch { /* none */ }
+      tools.useInkTools.setState({ kept: { ...tools.DEFAULTS, tool: 'eraser' } });
+    }
     tools.setTool('pen');
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
     const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
-    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay') {
-      if (part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay') await writtenSmoothErase(log, part);
+    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets') {
+      if (part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets') await writtenSmoothErase(log, part);
       else if (part === 'more') await writtenMore(log, vault.root);
       else if (part === 'tabs') await writtenTabs(log);
       else if (part === 'tall') await writtenTall(log);
@@ -17359,6 +17363,10 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
     }
     tap(q('[data-ink-ink="pen"]', pop)!);
     await poll(async () => (await state()).tool?.ink === 'pen', 'pen: the pen again', 25000);
+    // (its width is its sizes': the one in use pressed again has it under them, 2026-11-25)
+    must(!q('[data-ink-range="width"]', pop), 'no width of its own in the pen\'s settings');
+    tap(q('[data-ink-size][aria-pressed="true"]', pop)!);
+    await poll(() => q('[data-ink-range="width"]', pop), 'the size in use pressed again: its width', 8000);
     slide(q<HTMLInputElement>('[data-ink-range="width"]', pop)!, 5.2);
     await poll(async () => { const t = (await state()).tool; return t && Math.abs(t.width - 5.2) < 0.01 && q('[data-ink-preview="pen"]', pop)?.getAttribute('data-width') === '5.2' && kept().widths.pen[1] === 5.2; }, 'the slider makes the size in use 5.2 pt: the canvases, the stroke shown, and what is kept', 8000);
     slide(q<HTMLInputElement>('[data-ink-range="width"]', pop)!, 2.2);
@@ -18686,6 +18694,47 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
     await invoke('dev_ink_pencil', { what: 'live-ours' });
     await invoke('dev_ink_pen', { on: false });
     tools.setInk('pen');
+    await ink.settled();
+    return;
+  }
+
+  if (part === 'presets') {
+    // ── a tool's sizes set where they are (`"part": "presets"`, under the rig; `"relaunch": "1"` the launch after it):
+    // the pen's three sizes, each chosen and pressed again, its width set under it (0.4, 1.5 and 3.5 points: the even line goes to 4) and kept in
+    // it; their marks drawn as wide as they are; a launch after keeps all three ──
+    const bar = () => q<HTMLElement>('.inkbar');
+    const tap = (el: Element) => { const r = el.getBoundingClientRect(); ask('tap', (r.left + r.width / 2) / window.innerWidth, (r.top + r.height / 2) / window.innerHeight); };
+    const iset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    const slide = (input: HTMLInputElement, v: number) => { iset.call(input, String(v)); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); };
+    const again = !!(await invoke<string | null>('dev_env', { name: 'ILMI_RELAUNCH' }));
+    const name = again ? 'presets again' : 'presets';
+    await notebook(name);
+    await poll(() => bar(), 'the row of tools', 15000);
+    if (q<HTMLElement>('[data-ink-tool="pen"]', bar()!)?.getAttribute('aria-pressed') !== 'true') tap(q('[data-ink-tool="pen"]', bar()!)!);
+    await poll(() => q('[data-ink-tool="pen"]', bar()!)?.getAttribute('aria-pressed') === 'true', 'the pen', 15000);
+    const marks = () => [0, 1, 2].map((i) => Number(q(`.ib-sizes [data-ink-size="${i}"] path`, bar()!)?.getAttribute('stroke-width') ?? 0));
+    const want = [0.4, 1.5, 3.5];
+    if (!again) {
+      for (const [i, w] of want.entries()) {
+        const btn = () => q<HTMLElement>(`.ib-sizes [data-ink-size="${i}"]`, bar()!)!;
+        if (btn().getAttribute('aria-pressed') !== 'true') { tap(btn()); await poll(() => btn().getAttribute('aria-pressed') === 'true', `size ${i} chosen`, 8000); await sleep(300); }
+        tap(btn());
+        const pop = await poll(() => q<HTMLElement>('.ink-size-pop'), `size ${i} pressed again: its width under it`, 8000);
+        must(!q('.ink-pop[data-ink-pop]'), 'and not the pen\'s settings');
+        slide(q<HTMLInputElement>('[data-ink-range="width"]', pop)!, w);
+        await poll(async () => { const t = (await state()).tool; return t && Math.abs(t.width - w) < 0.01; }, `the canvases write ${w} pt`, 8000);
+        if (i === 1) await shot('presets-open');
+        tap(btn());
+        await poll(() => !q('.ink-size-pop'), 'pressed again: put away', 8000);
+      }
+    }
+    const kw = tools.useInkTools.getState().kept.widths.pen;
+    log(`presets: ${again ? 'after a launch' : 'set'}: the pen's sizes ${kw.join(', ')} pt; their marks ${marks().map((m) => m.toFixed(2)).join(', ')} wide`);
+    must(kw.every((v, i) => Math.abs(v - want[i]!) < 0.01), `the pen's sizes are ${want.join(', ')} pt`);
+    must(marks()[0]! < marks()[1]! && marks()[1]! < marks()[2]!, 'their marks thin, medium and thick');
+    await shot(again ? 'presets-again' : 'presets-set');
+    // (left as the run after expects: medium in use)
+    if (!again) { tap(q('.ib-sizes [data-ink-size="1"]', bar()!)!); await sleep(500); }
     await ink.settled();
     return;
   }

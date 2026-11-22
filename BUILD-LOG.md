@@ -6,6 +6,20 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-25 — a tool's width set on its sizes
+
+The user: "it's better if the pen thickness was changed by tapping on the 3 presets for it and not by clicking on the pen. should also be saved in the presets and it'd be nice if the strokes themselves in the preset icons changed accordingly".
+
+- **A size pressed:** the size in use. The size in use pressed again: its width under it on the row (`SizeSet`), a stroke drawn as it is set and the slider. What is set is that size's from then on (`setWidth` on the size in use, kept on the device with the other tools). Pressed again, or anywhere else, it goes. Another size pressed: that one is in use, and the width goes.
+- **The tool pressed again:** its other settings (ink, pressure, opacity, colours, shapes, the eraser's two ways), with no width of their own. Where the row is too narrow for the sizes, they are in those settings, and the size in use pressed there has its width under them (`WidthRow`).
+- **The sizes' marks:** as thick as the size, by ratio over the tool's own widths. The pen's 0.4, 1.5 and 3.5 pt draw 1.56, 3.21 and 4.27 wide in the 20-unit mark.
+
+The row of tools is an iPad's: a phone has none, and a Mac reads ink. So it is the same row on a notebook, on a book's pages (web or native), and over a typed note's ink.
+
+**Checks.** `written` `"part": "presets"` on the Air (the pen's three sizes set to 0.4, 1.5 and 3.5 pt through the row, each chosen and pressed again; captures `gaps/runs/y-presets-3/`), then `"relaunch": "1"` on a fresh launch: all three as set, the marks thin, medium and thick (`gaps/runs/y-presets-4/`, `gaps/runs/presets-evidence.png`). `ink-bar.test.ts`: 54 pass, one new (a size on the row pressed again, the width kept in it, kept after a launch; the tool pressed again has no width). `written` whole on the Air: done (its pen settings' step now sets the width through the size in use). Typecheck clean; npm test 2674 passed and 2 skipped in 170 files.
+
+---
+
 ## 2026-11-25 — the pen's width evened over 50 ms: what was left of the jaggedness, found on the device's own strokes
 
 The user, on 4f64bd1: "a tiny bit smoother as well, just a little bit of jaggedness left"; the pen otherwise "works really well now". Their iPad's log (`ilmi-ink.log`, 18 pen strokes): PDF pages with the canvas at 7.53 (no oversampling at that zoom: 15 px to the drawing's point), a notebook at 8.13 (its canvas oversampled twice: 4.07 screen points, 8.1 px).

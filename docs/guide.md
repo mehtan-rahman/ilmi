@@ -1130,8 +1130,11 @@ The tools are a row under the bar over the pages, on an iPad only:
   takes away what it is drawn across, with a ring under the Pencil that
   shows how far it reaches; with `select`, draw a loop round some strokes.
 - Three sizes of the tool in use, `thin`, `medium`, `thick`: a line for the
-  pen, a band for the highlighter, a round for the eraser. Each tool
-  remembers its own.
+  pen, a band for the highlighter, a round for the eraser, each drawn as
+  thick as that size is. Press a size to use it; press the size in use
+  again and its width opens under it, a slider with a stroke drawn as it is
+  set, and what you set is that size's from then on. Each tool remembers
+  its own three.
 - Its colours: black, blue, red and green for the pen; yellow, green, pink
   and blue for the highlighter. A press on the colour in use, or a hold on
   any of them, opens the colour wheel to replace it. The ring after them,
@@ -1148,12 +1151,12 @@ The tools are a row under the bar over the pages, on an iPad only:
   the tool it had, and a finger never draws.
 
 Press the tool in use again and its settings open under it. The pen's: its
-ink (`pen`, `fine`, `fountain`, `pencil`, as many as the iPad has), the
-size in use made thinner or thicker by a slider, with a stroke drawn as it
-is set, the three sizes, the colours, the last few colours taken from the
-wheel, and `hold to make a shape`. The highlighter's: its size, its
-opacity, its colours, and `hold for a straight line`. The eraser's:
-`whole stroke` or `part of a stroke`, and its size. Each press acts at
+ink (`pen`, `fine`, `fountain`, `pencil`, as many as the iPad has), a stroke
+drawn as it is set, its pressure, the three sizes (the one in use pressed
+again has its width under them, as on the row), the colours, the last few
+colours taken from the wheel, and `hold to make a shape`. The
+highlighter's: its opacity, its sizes, its colours, and `hold for a straight
+line`. The eraser's: `whole stroke` or `part of a stroke`, and its sizes. Each press acts at
 once; a press anywhere else, or the Pencil writing, closes them. In a pane
 too narrow for the whole row (a note beside the pages, an 11-inch iPad on
 its side) the sizes leave the row first, then the colours but for the one

@@ -341,11 +341,13 @@ export interface InkTools {
   picking: Picking | null;
   /** The tool whose settings are open under the row. */
   open: ToolKind | null;
+  /** The tool whose size in use is being set: its preset pressed again (2026-11-25), its width under it. */
+  sizing: Sized | null;
   /** What this device's PencilKit takes (`ink_caps`): the inks there are and their widths. Null until asked, and where there is no canvas. */
   caps: { inks: Ranges; squeeze: boolean } | null;
 }
 
-export const useInkTools = create<InkTools>(() => ({ kept: load(), undo: false, redo: false, picking: null, open: null, caps: null }));
+export const useInkTools = create<InkTools>(() => ({ kept: load(), undo: false, redo: false, picking: null, open: null, sizing: null, caps: null }));
 
 /** Whether there is a canvas to tell: an iPad's (`hasCanvas`, `ink.ts`). */
 const canvas = (): boolean => useApp.getState().mobile;
@@ -390,9 +392,20 @@ export const setEraser = (mode: EraserMode): void => put(withEraser(kept(), mode
 export const setSnap = (on: boolean): void => put(withSnap(kept(), on));
 export const setFinger = (on: boolean): void => put(withFinger(kept(), on));
 /** The row shown, or tucked away; tucked, its settings close. */
-export const setShown = (on: boolean): void => { if (!on) setOpen(null); put(withShown(kept(), on)); };
+export const setShown = (on: boolean): void => { if (!on) { setOpen(null); setSizing(null); } put(withShown(kept(), on)); };
 /** A tool's settings opened under the row, or (null) closed. */
 export const setOpen = (tool: ToolKind | null): void => { if (useInkTools.getState().open !== tool) useInkTools.setState({ open: tool }); };
+/** A tool's size in use being set (its preset pressed again), or (null) not. */
+export const setSizing = (tool: Sized | null): void => { if (useInkTools.getState().sizing !== tool) useInkTools.setState({ sizing: tool }); };
+/**
+ * A tool's preset pressed (2026-11-25): another is chosen, and the width it holds is the tool's; the one in use,
+ * pressed again, has its width set under it (the slider), and what is set is kept in that preset. Pressed again
+ * while it is being set, it is put away.
+ */
+export const pressSize = (tool: Sized, size: number): void => {
+  if (kept().size[tool] !== size) { setSizing(null); setSize(tool, size); return; }
+  setSizing(useInkTools.getState().sizing === tool ? null : tool);
+};
 
 let told = false;
 /** The canvases exist (the first scene reached them, `ink.ts`): they are told the tool and the finger, once, and asked what inks they have. */

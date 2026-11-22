@@ -590,7 +590,16 @@ touches its watcher sees, since PencilKit's do nothing through a recogniser
 moved onto the web view. One undo manager is every canvas's (`ink_undo`,
 `ink_redo`, and a `history` event when what can be undone changes);
 `ink_finger` is `draw with finger`; `ink_color` puts up the system's colour
-wheel as a popover from the swatch.
+wheel as a popover from the swatch. A tool's width is its three sizes'
+(2026-11-25): the size in use pressed again sets `sizing` in
+`useInkTools` (`pressSize`), and its width is a slider under it on the row
+(`SizeSet`) or, where the row is narrow and the sizes are in the tool's
+settings, under them there (`WidthRow`); `setWidth` keeps it in that size,
+on the device with the rest of the tools. The tool pressed again opens its
+other settings, with no width. A size's mark is as thick as its width, by
+ratio over the tool's own range (`SizeMark`). `written`'s `"part":
+"presets"` sets the pen's three under the rig, and with `"relaunch": "1"`
+finds them after a launch.
 
 Since milestone 85 a page's canvas stays on the screen at rest (`ink_fill`
 with `show`; since 89 only a phone's notebook's, see below: a PDF's page

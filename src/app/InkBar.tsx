@@ -21,7 +21,7 @@ import { createPortal } from 'react-dom';
 import { hasCanvas, sceneSoon } from './ink.js';
 import {
   CUSTOM, OPACITY_MIN, SIZE_NAMES, SWATCHES, TOOLS, colorOf, inksHere, isInked, isSized, pickColor, rangeOf, redo, setEraser, setFinger, setInk, setOpacity, setSense, SENSES, SENSE_MAX,
-  setOpen, setRecent, setShown, setSize, setSnap, setSwatch, setTool, setWidth, swatchName, undo, useInkTools, widthOf,
+  WIDTHS, pressSize, setOpen, setRecent, setShown, setSizing, setSnap, setSwatch, setTool, setWidth, swatchName, undo, useInkTools, widthOf,
   type Inked, type Kept, type PenInk, type Sized, type ToolKind,
 } from './inkTools.js';
 import { Icon, type InkIconName } from './icons.js';
@@ -44,11 +44,12 @@ export const rowFit = (w: number, tool: ToolKind = 'pen'): 'full' | 'mid' | 'com
 
 /** A size as it is drawn: a pen's line, a highlighter's band, an eraser's round, as heavy as the size is among what the tool can be. */
 function SizeMark({ tool, width }: { tool: Sized; width: number }) {
-  const span = tool === 'pen' ? [0.5, 8] : tool === 'highlighter' ? [6, 40] : [4, 48];
-  const t = Math.min(1, Math.max(0, (width - span[0]!) / (span[1]! - span[0]!)));
+  // (over the tool's own widths as the eye takes them, by ratio: a pen's 0.3 and 0.6 are as far apart as its 3 and 6)
+  const [lo, hi] = WIDTHS[tool];
+  const t = Math.min(1, Math.max(0, Math.log(Math.max(width, lo) / lo) / Math.log(hi / lo)));
   return (
     <svg className="ib-size-mark" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeLinecap="round" aria-hidden="true" focusable="false">
-      {tool === 'pen' && <path d="M4 14.5C7.5 14 9 6.5 16 5.5" strokeWidth={0.9 + Math.sqrt(t) * 4.2} />}
+      {tool === 'pen' && <path d="M4 14.5C7.5 14 9 6.5 16 5.5" strokeWidth={0.7 + t * 4.6} />}
       {tool === 'highlighter' && <path d="M4.5 10h11" strokeWidth={2.5 + t * 8.5} strokeLinecap="butt" />}
       {tool === 'eraser' && <circle cx="10" cy="10" r={2.2 + t * 5.6} strokeWidth="1.4" />}
     </svg>
@@ -107,12 +108,13 @@ function Swatches({ tool, kept, only }: { tool: Inked; kept: Kept; /** The one i
   );
 }
 
-/** A tool's three sizes. */
+/** A tool's three sizes: one chosen, and the one in use pressed again has its width set (`pressSize`). */
 function Sizes({ tool, kept }: { tool: Sized; kept: Kept }) {
+  const sizing = useInkTools((s) => s.sizing);
   return (
     <div className="ib-group ib-sizes" role="group" aria-label="size">
       {SIZE_NAMES.map((name, i) => (
-        <button key={name} type="button" className="ib-btn ib-size" data-ink-size={i} aria-label={name} title={name} aria-pressed={kept.size[tool] === i} onClick={() => setSize(tool, i)}>
+        <button key={name} type="button" className="ib-btn ib-size" data-ink-size={i} aria-label={name} title={name} aria-pressed={kept.size[tool] === i} aria-haspopup={kept.size[tool] === i ? 'dialog' : undefined} aria-expanded={kept.size[tool] === i ? sizing === tool : undefined} onClick={() => pressSize(tool, i)}>
           <SizeMark tool={tool} width={kept.widths[tool][i]!} />
         </button>
       ))}
@@ -142,6 +144,57 @@ function Preview({ tool, kept, width }: { tool: Sized; kept: Kept; width: number
   );
 }
 
+/** The width of the preset in use, set: a slider over the tool's widths, the width beside it in points. */
+function WidthRow({ tool, lo, hi, width }: { tool: Sized; lo: number; hi: number; width: number }) {
+  return (
+    <label className="ip-row">
+      <span className="ip-l">size</span>
+      <input type="range" data-ink-range="width" min={lo} max={hi} step={0.1} value={width} aria-label="size" onChange={(e) => setWidth(tool, Number(e.currentTarget.value))} />
+      <span className="ip-v">{width.toFixed(1)}</span>
+    </label>
+  );
+}
+
+/** The preset in use pressed again, on the row: its width set under it, and kept in it. */
+function SizeSet({ tool, kept, anchor, onClose }: { tool: Sized; kept: Kept; anchor: HTMLElement; onClose(): void }) {
+  const caps = useInkTools((s) => s.caps);
+  const ref = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      const bar = anchor.closest('.inkbar')?.getBoundingClientRect() ?? r;
+      const w = ref.current?.offsetWidth ?? 264;
+      setAt({ left: Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)), top: bar.bottom + 6 });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [anchor]);
+  // a press anywhere else closes it (a preset on the row is its own: pressed, it decides)
+  useEffect(() => {
+    const out = (e: Event) => {
+      const t = e.target as Node | null;
+      if (t && (ref.current?.contains(t) || (t instanceof Element && t.closest('.ib-sizes')))) return;
+      onClose();
+    };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('pointerdown', out, true);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('pointerdown', out, true); document.removeEventListener('keydown', key); };
+  }, [anchor, onClose]);
+  useEffect(() => { sceneSoon(); return () => sceneSoon(); }, [at, tool]);
+  const [lo, hi] = rangeOf(kept, tool, caps?.inks);
+  const width = widthOf(kept, tool, caps?.inks);
+  return createPortal(
+    <div ref={ref} className="ink-pop ink-size-pop" role="dialog" aria-label={`${SIZE_NAMES[kept.size[tool]]} ${tool} size`} data-ink-over="" data-ink-size-pop={tool} style={at ? { left: at.left, top: at.top } : { visibility: 'hidden' }} onMouseDown={(e) => { e.stopPropagation(); if ((e.target as HTMLElement).tagName !== 'INPUT') e.preventDefault(); }}>
+      <Preview tool={tool} kept={kept} width={width} />
+      <WidthRow tool={tool} lo={lo} hi={hi} width={width} />
+    </div>,
+    document.body,
+  );
+}
+
 const INK_MARK: Record<PenInk, JSX.Element> = {
   pen: <path d="M3 12C7 4 10 14 17 6" strokeWidth="2" />,
   monoline: <path d="M3 12C7 4 10 14 17 6" strokeWidth="1.1" />,
@@ -152,6 +205,7 @@ const INK_MARK: Record<PenInk, JSX.Element> = {
 /** A tool's settings, under the row from the tool. */
 function Settings({ tool, kept, anchor, onClose }: { tool: Sized; kept: Kept; anchor: HTMLElement; onClose(): void }) {
   const caps = useInkTools((s) => s.caps);
+  const sizing = useInkTools((s) => s.sizing);
   const ref = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
@@ -202,11 +256,6 @@ function Settings({ tool, kept, anchor, onClose }: { tool: Sized; kept: Kept; an
         </div>
       )}
       <Preview tool={tool} kept={kept} width={width} />
-      <label className="ip-row">
-        <span className="ip-l">size</span>
-        <input type="range" data-ink-range="width" min={lo} max={hi} step={0.1} value={width} aria-label="size" onChange={(e) => setWidth(tool, Number(e.currentTarget.value))} />
-        <span className="ip-v">{width.toFixed(1)}</span>
-      </label>
       {tool === 'pen' && SENSES.includes(kept.ink) && (
         <label className="ip-row">
           <span className="ip-l">pressure</span>
@@ -222,6 +271,7 @@ function Settings({ tool, kept, anchor, onClose }: { tool: Sized; kept: Kept; an
         </label>
       )}
       <div className="ip-line"><Sizes tool={tool} kept={kept} /></div>
+      {sizing === tool && <WidthRow tool={tool} lo={lo} hi={hi} width={width} />}
       {isInked(tool) && <>
         <div className="ip-line"><Swatches tool={tool} kept={kept} /></div>
         {kept.recent[tool].length > 0 && (
@@ -249,6 +299,7 @@ export function InkBar({ id, fixed = false }: { id: string; /** Always there, wi
   const canUndo = useInkTools((s) => s.undo);
   const canRedo = useInkTools((s) => s.redo);
   const open = useInkTools((s) => s.open);
+  const sizing = useInkTools((s) => s.sizing);
   const bar = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState<'full' | 'mid' | 'compact'>('full');
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -269,13 +320,21 @@ export function InkBar({ id, fixed = false }: { id: string; /** Always there, wi
     const el = open && open === tool ? bar.current?.querySelector<HTMLElement>(`[data-ink-tool="${open}"]`) ?? null : null;
     setAnchor(el && el.getClientRects().length && bar.current?.closest('.pane')?.getAttribute('data-active') !== '0' ? el : null);
   }, [open, tool, show, fit]);
-  // a tool other than the one whose settings are open: they close
+  // a tool other than the one whose settings are open: they close; and its size being set
   useEffect(() => { if (open && open !== tool) setOpen(null); }, [open, tool]);
+  useEffect(() => { if (sizing && sizing !== tool) setSizing(null); }, [sizing, tool]);
+  // the preset in use on this row, the size set hangs from it (the row's presets shown: not where the row is narrow)
+  const [sizeAnchor, setSizeAnchor] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const el = sizing && sizing === tool && open !== tool ? bar.current?.querySelector<HTMLElement>('.ib-sizes .ib-size[aria-pressed="true"]') ?? null : null;
+    setSizeAnchor(el && el.getClientRects().length && bar.current?.closest('.pane')?.getAttribute('data-active') !== '0' ? el : null);
+  }, [sizing, tool, open, show, fit, kept.size]);
   if (!show) return null;
 
   const pressTool = (t: ToolKind) => {
     if (t !== tool) { setTool(t); return; }
-    // the tool in use, pressed again: its settings, and away again
+    // the tool in use, pressed again: its settings (its ink, pressure, colours; its width is its presets'), and away again
+    setSizing(null);
     if (isSized(t)) setOpen(open === t ? null : t);
   };
 
@@ -301,7 +360,8 @@ export function InkBar({ id, fixed = false }: { id: string; /** Always there, wi
         <button type="button" className="ib-btn" data-ink-do="finger" aria-label="draw with finger" title="draw with finger" aria-pressed={kept.finger} onClick={() => setFinger(!kept.finger)}><Icon name="finger" /></button>
         {!fixed && <button type="button" className="ib-btn" data-ink-do="tuck" aria-label="hide tools" title="hide tools" onClick={() => setShown(false)}><Icon name="tuck" /></button>}
       </div>
-      {anchor && isSized(tool) && open === tool && <Settings tool={tool} kept={kept} anchor={anchor} onClose={() => setOpen(null)} />}
+      {anchor && isSized(tool) && open === tool && <Settings tool={tool} kept={kept} anchor={anchor} onClose={() => { setOpen(null); setSizing(null); }} />}
+      {sizeAnchor && isSized(tool) && sizing === tool && open !== tool && <SizeSet tool={tool} kept={kept} anchor={sizeAnchor} onClose={() => setSizing(null)} />}
     </div>
   );
 }

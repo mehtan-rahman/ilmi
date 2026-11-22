@@ -975,6 +975,35 @@ two agree on the sizes; `"part": "feel"` (both with `"books"` naming a
 folder that holds `scan.pdf` and `vector.pdf`; `"only"` for one of them)
 opens, scrolls, flings, jumps and zooms, and says for each how many frames
 had a page in view that was bare, or only its small picture. `"part":
+"zoomfeel"` (with `"books"` holding `vector.pdf`; `"pinch": "1"` under the
+rig for the two-finger cases, `"cases": "pinch"` for those alone, `"far"`
+for the two that go from 200% or 250% out to 50% where the pages coming into
+view were never drawn; `"slow":
+"<ms>"` holds each page's drawing back that long a screen's worth of pixels,
+as a slower device would take; `"measure": "1"` makes the checks counts)
+zooms by the bar's − and + one step and several, out to 50% and in to 400%,
+scrolls down and across at 250%, and pinches in and out. Every frame each
+page in view is sampled on a grid of its own points: what shows there (its
+canvases and pictures by their opacity) and how much detail that is against
+the screen's pixels. Hard checks: no frame where a point shows less than the
+frame before would with its pixels only stretched, none blank, the writing on
+a page there and on its page in every frame, and nothing under the eye moved
+more than 2 px in one frame after the zoom is laid out. A screen recording of
+a simulator with no window open (`simctl io recordVideo`) holds a few frames
+a second, too few to judge a blink by; the page's own frames are the measure.
+
+A page's layers, bottom to top (`Pdf.tsx`, after pdf.js's own viewer): its
+small picture (`img.pg-low`), a middle-sized one where it is in view and its
+drawing not yet as fine as the screen (`img.pg-mid`, up to 1280 px; zoomed
+out, the page sharp at once), its whole drawing (`canvas.pg-base`, at most
+5.2 MP on a device), the part in view drawn sharp over it where the whole is
+coarser than the screen (`canvas.pg-detail`, up to 8 MP with what lies about
+it, by fractions of the page), and its text. A zoom keeps all of them: they
+fill the page's box, so they are the same picture larger or smaller, and the
+text follows by `--total-scale-factor`. A page is drawn again only where what
+it has is too coarse for the screen now (`baseWill`, `wants`), and what is
+drawn goes in only once it is drawn, never for something coarser. The bar's
+steps and ⌘= ⌘− zoom about the middle of the view. `"part":
 "live"` (under the rig) is the stroke being written against the one kept,
 for every ink (below, by the canvases), with `inkgeo:` lines for
 `scripts/ink-thin.py`.

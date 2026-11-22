@@ -124,7 +124,7 @@ import {
   takeBesidePlace, takePlace, toggleNotes, trailOf, useFollowed, useFollower, followingAt, useBesidePlace, useMarks, usePlaceWanted, usePortalPending, useTrail, type BookContents, type BookLens,
 } from './book.js';
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
-import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
+import { TextLayer, pageBits, type PDFDocumentProxy, type PDFPageProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
 import { pdfFail, type PdfFail } from './pdfFail.js';
 import { addSurface, afterScene, covered, fillSheet, restSheet, forgetSheet, hasCanvas, holdScenes, inContent, onFingers, onLayout, onSurface, pagePaper, pinchSheets, portOf, sceneSoon, settleSheets, type Box as InkBox, type PenEvent, type SheetSpec, type Surface } from './ink.js';
@@ -170,6 +170,18 @@ export const ZOOM_MIN = ZOOMS[0]!;
 export const ZOOM_MAX = ZOOMS[ZOOMS.length - 1]!;
 /** The most pixels a page's canvas is drawn with: past it the page is drawn coarser, not larger (a canvas over WebKit's limit draws nothing). */
 const CANVAS_MAX = 16_000_000;
+/**
+ * The most pixels a page's whole drawing has on a device (pdf.js's own viewer keeps to 5 MP on iOS): zoomed in past
+ * it the page is drawn whole at this, and the part of it in view sharp over that (`pg-detail`), never the whole page
+ * at the zoom (at 250% a page is some 22 MP, a second's drawing and 90 MB).
+ */
+const BASE_MAX_MOBILE = 5_242_880;
+/** The most pixels the drawing of the part of a page in view has, with what lies about it. */
+const DETAIL_MAX = 8_000_000;
+/** The widest a page's middle-sized picture from the system is, px (`pg-mid`): what a page shows at once, zoomed out or arriving, until its own drawing comes. */
+const MID_MAX = 1280;
+/** How many pages from the one in view a page keeps its middle-sized picture. */
+const MID_KEEP = 4;
 /** Zoomed, a page this far outside the view gives its canvas back, px. */
 const FAR = AHEAD * 3;
 /** The pixels to a point a page's writing is drawn with: the least of these that the screen has, for the size the page is drawn at. */
@@ -298,7 +310,16 @@ function picturesOf(rel: string | undefined): { root: string; hash: string } | n
   return { root: vault.root, hash };
 }
 /** A page's picture, `w` pixels across (a JPEG). */
-const lowUrl = (at: { root: string; hash: string }, n: number, w = LOW_W): string => `ilmipage://localhost/${at.hash}/${n}?root=${encodeURIComponent(at.root)}&w=${w}&q=0.6`;
+const lowUrl = (at: { root: string; hash: string }, n: number, w = LOW_W, q = 0.6): string => `ilmipage://localhost/${at.hash}/${n}?root=${encodeURIComponent(at.root)}&w=${w}&q=${q}`;
+/**
+ * (dev) A drawing held back as long as a slower device would take over it: `window.ilmiSlowDraw` ms for each
+ * screen's worth of pixels (3.5 MP, an 11-inch iPad's page at fit), set by a smoke (`"slow"`) to see on a simulator,
+ * whose processor is a Mac's, what the order of drawing does where each page takes a while.
+ */
+async function slowDraw(pixels: number): Promise<void> {
+  const ms = (window as unknown as { ilmiSlowDraw?: number }).ilmiSlowDraw ?? 0;
+  if (ms > 0) await new Promise((r) => setTimeout(r, (ms * pixels) / 3.5e6));
+}
 /** Every page's size as the system reads it, once a file; null where it cannot. */
 const sizesAsked = new Map<string, Promise<Size[] | null>>();
 function pageSizes(hash: string): Promise<Size[] | null> {
@@ -579,8 +600,15 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   zoomRef.current = zoom;
   /** One step in or out, or (0) back to fit. */
   const zoomBy = useCallback((dir: number) => {
-    setBookZoom(id, zoomStep(useApp.getState().bookZooms[id] ?? 1, dir));
+    const z0 = useApp.getState().bookZooms[id] ?? 1;
+    const z1 = zoomStep(z0, dir);
+    // the bar's steps and the keys zoom about the middle of the view, as two fingers there would: what is under the
+    // eye stays under it
+    if (z1 !== z0) aboutMiddle.current();
+    setBookZoom(id, z1);
   }, [id]);
+  /** What is at the middle of the view is kept there through the next change of scale (set below). */
+  const aboutMiddle = useRef<() => void>(() => {});
   const [tick, setTick] = useState(0);
   /** The pages' overview is up (85). */
   const [grid, setGrid] = useState(false);
@@ -1095,6 +1123,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
         made.src = lowUrl(at, n);
         el.prepend(made);
       } else if (img && (n < current - behind - 12 || n > current + ahead + 12)) img.remove();
+      // (a middle-sized picture is let go as soon as its page is a few pages from the view)
+      if (n < current - MID_KEEP || n > current + MID_KEEP) el.querySelector(':scope > img.pg-mid')?.remove();
     }
   }, [status, written, sizes.length, rel, current, hash, base]);
 
@@ -1178,9 +1208,93 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   const scrollerOf = useRef<(() => HTMLElement | null) | null>(null);
   const pdfRef = useRef(pdf);
   pdfRef.current = pdf;
+  // What a page shows, bottom to top: its small picture (`img.pg-low`), a middle-sized one where its drawing is not
+  // yet as fine (`img.pg-mid`), its drawing whole (`canvas.pg-base`), the part of it in view drawn sharp where the
+  // whole drawing is coarser than the screen (`canvas.pg-detail`, zoomed in), and its text. Whatever is drawn stays
+  // until what takes its place has been drawn: a zoom first stretches the pixels there are (the canvases fill the
+  // page's box), and nothing shown is ever taken away for something with less in it (pdf.js's own viewer does the
+  // same: `PDFPageView`'s css zoom and its detail canvas).
+  /** The device pixels across a page at the scale it is laid out at, and down it; null for a page not laid out. */
+  const needOf = (el: HTMLElement): { w: number; h: number } | null => {
+    const full = window.devicePixelRatio || 1;
+    const w = parseFloat(el.style.width); const h = parseFloat(el.style.height);
+    return w > 0 && h > 0 ? { w: Math.round(w * full), h: Math.round(h * full) } : null;
+  };
+  /** The most pixels across a page's whole drawing has here at this size. */
+  const capOf = (need: { w: number; h: number }): number => {
+    const most = useApp.getState().mobile ? BASE_MAX_MOBILE : CANVAS_MAX;
+    return Math.min(need.w, Math.floor(need.w * Math.sqrt(most / Math.max(1, need.w * need.h))));
+  };
+  /** Whether a page's whole drawing will do at the size it is laid out at: as fine as it can be here (or nearly, where
+   * the part in view is drawn over it), and not so much finer that it is a waste to hold. */
+  const baseWill = (el: HTMLElement, base: HTMLCanvasElement): boolean => {
+    const need = needOf(el);
+    if (!need) return true;
+    const cap = capOf(need);
+    if (base.width > need.w * 2.6) return false;
+    return cap >= need.w * 0.98 ? base.width >= need.w * 0.98 : base.width >= cap * 0.7;
+  };
+  /** What of a page is in view, as fractions of it; null where none is. */
+  const inView = (el: HTMLElement): { x0: number; y0: number; x1: number; y1: number } | null => {
+    const r = scrollerOf.current?.()?.getBoundingClientRect();
+    const pr = el.getBoundingClientRect();
+    if (!r || pr.width < 1 || pr.height < 1) return null;
+    const x0 = Math.max(0, (r.left - pr.left) / pr.width); const x1 = Math.min(1, (r.right - pr.left) / pr.width);
+    const y0 = Math.max(0, (r.top - pr.top) / pr.height); const y1 = Math.min(1, (r.bottom - pr.top) / pr.height);
+    return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : null;
+  };
+  /** What a page wants drawn next: the whole of it, the part in view sharp over it, or nothing. */
+  const wants = (n: number): 'base' | 'detail' | null => {
+    const el = pageEls.current.get(n);
+    if (!el) return null;
+    if (rendered.current.get(n) !== scaleRef.current) return 'base';
+    const base = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-base');
+    const need = needOf(el);
+    if (!base || !need || base.width >= need.w * 0.98) return null;
+    const v = inView(el);
+    if (!v) return null;
+    const d = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-detail');
+    const e = 1e-4;
+    if (d && Number(d.dataset.scale) === scaleRef.current && Number(d.dataset.x0) <= v.x0 + e && Number(d.dataset.y0) <= v.y0 + e && Number(d.dataset.x1) >= v.x1 - e && Number(d.dataset.y1) >= v.y1 - e) return null;
+    return 'detail';
+  };
+  const wantsRef = useRef(wants);
+  wantsRef.current = wants;
+  /**
+   * A page's middle-sized picture from the system (`ilmipage:`, off this thread, a few milliseconds), for a page in
+   * view whose drawing is not there yet or is coarser: as many pixels as the page has on the screen, up to
+   * `MID_MAX`. Zoomed out, that is the page sharp at once; anywhere, far finer than the small picture while the
+   * library draws it.
+   */
+  const midFor = (n: number, el: HTMLElement) => {
+    const at = picturesOf(relRef.current);
+    const need = needOf(el);
+    if (!at || !need) return;
+    const w = Math.min(MID_MAX, Math.ceil(need.w / 128) * 128);
+    const base = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-base');
+    if (base && base.width >= Math.min(w, need.w) * 0.95) return;
+    const was = el.querySelector<HTMLImageElement>(':scope > img.pg-mid');
+    if (was && Number(was.dataset.w) >= Math.min(w, need.w) * 0.95) return;
+    const img = document.createElement('img');
+    img.className = 'pg-mid';
+    img.alt = '';
+    img.decoding = 'async';
+    img.draggable = false;
+    img.dataset.w = String(w);
+    // (an older one, coarser, goes once this one has come)
+    img.onload = () => { if (was?.isConnected) was.remove(); };
+    img.src = lowUrl(at, n, w, 0.85);
+    const low = el.querySelector(':scope > img.pg-low');
+    if (was) was.after(img); else if (low) low.after(img); else el.prepend(img);
+  };
+  const midRef = useRef(midFor);
+  midRef.current = midFor;
   const renderPage = useCallback(async (n: number) => {
     const el = pageEls.current.get(n);
-    if (!el || !pdf || rendered.current.get(n) === scale || rendering.current.has(n)) return;
+    if (!el || !pdf || rendering.current.has(n) || !wantsRef.current(n)) return;
+    // zoomed out, a page coming into view has its middle-sized picture at once: there it is the page sharp. (At fit
+    // and over, the small picture serves the pages a scroll brings, as before; a zoom asks for the pages in view)
+    if (zoomRef.current < 1 && inView(el)) midRef.current(n, el);
     // on a device one page is drawn at a time (a heavy page's drawing takes a great deal of memory while it lasts),
     // and of the pages waiting it is the one nearest the middle of the view that is drawn next: a page the reader
     // has flung past is not drawn at all, and the one they have stopped on does not wait behind those
@@ -1196,7 +1310,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
           let pick = -1; let best = Infinity;
           for (const k of waiting.current) {
             const pr = pageEls.current.get(k)?.getBoundingClientRect();
-            if (!r || !pr || pr.height <= 0 || pr.bottom < r.top - AHEAD || pr.top > r.bottom + AHEAD || rendered.current.get(k) === scale) { waiting.current.delete(k); continue; }
+            if (!r || !pr || pr.height <= 0 || pr.bottom < r.top - AHEAD || pr.top > r.bottom + AHEAD || !wantsRef.current(k)) { waiting.current.delete(k); continue; }
             const far = Math.abs((pr.top + pr.bottom) / 2 - (r.top + r.bottom) / 2);
             if (far < best) { best = far; pick = k; }
           }
@@ -1210,72 +1324,129 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       return;
     }
     await drawRef.current(n);
-  }, [pdf, scale, id]);
+  }, [pdf, id]);
   const waiting = useRef(new Set<number>());
   const drawing = useRef(false);
   const drawRef = useRef<(n: number) => Promise<void>>(async () => {});
-  /** One page drawn now, at the scale there is. */
+  /** What a page wants drawn, drawn now, at the scale there is; and then whatever it wants next. */
   const drawPage = useCallback(async (n: number) => {
     const el = pageEls.current.get(n);
-    if (!el || !pdf || rendered.current.get(n) === scale || rendering.current.has(n)) return;
+    if (!el || !pdf || rendering.current.has(n)) return;
+    const what = wantsRef.current(n);
+    if (!what) return;
     rendering.current.add(n);
     try {
       const page = await pdf.getPage(n);
-      const viewport = page.getViewport({ scale });
-      // zoomed far in, a page is drawn with fewer pixels to the point than the screen has, never with more than a canvas holds
-      const dpr = Math.min(window.devicePixelRatio || 1, Math.max(0.5, Math.sqrt(CANVAS_MAX / Math.max(1, viewport.width * viewport.height))));
-      const canvas = document.createElement('canvas');
-      // the canvas fills the page's box, which lies on whole pixels of the screen: where the screen's own pixels are
-      // drawn (`dpr` is the screen's), each pixel of the canvas is one of the screen's, none between two (86)
-      const full = window.devicePixelRatio || 1;
-      const box = { w: onPixel(viewport.width, full), h: onPixel(viewport.height, full) };
-      canvas.width = Math.max(1, Math.round(box.w * dpr));
-      canvas.height = Math.max(1, Math.round(box.h * dpr));
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
-      // the print intent draws without animation frames, which WebKit holds back in a covered window
-      await page.render({ canvas, viewport, intent: 'print', transform: [canvas.width / viewport.width, 0, 0, canvas.height / viewport.height, 0, 0] }).promise;
-      const layer = document.createElement('div');
-      layer.className = 'textLayer';
-      el.style.setProperty('--total-scale-factor', String(scale));
-      const tl = new TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport });
-      // over the page's small picture, which stays under it; where the page had no drawing yet it comes in over the
-      // picture (opacity alone), and where it had one (another zoom) it takes its place at once, with no blink
-      const low = el.querySelector(':scope > img.pg-low');
-      if (!el.querySelector(':scope > canvas')) canvas.classList.add('pg-new');
-      el.replaceChildren(...(low ? [low] : []), canvas, layer);
-      await tl.render();
-      // the page's own links, read once, as it is drawn (never for the whole book)
-      if (!links.current.has(n)) {
-        try {
-          const v1 = page.getViewport({ scale: 1 });
-          // pdf.js turns a point of the page into one of the view (it knows a turned page); a rectangle is its two corners
-          const toView = typeof v1.convertToViewportPoint === 'function'
-            ? (r: number[]) => [...v1.convertToViewportPoint(r[0]!, r[1]!), ...v1.convertToViewportPoint(r[2]!, r[3]!)] as number[]
-            : flipRect([0, 0, v1.width, v1.height]);
-          links.current.set(n, pageLinks(await page.getAnnotations(), toView, v1.width, v1.height));
-        } catch {
-          links.current.set(n, []);
-        }
-      }
-      const end = document.createElement('div');
-      end.className = 'endOfContent';
-      layer.append(end);
-      rendered.current.set(n, scale);
-      setTick((t) => t + 1);
-      settled();
+      if (what === 'detail') await drawDetail(n, el, page);
+      else await drawBase(n, el, page);
     } catch (e) {
       console.error(id, `page ${n}`, e);
     } finally {
       rendering.current.delete(n);
     }
-    // the column changed width while this page was being drawn (an iPad turned): it is drawn again at the scale there is now
-    if (scaleRef.current !== scale && rendered.current.get(n) === scale) {
-      rendered.current.delete(n);
-      el.replaceChildren();
-      void renderRef.current(n);
+    // another zoom while it was drawn, or the part in view to draw after the whole: drawn next
+    if (pageEls.current.get(n) === el && wantsRef.current(n)) void renderRef.current(n);
+  }, [pdf, id]);
+  /** A page drawn whole, at the scale there is when it begins. */
+  const drawBase = async (n: number, el: HTMLElement, page: PDFPageProxy) => {
+    const at = scaleRef.current;
+    const viewport = page.getViewport({ scale: at });
+    const full = window.devicePixelRatio || 1;
+    // the canvas fills the page's box, which lies on whole pixels of the screen: where the screen's own pixels are
+    // drawn, each pixel of the canvas is one of the screen's, none between two (86). Zoomed in past what a page's
+    // whole drawing may hold (`capOf`), fewer: the part in view is drawn sharp over it
+    const box = { w: onPixel(viewport.width, full), h: onPixel(viewport.height, full) };
+    const most = useApp.getState().mobile ? BASE_MAX_MOBILE : CANVAS_MAX;
+    const px = Math.min(full, Math.max(0.5, Math.sqrt(most / Math.max(1, box.w * box.h))));
+    const canvas = document.createElement('canvas');
+    canvas.className = 'pg-base';
+    canvas.width = Math.max(1, Math.round(box.w * px));
+    canvas.height = Math.max(1, Math.round(box.h * px));
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    // the print intent draws without animation frames, which WebKit holds back in a covered window
+    await page.render({ canvas, viewport, intent: 'print', transform: [canvas.width / viewport.width, 0, 0, canvas.height / viewport.height, 0, 0] }).promise;
+    if (import.meta.env.DEV) await slowDraw(canvas.width * canvas.height);
+    const had = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-base');
+    // zoomed again while it was drawn: what it is drawn for is gone. It goes in only where it is finer than what is shown
+    if (scaleRef.current !== at && had && had.width >= canvas.width) {
+      canvas.width = canvas.height = 0;
+      rendered.current.set(n, baseWill(el, had) ? scaleRef.current : -1);
+      return;
     }
-  }, [pdf, scale, id]);
+    if (!el.isConnected || pageEls.current.get(n) !== el) { canvas.width = canvas.height = 0; return; }
+    const layer = document.createElement('div');
+    layer.className = 'textLayer';
+    // (the text follows the scale the pages are laid out at by this alone: its places are fractions of the page)
+    el.style.setProperty('--total-scale-factor', String(scaleRef.current));
+    const tl = new TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport });
+    // over the page's pictures, which stay under it; where the page had no drawing yet it comes in over them (opacity
+    // alone), and where it had one (another zoom) it takes its place at once, with no blink. The part in view drawn
+    // sharp over the last drawing stays while it is finer than this one
+    const low = el.querySelector(':scope > img.pg-low');
+    const mid = el.querySelector<HTMLImageElement>(':scope > img.pg-mid');
+    const detail = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-detail');
+    const need = needOf(el);
+    const keep = detail && need && canvas.width < need.w * 0.98 ? detail : null;
+    if (!had) canvas.classList.add('pg-new');
+    el.replaceChildren(...[low, mid, canvas, keep, layer].filter((x): x is Element => !!x));
+    if (had) had.width = had.height = 0;
+    if (detail && !keep) detail.width = detail.height = 0;
+    // the middle-sized picture goes once the drawing is as fine and has come in over it
+    if (mid && canvas.width >= Number(mid.dataset.w ?? 0) * 0.95) setTimeout(() => { if (mid.isConnected && el.querySelector(':scope > canvas.pg-base') === canvas) mid.remove(); }, had ? 0 : 400);
+    await tl.render();
+    // the page's own links, read once, as it is drawn (never for the whole book)
+    if (!links.current.has(n)) {
+      try {
+        const v1 = page.getViewport({ scale: 1 });
+        // pdf.js turns a point of the page into one of the view (it knows a turned page); a rectangle is its two corners
+        const toView = typeof v1.convertToViewportPoint === 'function'
+          ? (r: number[]) => [...v1.convertToViewportPoint(r[0]!, r[1]!), ...v1.convertToViewportPoint(r[2]!, r[3]!)] as number[]
+          : flipRect([0, 0, v1.width, v1.height]);
+        links.current.set(n, pageLinks(await page.getAnnotations(), toView, v1.width, v1.height));
+      } catch {
+        links.current.set(n, []);
+      }
+    }
+    const end = document.createElement('div');
+    end.className = 'endOfContent';
+    layer.append(end);
+    // drawn for the scale there is, or one that will do for it; else drawn again (and this stays until then)
+    rendered.current.set(n, scaleRef.current === at || baseWill(el, canvas) ? scaleRef.current : -1);
+    setTick((t) => t + 1);
+    settled();
+  };
+  /**
+   * The part of a page in view drawn sharp over its whole drawing, which is coarser than the screen (zoomed in), with
+   * room about it as the pixels allow (pdf.js's detail canvas): it lies over the page by fractions of it, so a zoom
+   * stretches it with the page. The one before stays until this one is drawn.
+   */
+  const drawDetail = async (n: number, el: HTMLElement, page: PDFPageProxy) => {
+    const at = scaleRef.current;
+    const v = inView(el);
+    const need = needOf(el);
+    if (!v || !need) return;
+    const viewport = page.getViewport({ scale: at });
+    const vw = (v.x1 - v.x0) * need.w; const vh = (v.y1 - v.y0) * need.h;
+    const over = Math.max(0, Math.min(1, (Math.sqrt(DETAIL_MAX / Math.max(1, vw * vh)) - 1) / 2));
+    // on whole pixels of the page as drawn at this scale, so the part lies pixel for pixel on the screen's
+    const px0 = Math.max(0, Math.floor((v.x0 - (v.x1 - v.x0) * over) * need.w)); const px1 = Math.min(need.w, Math.ceil((v.x1 + (v.x1 - v.x0) * over) * need.w));
+    const py0 = Math.max(0, Math.floor((v.y0 - (v.y1 - v.y0) * over) * need.h)); const py1 = Math.min(need.h, Math.ceil((v.y1 + (v.y1 - v.y0) * over) * need.h));
+    if (px1 <= px0 || py1 <= py0) return;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'pg-detail';
+    canvas.width = px1 - px0;
+    canvas.height = py1 - py0;
+    const sx = need.w / viewport.width; const sy = need.h / viewport.height;
+    await page.render({ canvas, viewport, intent: 'print', transform: [sx, 0, 0, sy, -px0, -py0] }).promise;
+    if (import.meta.env.DEV) await slowDraw(canvas.width * canvas.height);
+    // zoomed again meanwhile: what it was drawn for is gone, and what is shown stays
+    if (scaleRef.current !== at || !el.isConnected || pageEls.current.get(n) !== el || !el.querySelector(':scope > canvas.pg-base')) { canvas.width = canvas.height = 0; return; }
+    Object.assign(canvas.dataset, { scale: String(at), x0: String(px0 / need.w), y0: String(py0 / need.h), x1: String(px1 / need.w), y1: String(py1 / need.h) });
+    Object.assign(canvas.style, { left: `${(px0 / need.w) * 100}%`, top: `${(py0 / need.h) * 100}%`, width: `${((px1 - px0) / need.w) * 100}%`, height: `${((py1 - py0) / need.h) * 100}%` });
+    const old = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-detail');
+    if (old) { old.replaceWith(canvas); old.width = old.height = 0; } else el.querySelector(':scope > canvas.pg-base')?.after(canvas);
+  };
   drawRef.current = drawPage;
   renderRef.current = renderPage;
 
@@ -1298,6 +1469,29 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   };
   /** Where a pinch let go: the page between the fingers, where in it (0 to 1 each way), and where on the screen. */
   const pinchEnd = useRef<{ page: number; x: number; y: number; cx: number; cy: number } | { left: number; top: number; x: number; y: number } | null>(null);
+  aboutMiddle.current = () => {
+    const sc = scroller();
+    if (!sc || native) return;
+    const r = sc.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = (r.top + placeAt() + r.bottom) / 2;
+    let under: { page: number; x: number; y: number } | null = null;
+    let near = Infinity;
+    for (const [k, el] of pageEls.current) {
+      const pr = el.getBoundingClientRect();
+      if (!(pr.width > 0 && pr.height > 0)) continue;
+      const far = cy < pr.top ? pr.top - cy : cy > pr.bottom ? cy - pr.bottom : 0;
+      if (far < near) { near = far; under = { page: k, x: (cx - pr.left) / pr.width, y: (cy - pr.top) / pr.height }; }
+    }
+    pinchEnd.current = under ? { ...under, cx, cy } : null;
+  };
+  /**
+   * How far the scroller's content runs past the right edge of pages wider than the pane, as the web view lays it
+   * out, measured whenever they are: WebKit leaves the pane's right padding out of what scrolls, so a pinch's plan
+   * that counted it left the pages scrolled further than they can be, and the layout put them back, a jump sideways
+   * of up to the padding in the frame after the pinch.
+   */
+  const trailRef = useRef<number | null>(null);
   /** What the pages are laid out by, for saying where they would lie at another zoom. */
   const layRef = useRef({ fitW: 0, colW: 0, pageW: 0, maxW: 612, scale: 1, left: 0, pad: 0, sizes: [] as Size[], pageless: false, total: 0, at: [0] as number[] });
   layRef.current = { fitW, colW, pageW, maxW, scale, left: room.left, pad: room.pad, sizes, pageless, total: colH, at: tops.at };
@@ -1308,30 +1502,34 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
 
   useEffect(() => {
     if (!pdf || !sizes.length) return;
-    // a new scale: every page draws again as it comes near. One on the screen keeps the picture it has, stretched to
-    // its new size, until the new one is drawn over it (85): a zoom never shows a bare page
+    // a new scale: a page near the view keeps all it has (its canvases fill its box, so they are the same picture
+    // larger or smaller, and its text follows by the scale alone), and is drawn again only where that is too coarse
+    // for the screen now, or so much finer that it is a waste to hold; until then what it has stays. A page far from
+    // the view gives its drawing back (its small picture stays under it: a page is never bare paper)
     {
       const sc = scroller();
       const view = sc?.getBoundingClientRect();
       for (const [n, s] of rendered.current) {
-        if (s === scale) continue;
+        if (s === scale || rendering.current.has(n)) continue;
         const el = pageEls.current.get(n);
-        const canvas = el?.querySelector('canvas');
+        const base = el?.querySelector<HTMLCanvasElement>(':scope > canvas.pg-base');
         const r = el?.getBoundingClientRect();
-        // (a page's small picture stays under it either way: a page is never bare paper)
-        const low = el?.querySelector(':scope > img.pg-low');
-        if (el && canvas && view && r && r.bottom >= view.top - AHEAD && r.top <= view.bottom + AHEAD) {
-          canvas.style.width = '100%';
-          canvas.style.height = '100%';
-          el.replaceChildren(...(low ? [low] : []), canvas);
-          // (marked as drawn at no scale there is: back at the scale it was drawn at before it is drawn again, it is
-          // still a page without its text, and is drawn again)
-          rendered.current.set(n, -Math.abs(s));
-        } else {
+        if (el && base && view && r && r.bottom >= view.top - AHEAD && r.top <= view.bottom + AHEAD) {
+          const will = baseWill(el, base);
+          rendered.current.set(n, will ? scale : -1);
+          // the part in view drawn sharp over it goes where the whole drawing is as fine as the screen now
+          const need = needOf(el);
+          const detail = el.querySelector<HTMLCanvasElement>(':scope > canvas.pg-detail');
+          if (detail && need && base.width >= need.w * 0.98) { detail.remove(); detail.width = detail.height = 0; }
+        } else if (el) {
           rendered.current.delete(n);
-          el?.replaceChildren(...(low ? [low] : []));
+          for (const c of Array.from(el.querySelectorAll('canvas'))) { c.width = 0; c.height = 0; }
+          const low = el.querySelector(':scope > img.pg-low');
+          el.replaceChildren(...(low ? [low] : []));
         }
       }
+      // the pages in view whose drawing is not as fine as the screen now have their middle-sized pictures at once
+      for (const [n, el] of pageEls.current) if (inView(el) && wantsRef.current(n) === 'base') midFor(n, el);
     }
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) if (e.isIntersecting) void renderPage(Number((e.target as HTMLElement).dataset.page));
@@ -1411,19 +1609,41 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   // a new scale (a zoom, the note opened beside, an iPad turned) leaves the same text at the top of the view, not the
   // same pixels, and what was at the middle of the view across the pages at the middle
   useLayoutEffect(() => {
+    // (a page's text is laid out by the scale alone: it follows in the frame the pages are laid out at it)
+    for (const el of pageEls.current.values()) if (el.style.getPropertyValue('--total-scale-factor')) el.style.setProperty('--total-scale-factor', String(scale));
     const sc = scroller();
     if (!sc) return;
     // a pinch let go: the pages are laid out at their new size, and what was between the fingers is still there
     const held = pinchEnd.current;
     pinchEnd.current = null;
     if (pagesRef.current) { pagesRef.current.style.transform = ''; pagesRef.current.style.willChange = ''; }
+    {
+      const L = layRef.current;
+      const pr = pagesRef.current?.getBoundingClientRect();
+      if (pr && L.pageW > L.colW) trailRef.current = Math.max(0, sc.scrollWidth - (pr.left - sc.getBoundingClientRect().left + sc.scrollLeft + pr.width));
+    }
     if (held && 'left' in held) {
       // (86) the pages were eased to where this layout puts them: the scroller stands where that was reckoned, and the
       // canvases, held as they were shown, are told once
       sc.scrollLeft = held.left;
       sc.scrollTop = held.top;
-      const pr = pagesRef.current?.getBoundingClientRect();
+      const pages = pagesRef.current;
+      const pr = pages?.getBoundingClientRect();
       if (pr && viewRef.current) viewRef.current.dataset.zoomOff = Math.max(Math.abs(pr.left - held.x), Math.abs(pr.top - held.y)).toFixed(2);
+      // where the scroller cannot stand where it was reckoned (its content ends sooner than the plan said), the pages
+      // are shown where they were eased to and come the rest of the way by a transform: nothing jumps
+      const dx = pr ? held.x - pr.left : 0; const dy = pr ? held.y - pr.top : 0;
+      if (pages && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)) {
+        const t = `translate(${dx}px, ${dy}px)`;
+        if (viewRef.current) viewRef.current.dataset.zoomEase = `${dx.toFixed(1)},${dy.toFixed(1)}`;
+        pages.style.transform = t;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (pages.style.transform !== t) return;
+          pages.style.transition = `transform ${SETTLE_MS}ms ease-out`;
+          pages.style.transform = '';
+          setTimeout(() => { pages.style.transition = ''; }, SETTLE_MS + 40);
+        }));
+      }
       holdScenes(false);
       return;
     }
@@ -1555,12 +1775,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       const edge = ox - (L.pageW < L.colW ? (L.colW - L.pageW) / 2 : 0);
       const wide1 = W1 > L.colW;
       const ox1 = edge + (wide1 ? 0 : (L.colW - W1) / 2);
-      const maxL = wide1 ? Math.max(0, edge + W1 + L.pad - sc.clientWidth) : 0;
+      const maxL = wide1 ? Math.max(0, edge + W1 + (trailRef.current ?? 0) - sc.clientWidth) : 0;
       const maxT = Math.max(0, sc.scrollHeight - L.total + tops1.total - sc.clientHeight);
       const left = Math.min(maxL, Math.max(0, onPixel(ox1 + lx * k - (cx - sr.left), px)));
       const top = Math.min(maxT, Math.max(0, onPixel(oy + y1 - (cy - sr.top), px)));
       const x = sr.left + ox1 - left;
       const y = sr.top + oy - top;
+      if (import.meta.env.DEV && viewRef.current) viewRef.current.dataset.zoomPlan = [ox, edge, trailRef.current ?? -1, maxL, left, W1, L.pageW, L.colW, sc.clientWidth, sc.scrollWidth, lx, cx - sr.left].map((v) => Math.round(v * 10) / 10).join(' ');
       return { z: z1, k, tx: x - pr.left, ty: y - pr.top + (y1 - ly * k), left, top, x, y };
     };
     /** `f` once what was just set has been drawn: two frames on, or soon where frames are held back. */

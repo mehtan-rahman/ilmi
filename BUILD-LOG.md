@@ -6,6 +6,48 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-21 — a PDF's zoom never shows less than the frame before: what is drawn stays until its better is drawn, the part in view drawn sharp, pictures from the system for pages zoomed out
+
+**Reported.** On a real iPad, a 47 MB, 604-page PDF: "it'll flicker and whatnot. when i zoom out it'll take a moment to load in" (jumping is fine; zooming in and out is what is less seamless than GoodNotes).
+
+**Found** (`pdfink` `"part": "zoomfeel"`, new: every frame each page in view sampled on a 9×12 grid of its own points, the detail there against the screen's pixels; on the Air 11 simulator over `vector.pdf`, 600 pages of outlines, 52 MB; `"slow": "150"` holds each drawing back 150 ms a screen's worth of pixels, as a slower device would take):
+1. A page whose drawing finished after another zoom had begun was emptied (`el.replaceChildren()`, "the column changed width while this page was being drawn"): bare paper, not even its small picture, until drawn again. Quick + + or − − −, and a pinch let go while pages were drawing: up to 40 frames of a blank page (400%), 8 (200% to 50%), 4 (400% to 150%).
+2. Every zoom drew again every page near the view, the ones already sharp first (nearest the middle), and took each page's text away until then. Zoomed out, the pages coming into view waited behind redraws of pages that were already finer than needed: a pinch from 250% to 50% showed soft pages in 117 frames, all sharp after 2.3 s.
+3. Zoomed in, a whole page was drawn at up to 16 MP: past about 230% coarser than the screen for good (0.89 of its pixels at 250%, 0.55 at 400%), and slow (a pinch to 238%: 3.2 s to sharp even on a Mac's processor).
+4. A pinch ending just above fit jumped 10 to 12 px sideways the frame after it was laid out: the plan counted the pane's right padding in what scrolls, which WebKit does not.
+5. The bar's + and − kept the line at the top of the view, so what was under the eye moved 120 to 480 px; four quick − from 400% lost the place altogether (from p. 41 to p. 63).
+
+**Approach** (a, after pdf.js's own viewer, `PDFPageView`'s css zoom and its detail canvas; no native page view was needed, so none was prototyped). A page's layers bottom to top: its small picture, a middle-sized picture from the system where it is in view and its drawing not yet as fine (`img.pg-mid`, up to 1280 px, `ilmipage:` at the page's width on the screen), its whole drawing (`canvas.pg-base`, at most 5.2 MP on a device as pdf.js keeps to on iOS), the part in view drawn sharp over it where the whole is coarser than the screen (`canvas.pg-detail`, up to 8 MP with room about it), and its text. A zoom keeps every layer (they fill the page's box, the text follows by `--total-scale-factor` in the same frame) and draws a page again only where it is too coarse for the screen now; nothing drawn goes in for something coarser, and nothing shown is taken away before its replacement is drawn. The bar's steps and the keys zoom about the middle of the view. The pinch's plan reads what actually scrolls past wide pages (`trailRef`), and where the layout still lands elsewhere than planned the pages are put where they were shown and eased the rest by a transform. Not done: the bar's zoom is not animated (no recording here good enough to tune motion by, see below).
+
+**Before → after** (`b3`, `b4`, `b5` → `r5`, `r8`, `slow` 150; blank frames, frames that lost detail, soft frames, time to all sharp):
+
+| case | before | after |
+|---|---|---|
+| + fit → 125% | 0, 0, 24, 550 ms; eye moved 120 px | 0, 0, 22, 580 ms; 1 px |
+| + + → 200% | 0, 0, 42, 956 ms; 289 px | 0, 0, 39, 960 ms; 3 px |
+| + → 250% | 0, 0, all, never (0.80 to 0.89) | 0, 0, 9, 406 ms |
+| scroll 1.5 pages down at 250% | never sharp (0.89) | 0, 0, sharp 2.4 s from the start of a 2.5 s scroll |
+| scroll across at 250% | never sharp | sharp after 406 ms |
+| + + → 400% | 40 blank, 1 lost, never sharp | 0, 0, 21, 817 ms |
+| − ×4 400% → 150% | 4 blank, 1213 ms; place lost (p. 41 → p. 63) | 0, 0, 28, 1259 ms; same page, 164 px off the middle where the pages' edge stops the scroll |
+| − ×2 150% → fit | 0 (1 blank and 1 lost in `b1`) | 0, 0, 0, 38 ms |
+| − fit → 75%, 75% → 50% | 0, 0, 0, ~34 ms | 0, 0, 0, ~30 ms |
+| fit word 50% → fit | 0, 0, 25, 523 ms | 0, 0, 0, 27 ms (the fit drawings were kept) |
+| fit word and − − from 200% to 50%, pages never drawn | 8 blank, 1 lost, 12 soft, 463 ms | 0, 0, 0, 31 ms |
+| pinch fit → 238% | 0, 0, 39, 3238 ms | 0, 0, 15, 2881 ms |
+| pinch 238% → 103% | jump 10 px after the layout | no jump |
+| pinch → 50% | 1 blank, 1 lost, 1855 ms | 0, 0, 0, 16 ms |
+| pinch 50% → 104% | jump 12 px; 2671 ms (0.48 meanwhile) | no jump; 7 ms |
+| pinch 250% → 50%, pages never drawn | 0, 0, 117 soft, 2264 ms | 0, 0, 0, 8 ms |
+
+At the simulator's own speed (`r6`, no hold) every case passes the hard checks too; 250% sharp after 134 ms, 400% after 140 ms. Times run from the first frame of the case, so a pinch's include the gesture (about a second under the rig).
+
+**Checks.** `zoomfeel`'s are hard checks: no frame with a blank point, none that lost detail, the writing on p. 40 there and on its page in every frame, nothing under the eye moved more than 2 px in one frame after the zoom is laid out (`r5`, `r6`, `r8` done). `feel` (`f1`): fling, jump and scroll as before (no bare frame in a fling of either file). `sharp` `"part": "pdf"` (`s1`) done. `book-zoom.test.ts`'s zoom test now holds the middle of the view, not the top line. Typecheck clean; npm test 2672 passed and 2 skipped in 170 files (the zoom test failed before it was changed, as it should); cargo test 80 passed.
+
+**Not seen.** A real iPad, its 120 Hz and its WebKit; pdf.js on an iPad's processor (the `slow` hold only stands in for it, in proportion to pixels); a PDF with real type and pictures at 300 MB; GoodNotes side by side. The screen recordings of this headless simulator hold a few frames a second, so the measure is the page's own frames, not the glass: a blink that WebKit's compositor alone made would not show. The bar's zoom is a step, not an animation.
+
+---
+
 ## 2026-11-21 — the stroke being written is ilmi's own drawing: the same stroke, width and colour under the Pencil as kept
 
 **What changed.** PencilKit's canvas still takes the Pencil (recogniser, palm rejection, the `PKStroke` it hands over) but draws with an ink of no colour; the stroke being written is drawn by `ios/Sources/Live.swift` in a layer inside the canvas, from every coalesced touch and the predicted ones, with `native/stroke.m`'s outline (`ilmi_stroke_outline`), or for a fountain pen and a pencil the very picture the page is given (`ilmi_stroke_page_picture`, mipmapped down; one random seed per stroke so a pencil's grain holds). At the hand-over that stroke, without the predicted touches, is kept in place of PencilKit's (`InkPlugin.keep`); nothing is drawn again at the lift. On every surface that writes: a notebook's, a PDF's page, a typed note's ink area. Widths are the ink's own: a pen and the even line keep the width asked (0.3 keeps 0.3, was 0.44); pressure is a mapping fixed at each touch (`1 + pressure × 0.85 × (force − 1)`, the force evened with earlier touches only, 0.3 to 2.4). A PDF page in the dark theme turns the live colours as the page turns its ink (`invert(0.92) hue-rotate(180deg)`). The eraser and lasso were ours already; PencilKit's undo was never used (the plugin has its own steps).

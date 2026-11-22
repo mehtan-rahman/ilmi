@@ -21,15 +21,18 @@
   --scale-round-y: 1px;
 }
 .pdf-page canvas { display: block; position: relative; }
-/* a page's small picture, under its drawing from the moment the page is near: a page is never bare paper. The
-   drawing comes in over it, by opacity alone, where there was none before */
-.pdf-page > img.pg-low { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; -webkit-user-select: none; user-select: none; }
+/* a page's small picture, under its drawing from the moment the page is near: a page is never bare paper; and over
+   it, where the page is in view and its drawing not yet as fine as the screen, a middle-sized one (zoomed out, the
+   page sharp at once). The drawing comes in over them, by opacity alone, where there was none before */
+.pdf-page > img.pg-low, .pdf-page > img.pg-mid { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; -webkit-user-select: none; user-select: none; }
+/* zoomed in past what a page's whole drawing holds, the part in view drawn sharp over it, where it lies on the page */
+.pdf-page > canvas.pg-detail { position: absolute; pointer-events: none; }
 .pdf-page > canvas.pg-new { animation: pg-in 140ms ease-out; }
 @keyframes pg-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .pdf-page > canvas.pg-new { animation: none; } }
 [data-theme="dark"] .pdf-page { background: #e9e9e6; }
-[data-theme="dark"] .pdf-page canvas, [data-theme="dark"] .pdf-page > img.pg-low { filter: invert(0.92) hue-rotate(180deg); }
-[data-theme="eink"] .pdf-page canvas, [data-theme="eink"] .pdf-page > img.pg-low { filter: grayscale(1) contrast(1.1); }
+[data-theme="dark"] .pdf-page canvas, [data-theme="dark"] .pdf-page > img.pg-low, [data-theme="dark"] .pdf-page > img.pg-mid { filter: invert(0.92) hue-rotate(180deg); }
+[data-theme="eink"] .pdf-page canvas, [data-theme="eink"] .pdf-page > img.pg-low, [data-theme="eink"] .pdf-page > img.pg-mid { filter: grayscale(1) contrast(1.1); }
 
 /* the text layer: transparent spans over the canvas, positioned by pdf.js */
 .textLayer {

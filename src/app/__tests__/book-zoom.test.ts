@@ -424,7 +424,7 @@ describe("a book's pages zoomed", () => {
     expect(BOOK).toBe('library/zoom-kept.pdf');
   });
 
-  it('after a zoom the same text is under the top of the view and the middle stays the middle', async () => {
+  it('after a zoom by the keys the same place is at the middle of the view, down and across', async () => {
     await mountBook();
     const sc = host.querySelector<HTMLElement>('.book-pages')!;
     const col = host.querySelector<HTMLElement>('.pdf-pages')!;
@@ -440,11 +440,16 @@ describe("a book's pages zoomed", () => {
     // half way down page 2 under the place the view keeps (60px down)
     const p2 = px(page(2), 'top'); const h2 = px(page(2), 'height');
     await act(async () => { sc.scrollTop = 100 + p2 + h2 / 2 - 60; sc.dispatchEvent(new Event('scroll')); });
+    // the middle of the view under the words over the pages: half way between 60px down and its foot
+    const cy = (60 + 600) / 2;
+    const r0 = page(2).getBoundingClientRect();
+    const f = (cy - r0.top) / r0.height;
     await cmd('=');
     await cmd('=');
     await cmd('=');
     const r = page(2).getBoundingClientRect();
-    expect((60 - r.top) / r.height).toBeCloseTo(0.5, 3);
+    expect(r.height).toBeGreaterThan(r0.height * 1.9);
+    expect((cy - r.top) / r.height).toBeCloseTo(f, 3);
     // the middle of the pages across is at the middle of the view
     const c = col.getBoundingClientRect();
     expect((400 - c.left) / c.width).toBeCloseTo(0.5, 3);

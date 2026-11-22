@@ -20905,6 +20905,283 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       log('done');
       return;
     }
+    if (part.split(',').includes('zoomfeel')) {
+      // ── zooming a long PDF, frame by frame (`"part": "zoomfeel"`, with `books` naming a folder that holds
+      // `vector.pdf`, or `scan.pdf` with `"only": "scan"`; the pinches only under the rig, `"pinch": "1"`): the bar's
+      // + and − one step and several, out to the least (many pages in view), in to the most, a scroll down and across
+      // while zoomed in, and two fingers spread and closed. Every frame each page in view is looked at on a grid of its
+      // own points: what shows there (its canvases and pictures, each by its opacity, the later over the earlier) and
+      // how much detail that is against the screen's pixels (1: a pixel of the drawing to a pixel of the screen, or
+      // more). A frame loses detail at a point that shows less than the frame before would show there with its pixels
+      // only stretched to the size the page is now; it is blank at a point where nothing of the page is drawn. A page
+      // written on has its writing, where the page is, in every frame; and what lay under the eye stays there once
+      // the zoom has been laid out (no frame after moves it more than 2 px at once). `zoom:` lines; each a hard check unless `"measure": "1"` ──
+      const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+      if (!books) throw new Error('ILMI_BOOKS (smoke.json: "books") names the folder with vector.pdf');
+      const measure = (await invoke<string | null>('dev_env', { name: 'ILMI_MEASURE' })) === '1';
+      const pinching = (await invoke<string | null>('dev_env', { name: 'ILMI_PINCH' })) === '1';
+      // (`"slow": "<ms>"`: each page's drawing held back that long a screen's worth of pixels, as a slower device would take)
+      const slow = Number((await invoke<string | null>('dev_env', { name: 'ILMI_SLOW' })) ?? 0) || 0;
+      (window as unknown as { ilmiSlowDraw?: number }).ilmiSlowDraw = slow;
+      log(`each page's drawing held back ${slow} ms a screen's worth`);
+      const { currentVault, setBookZoom } = await import('./vault.js');
+      const v = currentVault()!;
+      const sfs = v.fs as import('../vault/index.js').StoreFs;
+      const name = (await invoke<string | null>('dev_env', { name: 'ILMI_ONLY' })) || 'vector';
+      const rel = `library/${name}.pdf`;
+      if (!(await v.fs.stat(v.abs(rel)))) { await sfs.take(v.abs(rel), `${books}/${name}.pdf`); await v.changed([rel]); }
+      await poll(() => useApp.getState().docs[rel], `${name}.pdf is in the collection`, 120000);
+      const bookEl = () => qa<HTMLElement>('.book').find((k) => k.dataset.path === rel) ?? null;
+      openNode(rel);
+      const b = await poll(() => { const x = bookEl(); return x && q('.pdf-page canvas', x) ? x : null; }, `${name}.pdf opens, its first pages drawn`, 60000);
+      const sc = q<HTMLElement>('.book-pages', b)!;
+      const view = q<HTMLElement>('.pdf-view', b)!;
+      const zoomNow = () => Number(view.dataset.zoom);
+      // a lamp in the corner says which case is going on, for a recording read beside the lines
+      const lamp = document.createElement('div');
+      lamp.style.cssText = 'position:fixed;right:0;bottom:0;width:18px;height:18px;z-index:2147483647;pointer-events:none;background:rgb(0,0,0)';
+      document.body.append(lamp);
+      const light = (k: number) => { lamp.style.background = `rgb(${(k * 37) % 256},${k ? 255 : 0},${(k * 91) % 256})`; };
+      const GX = 9; const GY = 12;
+      interface Pt { eff: number; raw: number }
+      /** What shows at each grid point of each page in view: its detail (to 1), and the drawing's pixels across the whole page there. */
+      const sample = () => {
+        const r = sc.getBoundingClientRect();
+        const top = Math.max(r.top, q('.meta', b)?.getBoundingClientRect().bottom ?? r.top);
+        const pts = new Map<string, Pt>();
+        const widths = new Map<string, number>();
+        const rects = new Map<string, DOMRect>();
+        for (const el of qa<HTMLElement>('.pdf-page', b)) {
+          const pr = el.getBoundingClientRect();
+          if (pr.width < 2 || pr.bottom <= top || pr.top >= r.bottom || pr.right <= r.left || pr.left >= r.right) continue;
+          const n = el.dataset.page!;
+          widths.set(n, pr.width * dpr);
+          rects.set(n, pr);
+          const srcs: { sr: DOMRect; res: number; a: number }[] = [];
+          for (const s of Array.from(el.querySelectorAll<HTMLElement>('canvas, img'))) {
+            let w = 0;
+            if (s instanceof HTMLCanvasElement) w = s.width > 1 ? s.width : 0;
+            else if (s instanceof HTMLImageElement) w = s.complete && s.naturalWidth > 0 ? s.naturalWidth : 0;
+            if (!w) continue;
+            const cs = getComputedStyle(s);
+            if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+            let a = parseFloat(cs.opacity);
+            for (let p = s.parentElement; p && p !== el; p = p.parentElement) a *= parseFloat(getComputedStyle(p).opacity);
+            if (!(a > 0.02)) continue;
+            const sr = s.getBoundingClientRect();
+            if (sr.width < 1) continue;
+            srcs.push({ sr, res: w / sr.width / dpr, a });
+          }
+          for (let i = 0; i < GX; i++) for (let j = 0; j < GY; j++) {
+            const x = pr.left + ((i + 0.5) / GX) * pr.width; const y = pr.top + ((j + 0.5) / GY) * pr.height;
+            if (x < r.left || x > r.right || y < top || y > r.bottom) continue;
+            let e = 0; let raw = 0;
+            for (const s of srcs) {
+              if (x < s.sr.left || x > s.sr.right || y < s.sr.top || y > s.sr.bottom) continue;
+              e = e * (1 - s.a) + s.a * Math.min(1, s.res);
+              raw = raw * (1 - s.a) + s.a * s.res;
+            }
+            pts.set(`${n}:${i}:${j}`, { eff: e, raw: raw * pr.width * dpr });
+          }
+        }
+        return { pts, widths, rects };
+      };
+      /** Where on the screen a point of a page is (fractions of it), null where the page is not laid out. */
+      const at = (n: string, u: number, w: number, rects: Map<string, DOMRect>) => { const pr = rects.get(n) ?? q<HTMLElement>(`.pdf-page[data-page="${n}"]`, b)?.getBoundingClientRect(); return pr && pr.width > 1 ? { x: pr.left + u * pr.width, y: pr.top + w * pr.height, w: pr.width } : null; };
+      /** The page point under a place on the screen. */
+      const under = (x: number, y: number) => {
+        for (const el of qa<HTMLElement>('.pdf-page', b)) { const pr = el.getBoundingClientRect(); if (pr.width > 1 && x >= pr.left && x <= pr.right && y >= pr.top && y <= pr.bottom) return { n: el.dataset.page!, u: (x - pr.left) / pr.width, v: (y - pr.top) / pr.height }; }
+        return null;
+      };
+      let inkPage: string | null = null;
+      const fails: string[] = [];
+      let caseNo = 0;
+      /**
+       * Watch every frame while `act` goes on and until all in view has been sharp for half a second (or `most` ms).
+       * `eye`: the place on the screen whose page point is followed (it may move in the frame a new layout lands, and no more than 2 px a frame after: a jump is more);
+       * `moving`: the case moves the pages itself (a scroll), so the point is not followed.
+       */
+      const watch = async (what: string, act: () => Promise<void> | void, o: { eye?: [number, number]; moving?: boolean; most?: number } = {}) => {
+        light(++caseNo);
+        const most = o.most ?? 9000;
+        let frames = 0; let blankF = 0; let lostF = 0; let softF = 0; let late = 0; let worst = 0; let inkMiss = 0; let inkOff = 0; let jumps = 0; let jumpMost = 0; let drop = 0;
+        let sharpAt = -1; let acting = true;
+        const eyeAt = o.eye ? under(o.eye[0], o.eye[1]) : null;
+        let eyeWas: { x: number; y: number; w: number } | null = null;
+        let prev = sample();
+        let least = 1;
+        const trace: string[] = [];
+        let whereWas = '';
+        const t0 = performance.now(); let last = t0;
+        const done = (async () => { await act(); acting = false; })();
+        for (;;) {
+          await new Promise((res) => { requestAnimationFrame(res); setTimeout(res, 100); });
+          const now = performance.now();
+          const s = sample();
+          frames++;
+          if (now - last > 34) { late++; worst = Math.max(worst, now - last); }
+          last = now;
+          let blank = false; let lost = false; let soft = false; let low = 1;
+          for (const [k, p] of s.pts) {
+            low = Math.min(low, p.eff);
+            if (p.eff < 0.02) blank = true;
+            if (p.eff < 0.9) soft = true;
+            const was = prev.pts.get(k);
+            if (was) {
+              const pw = s.widths.get(k.split(':')[0]!)!;
+              const could = Math.min(1, was.raw / pw);
+              if (p.eff < could - 0.1) { lost = true; drop = Math.max(drop, could - p.eff); }
+            }
+          }
+          if (s.pts.size === 0) blank = true;
+          if (blank) blankF++;
+          if (lost) lostF++;
+          if (soft) softF++;
+          if (!acting) least = Math.min(least, low);
+          if (!blank && !soft) { if (sharpAt < 0) sharpAt = now; } else sharpAt = -1;
+          if (inkPage && s.rects.has(inkPage)) {
+            const svg = q<SVGElement>(`svg.page-ink[data-page="${inkPage}"]`, b);
+            const pr = s.rects.get(inkPage)!;
+            const ir = svg?.getBoundingClientRect();
+            if (!svg || !svg.childElementCount) inkMiss++;
+            else if (ir && (Math.abs(ir.left - pr.left) > 1.5 || Math.abs(ir.top - pr.top) > 1.5 || Math.abs(ir.width - pr.width) > 1.5)) inkOff++;
+          }
+          if (eyeAt && !o.moving) {
+            const e = at(eyeAt.n, eyeAt.u, eyeAt.v, s.rects);
+            if (e && eyeWas && Math.abs(e.w - eyeWas.w) < 0.5) {
+              const m = Math.hypot(e.x - eyeWas.x, e.y - eyeWas.y);
+              if (m > 2) { jumps++; jumpMost = Math.max(jumpMost, m); trace.push(`moved ${(e.x - eyeWas.x).toFixed(1)},${(e.y - eyeWas.y).toFixed(1)} at ${Math.round(now - t0)} ms`); }
+            }
+            if (e) eyeWas = e;
+          }
+          const where = `${Math.round(sc.scrollLeft)},${Math.round(sc.scrollTop)} ${sc.scrollWidth}w ${q<HTMLElement>('.pdf-pages', b)?.style.width ?? ''} ${q<HTMLElement>('.pdf-pages', b)?.style.transform ? 't' : ''}`;
+          if (frames > 40 && where !== whereWas) trace.push(`${Math.round(now - t0)}ms at ${where} plan ${view.dataset.zoomPlan ?? '-'} column at ${((q<HTMLElement>('.pdf-pages', b)?.getBoundingClientRect().left ?? 0) - sc.getBoundingClientRect().left).toFixed(1)}`);
+          whereWas = where;
+          if (frames <= 40) {
+            const pagesIn = [...s.rects.keys()].join(' ');
+            const blanks = [...s.pts].filter(([, p]) => p.eff < 0.02).map(([k]) => k.split(':')[0]);
+            trace.push(`${Math.round(now - t0)}ms z${view.dataset.zoom} top ${Math.round(sc.scrollTop)} left ${Math.round(sc.scrollLeft)} pages ${pagesIn}${blanks.length ? ` blank on ${[...new Set(blanks)].join(' ')}` : ''}${lost ? ' lost' : ''}`);
+          }
+          prev = s;
+          if (!acting && sharpAt > 0 && now - sharpAt > 500) break;
+          if (now - t0 > most) break;
+        }
+        await done;
+        light(0);
+        const took = sharpAt > 0 ? `${Math.round(sharpAt - t0)} ms` : `not in ${most} ms`;
+        const eyeEnd = eyeAt && o.eye ? at(eyeAt.n, eyeAt.u, eyeAt.v, new Map()) : null;
+        const moved = eyeEnd && o.eye ? Math.hypot(eyeEnd.x - o.eye[0], eyeEnd.y - o.eye[1]) : null;
+        log(`zoom: ${name}: ${what}: zoom ${zoomNow()}; ${frames} frames; blank in ${blankF}; detail lost in ${lostF} (by ${drop.toFixed(2)} at most); soft in ${softF}; all sharp after ${took}; the least detail at rest ${least.toFixed(2)}; ${late} frames late, the longest ${worst.toFixed(0)} ms; writing missing in ${inkMiss}, off its page in ${inkOff}; what was under the eye moved after the layout in ${jumps} (${jumpMost.toFixed(1)} px at most)${moved !== null ? `, and lies ${moved.toFixed(1)} px from where it was` : ''}`);
+        const bad = [blankF && `blank in ${blankF}`, lostF && `detail lost in ${lostF}`, inkMiss && `writing missing in ${inkMiss}`, inkOff && `writing off in ${inkOff}`, jumps && `moved after the layout in ${jumps}`].filter(Boolean);
+        if (bad.length) { fails.push(`${what}: ${bad.join(', ')}`); log(`zoom trace: ${trace.join(' | ')}`); }
+      };
+      const click = (tool: string) => q<HTMLElement>(`.meta [data-tool="${tool}"]`, b)!.click();
+      const until = async (want: (z: number) => boolean, what: string) => { await poll(() => want(zoomNow()) && !view.dataset.pinch, what, 40000); };
+      const rest = async () => { await sleep(300); await poll(() => { const s = sample(); return s.pts.size > 0 && [...s.pts.values()].every((p) => p.eff >= 0.9); }, 'all in view sharp', 30000).catch(() => log('not all sharp at rest')); await sleep(400); };
+      // a page in the book's middle, written on
+      const goTo = async (n: number) => { q<HTMLElement>(`.pdf-page[data-page="${n}"]`, b)?.scrollIntoView({ block: 'start' }); sc.scrollTop -= 30; await sleep(800); };
+      await goTo(40);
+      await rest();
+      {
+        const hash = view.dataset.hash;
+        const sheet = `p.${hash}.40`;
+        const st = await invoke<InkState>('dev_ink_state').catch(() => null);
+        if (hash && st?.sheets.some((x) => x.id === sheet)) {
+          await invoke('dev_ink_stroke', { sheet, points: line([80, 200], [420, 260]), rest: false });
+          await poll(async () => (await invoke<InkState>('dev_ink_state')).sheets.find((x) => x.id === sheet)?.strokes === 1, 'a stroke on p. 40', 20000).catch(() => {});
+          await poll(() => q(`svg.page-ink[data-page="40"]`, b)?.childElementCount, 'p. 40 draws its writing', 20000).catch(() => {});
+          if (q(`svg.page-ink[data-page="40"]`, b)?.childElementCount) inkPage = '40';
+        }
+        log(`written on: ${inkPage ?? 'none (no canvases here)'}`);
+      }
+      const mid = (): [number, number] => { const r = sc.getBoundingClientRect(); const top = q('.meta', b)?.getBoundingClientRect().bottom ?? r.top; return [r.left + r.width / 2, (Math.max(r.top, top) + r.bottom) / 2]; };
+      await shot('zoom-fit');
+      const cases = (await invoke<string | null>('dev_env', { name: 'ILMI_CASES' })) ?? '';
+      // (`"cases"`: `pinch` the two-finger cases alone, `far` only the two from far in to far out)
+      const pinch = (cx: number, cy: number, from: number, to: number, secs: number) => ask('pinch', fx(cx - from / 2), fy(cy), fx(cx + from / 2), fy(cy), fx(cx - to / 2), fy(cy), fx(cx + to / 2), fy(cy), secs);
+      if (cases === '') {
+      phase('the bar, in');
+      await watch('+ once, fit to 125%', async () => { click('zoom-in'); await until((z) => z === 1.25, '125%'); }, { eye: mid() });
+      await rest();
+      await watch('+ twice quickly, to 200%', async () => { click('zoom-in'); await sleep(120); click('zoom-in'); await until((z) => z === 2, '200%'); }, { eye: mid() });
+      await rest();
+      await watch('+ to 250%', async () => { click('zoom-in'); await until((z) => z === 2.5, '250%'); }, { eye: mid() });
+      await rest();
+      await shot('zoom-250');
+      phase('scrolled, zoomed in');
+      const glide = (dx: number, dy: number, ms: number) => new Promise<void>((res) => {
+        const x0 = sc.scrollLeft; const y0 = sc.scrollTop; const t0 = performance.now();
+        const step = () => { const k = Math.min(1, (performance.now() - t0) / ms); const e = 1 - (1 - k) ** 2; sc.scrollLeft = x0 + dx * e; sc.scrollTop = y0 + dy * e; if (k < 1) requestAnimationFrame(step); else res(); };
+        requestAnimationFrame(step);
+      });
+      const pageH = () => q<HTMLElement>('.pdf-page[data-page="40"]', b)!.getBoundingClientRect().height;
+      await watch('a scroll down a page and a half at 250%', () => glide(0, pageH() * 1.5, 2500), { moving: true });
+      await rest();
+      await watch('a scroll across at 250%', () => glide(sc.scrollWidth, 0, 1200), { moving: true });
+      await rest();
+      await watch('+ twice, to 400%', async () => { click('zoom-in'); await sleep(150); click('zoom-in'); await until((z) => z === 4, '400%'); }, { eye: mid() });
+      await rest();
+      await shot('zoom-400');
+      phase('the bar, out');
+      await goTo(40);
+      await rest();
+      await watch('− four times quickly, 400% to 150%', async () => { for (let k = 0; k < 4; k++) { click('zoom-out'); await sleep(120); } await until((z) => z === 1.5, '150%'); }, { eye: mid() });
+      await rest();
+      await watch('− twice, 150% to fit', async () => { click('zoom-out'); await sleep(150); click('zoom-out'); await until((z) => z === 1, 'fit'); }, { eye: mid() });
+      await rest();
+      await watch('− once, fit to 75%', async () => { click('zoom-out'); await until((z) => z === 0.75, '75%'); }, { eye: mid() });
+      await rest();
+      await watch('− once, 75% to 50%: many pages', async () => { click('zoom-out'); await until((z) => z === 0.5, '50%'); }, { eye: mid() });
+      await rest();
+      await shot('zoom-50');
+      await watch('fit again (the bar\'s word), 50% to fit', async () => { click('zoom-fit'); await until((z) => z === 1, 'fit'); }, { eye: mid() });
+      await rest();
+      }
+      if (cases === '' || cases === 'far') {
+      // far out from far in: the pages that come into view were never near enough to be drawn
+      await goTo(120);
+      click('zoom-fit');
+      await until((z) => z === 1, 'fit');
+      for (let k = 0; k < 3; k++) { click('zoom-in'); await sleep(150); }
+      await until((z) => z === 2, '200%');
+      await rest();
+      await watch('from 200%, the bar\'s word and − twice at once: to 50%, pages never drawn coming into view', async () => { click('zoom-fit'); await sleep(120); click('zoom-out'); await sleep(120); click('zoom-out'); await until((z) => z === 0.5, '50%'); }, { eye: mid() });
+      await rest();
+      await shot('zoom-out-far');
+      }
+      if (pinching && cases !== 'far') {
+        phase('two fingers');
+        const [cx, cy] = mid();
+        await watch('two fingers spread, fit to about 250%', async () => { const z0 = zoomNow(); pinch(cx, cy, 160, 400, 0.9); await until((z) => z > z0 * 1.6, 'spread: larger'); }, { eye: [cx, cy], most: 20000 });
+        await rest();
+        await watch('two fingers closed, back to about fit', async () => { const z0 = zoomNow(); pinch(cx, cy, 400, 170, 0.9); await until((z) => z < z0 * 0.7, 'closed: smaller'); }, { eye: [cx, cy], most: 20000 });
+        await rest();
+        await watch('two fingers closed far, to the least: many pages', async () => { pinch(cx, cy, 500, 120, 0.9); await until((z) => z === 0.5, 'closed: the least'); }, { eye: [cx, cy], most: 20000 });
+        await rest();
+        await shot('zoom-pinched-50');
+        await watch('two fingers spread from the least, to about fit', async () => { pinch(cx, cy, 150, 330, 0.9); await until((z) => z > 0.9, 'spread: about fit'); }, { eye: [cx, cy], most: 20000 });
+        await rest();
+      }
+      if (pinching && cases !== 'bar') {
+        const [cx, cy] = mid();
+        // far out from far in by two fingers, at a place never drawn at fit
+        await goTo(200);
+        setBookZoom(rel, 2.5);
+        await until((z) => z === 2.5, '250%');
+        await rest();
+        await watch('from 250%, two fingers closed far: to 50%, pages never drawn coming into view', async () => { pinch(cx, cy, 560, 110, 0.9); await until((z) => z === 0.5, 'closed: the least'); }, { eye: [cx, cy], most: 20000 });
+        await rest();
+        await shot('zoom-pinched-far');
+      }
+      setBookZoom(rel, 1);
+      lamp.remove();
+      if (fails.length) log(`zoom: ${fails.length} cases fell short: ${fails.join('; ')}`);
+      if (!measure) must(fails.length === 0, 'every zoom kept the detail it had, never blank, its writing on its page, and nothing moved after the layout');
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('feel')) {
       // ── how moving through a long PDF feels (`"part": "feel"`, with `books` as `draw`; no rig; a measure, to be
       // read beside a recording): opening it, a slow scroll, a fling of thirty pages, a jump to a far page, and its

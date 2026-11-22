@@ -21491,6 +21491,118 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       log('done');
       return;
     }
+    if (part.split(',').includes('overlays')) {
+      // ── what the page lays over a book's native pages shows, never the pages (`"part": "overlays"`; 2026-11-22, the
+      // iPad: the contents palette's list hidden under the pages, its search field alone showing): each overlay that
+      // opens over a book is opened, and at points spread over what of it lies over the pages the surface says it
+      // does not draw there (cut out, or the surface standing aside with a picture of itself under a shade). Hard.
+      // `overlays:` lines ──
+      const mid = (el: Element): [number, number] => { const r = el.getBoundingClientRect(); return [fx(r.left + r.width / 2), fy(r.top + r.height / 2)]; };
+      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      window.dispatchEvent(new Event('ilmi-pdf-native'));
+      const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-surface', x) ? x : null; }, 'the chapter as the native page view', 60000);
+      const surf = q<HTMLElement>('.pdf-surface', b)!;
+      const sid = surf.dataset.surface!;
+      const S = (a: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...a } });
+      await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'its pages shown', 30000);
+      await S({ op: 'go', page: PAGEINK_PAGE, y: 0 });
+      await sleep(1000);
+      const fails: string[] = [];
+      const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+      /** An overlay open: at points over what of it lies over the pages, whether the surface draws there. */
+      const look = async (name: string, sel: string) => {
+        const els = await poll(() => { const e = qa<HTMLElement>(sel).filter((x) => x.getClientRects().length); return e.length ? e : null; }, `${name}: open`, 10000).catch(() => null);
+        if (!els) { fails.push(`${name}: not opened`); return; }
+        await sleep(900);
+        const sr = surf.getBoundingClientRect();
+        const pts: number[][] = [];
+        for (const e of els) {
+          const r = e.getBoundingClientRect();
+          for (const fxv of [0.1, 0.5, 0.9]) for (const fyv of [0.1, 0.5, 0.9]) {
+            const x = r.left + r.width * fxv, y = r.top + r.height * fyv;
+            if (x > sr.left + 1 && x < sr.right - 1 && y > sr.top + 1 && y < sr.bottom - 1) pts.push([x, y]);
+          }
+        }
+        const st = await S({ op: 'covers', lines: pts });
+        const covers = (st.covers as boolean[]) ?? [];
+        const drawn = covers.filter(Boolean).length;
+        const pic = surf.style.backgroundImage;
+        log(`overlays: ${name}: ${pts.length} points over the pages, the surface draws at ${drawn}${st.veiled ? ` (standing aside, its picture under the shade: ${pic ? `${Math.round(pic.length / 1024)} kB` : 'none'})` : ''}`);
+        if (st.veiled && !pic) fails.push(`${name}: the surface stood aside with no picture of it in its place`);
+        await shot(`overlay-${name.replace(/[^a-z0-9]+/g, '-')}`);
+        if (pts.length && drawn > 0) fails.push(`${name}: the pages drawn over it at ${drawn} of ${pts.length} points`);
+      };
+      const close = async () => {
+        key('Escape'); await sleep(500); document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); await sleep(400);
+        // (closed, the surface shows the pages again)
+        await poll(async () => !(await S({ op: 'state' })).veiled, 'and closed, the pages shown again', 5000).catch(() => fails.push('the surface still standing aside after an overlay closed'));
+      };
+      // the contents palette (t)
+      key('t');
+      await look('the contents palette', '.palette-panel');
+      await close();
+      // open or run
+      useApp.setState({ paletteOpen: true });
+      await look('open or run', '.palette-panel');
+      useApp.setState({ paletteOpen: false });
+      await sleep(600);
+      await poll(async () => !(await S({ op: 'state' })).veiled, 'open or run closed, the pages shown again', 5000).catch(() => fails.push('the surface still standing aside after open or run'));
+      // the book's ⋯ menu
+      const more = q<HTMLElement>('.meta [data-tool="more"]', b);
+      if (more) { ask('tap', ...mid(more)); await look('the ⋯ menu', '.pop-menu'); await close(); } else fails.push('no ⋯ button');
+      // tweaks
+      useApp.setState({ tweaksOpen: true });
+      await look('tweaks', '.tweaks');
+      useApp.setState({ tweaksOpen: false });
+      await sleep(600);
+      // a highlight's menu: a selection highlighted, then tapped
+      await S({ op: 'select', page: PAGEINK_PAGE, x: 0.12, y: 0.62, x2: 0.8, y2: 0.64 });
+      const view = q<HTMLElement>('.pdf-view', b)!;
+      await poll(() => Number(view.dataset.sel ?? 0) > 5, 'a selection', 10000);
+      await shot('overlay-selection-menu');
+      const q0 = (view.dataset.selQuad ?? '').split(' ').map(Number);
+      key('h');
+      await sleep(800);
+      const g = await S({ op: 'where', page: q0[0], x: q0[1]! + q0[3]! / 2, y: q0[2]! + q0[4]! / 2 });
+      ask('tap', fx(Number(g.gx)), fy(Number(g.gy)));
+      await look('a highlight\'s menu', '.pop-menu');
+      const clear = q<HTMLElement>('.pop-menu [data-act="hl-clear"]');
+      if (clear) clear.click(); else await close();
+      await sleep(600);
+      // the ink bar's popovers: the pen's settings (the pen held, tapped again) and a size's
+      const bar = q<HTMLElement>('.inkbar', b);
+      if (bar) {
+        const pen = q<HTMLElement>('[data-ink-tool="pen"]', bar);
+        if (pen) { ask('tap', ...mid(pen)); await sleep(400); if (!q('.ink-pop')) ask('tap', ...mid(pen)); await look('the pen\'s settings', '.ink-pop'); await close(); }
+        const size = q<HTMLElement>('[data-ink-size][aria-pressed="true"]', bar) ?? q<HTMLElement>('[data-ink-size]', bar);
+        if (size) { ask('tap', ...mid(size)); await sleep(400); if (!q('.ink-size-pop')) ask('tap', ...mid(size)); await look('a size\'s popover', '.ink-size-pop'); await close(); }
+      } else fails.push('no ink bar');
+      // the lasso's menu: a stroke written and held
+      if (bar) {
+        await invoke('dev_ink_pen', { on: true });
+        const on = async (x: number, y: number) => { const gg = await S({ op: 'where', page: PAGEINK_PAGE, x, y }); return [fx(Number(gg.gx)), fy(Number(gg.gy))] as [number, number]; };
+        const n0 = (await there())!.strokes;
+        ask('drag', ...(await on(0.3, 0.3)), ...(await on(0.6, 0.31)), 0.6);
+        await poll(async () => (await there())?.strokes === n0 + 1, 'a stroke for the lasso', 20000);
+        ask('tap', ...mid(q<HTMLElement>('[data-ink-tool="select"]', bar)!));
+        await poll(async () => (await state()).tool?.kind === 'select', 'the lasso held', 8000);
+        const pts: number[] = [];
+        for (const [x, y] of [[0.25, 0.27], [0.65, 0.27], [0.65, 0.35], [0.25, 0.35], [0.25, 0.27]] as const) pts.push(...(await on(x, y)));
+        ask('loop', ...pts);
+        await look('the lasso\'s menu', '.ink-menu');
+        ask('tap', ...mid(q<HTMLElement>('[data-ink-tool="pen"]', bar)!));
+        await sleep(400);
+        await close();
+        await invoke('dev_ink_pen', { on: false });
+      }
+      try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
+      if (fails.length) throw new Error(`overlays: ${fails.length} off: ${fails.join('; ')}`);
+      log('ok: every overlay over a book shows itself, not the pages');
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('inkstill')) {
       // ── what is written already stays still while more is written, and what the eraser touches goes at once
       // (`"part": "inkstill"`; 2026-11-22, the iPad: "as i write strokes, earlier or nearby strokes will blur then

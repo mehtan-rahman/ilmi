@@ -50,6 +50,8 @@ struct PdfSurfaceArgs: Decodable {
   let hash: String?
   /// Its number among those the page told: one older than the last taken is not taken (they may come out of order).
   let seq: Int?
+  /// Not shown, and taking no touch: the page shows a picture of it in its place, under something laid over all of it.
+  let veiled: Bool?
   let zoom: Double?
   let open: PdfPlace?
   let dark: Bool?
@@ -495,6 +497,39 @@ enum Glass {
   }
 }
 
+/// The holes a surface leaves for what the page lays over it.
+enum Holes {
+  /// The rects as rects that do not overlap, covering what they cover. A mask cut with the even-odd rule leaves out
+  /// what is inside one rect, but shows again what is inside two: overlapping holes (a palette and its list) let the
+  /// pages show through what lay over them (2026-11-22: the contents palette's list hidden under a book's pages).
+  static func union(_ rects: [CGRect]) -> [CGRect] {
+    let rs = rects.filter { !$0.isNull && $0.width > 0 && $0.height > 0 }
+    if rs.count < 2 { return rs }
+    let ys = Array(Set(rs.flatMap { [$0.minY, $0.maxY] })).sorted()
+    var out: [CGRect] = []
+    for i in 0..<(ys.count - 1) {
+      let y0 = ys[i], y1 = ys[i + 1]
+      if y1 <= y0 { continue }
+      let spans = rs.filter { $0.minY <= y0 && $0.maxY >= y1 }.map { ($0.minX, $0.maxX) }.sorted { $0.0 < $1.0 }
+      var cur: (CGFloat, CGFloat)?
+      for sp in spans {
+        if let c = cur, sp.0 <= c.1 { cur = (c.0, max(c.1, sp.1)) } else {
+          if let c = cur { out.append(CGRect(x: c.0, y: y0, width: c.1 - c.0, height: y1 - y0)) }
+          cur = sp
+        }
+      }
+      if let c = cur { out.append(CGRect(x: c.0, y: y0, width: c.1 - c.0, height: y1 - y0)) }
+    }
+    return out
+  }
+
+  /// Whether any two of the rects overlap.
+  static func overlap(_ rects: [CGRect]) -> Bool {
+    for i in 0..<rects.count { for j in (i + 1)..<max(i + 1, rects.count) where rects[i].intersects(rects[j]) && !rects[i].intersection(rects[j]).isEmpty { return true } }
+    return false
+  }
+}
+
 /// Takes no touch where the page lays something over the surface: there the web view beneath has it.
 final class HoledView: UIView {
   var holes: [CGRect] = []
@@ -626,6 +661,8 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     if rangeChanged { for v in views.values { v.removeFromSuperview() }; views = [:] }
     // the holes: cut out of the view's glass and its touches
     holesFrom(a.holes ?? [])
+    let veiled = a.veiled ?? false
+    if view.isHidden != veiled { view.isHidden = veiled }
     if let h = a.hash, h != bookHash { bookHash = h; layInk() }
     var lk = PdfLook()
     if let c = a.accent.flatMap({ UIColor(pdfHex: $0) }) { lk.accent = c }
@@ -655,7 +692,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
 
   private func holesFrom(_ hs: [PdfHole]) {
     guard let web = plugin?.webView else { return }
-    let rects = hs.map { web.scrollView.convert(CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h), to: view) }
+    let rects = Holes.union(hs.map { web.scrollView.convert(CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h), to: view) })
     view.holes = rects
     if rects.isEmpty { view.layer.mask = nil; return }
     let path = UIBezierPath(rect: view.bounds.insetBy(dx: -4000, dy: -4000))
@@ -1261,6 +1298,30 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
       st["column"] = Glass.column(view, from: p0, to: p1)
       st["from"] = [Double(p0.x), Double(p0.y), Double(p1.y)]
       return st
+    case "picture":
+      // the surface as it is shown now, a JPEG: what the page shows in its place while it stands aside
+      var st: [String: Any] = [:]
+      let b = view.bounds.size
+      if b.width > 0, b.height > 0 {
+        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = screen; fmt.opaque = true
+        let img = UIGraphicsImageRenderer(size: b, format: fmt).image { _ in view.drawHierarchy(in: view.bounds, afterScreenUpdates: false) }
+        st["data"] = img.jpegData(compressionQuality: 0.9)?.base64EncodedString() ?? ""
+      }
+      return st
+    case "covers":
+      // (the checks) whether the surface draws at each of these points of the web view's glass (each `[x, y]`, in
+      // `lines`): false where the page has laid something over it
+      var st = state()
+      if view.isHidden { st["covers"] = (a.lines ?? []).map { _ in false } } else if let web = plugin?.webView {
+        let m = view.layer.mask as? CAShapeLayer
+        st["covers"] = (a.lines ?? []).filter { $0.count >= 2 }.map { p -> Bool in
+          let v = web.scrollView.convert(CGPoint(x: p[0], y: p[1]), to: view)
+          guard view.bounds.contains(v) else { return false }
+          guard let path = m?.path else { return true }
+          return path.contains(view.layer.convert(v, to: m!), using: .evenOdd)
+        }
+      }
+      return st
     case "where":
       // (the checks) where a point of a page (fractions of it) lies on the web view's glass
       var st = state()
@@ -1308,7 +1369,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     let (worst, share) = coarse()
     return ["page": n, "y": Double(y), "x": x.map { Double($0) } as Any, "zoom": Double(scroll.zoomScale), "pages": count, "views": views.count, "worst": worst, "coarse": share,
             "drawn": painter.drawn, "drawMs": painter.drawMs, "workers": painter.workers, "memory": PageMemory.shared.bytes, "budget": PageMemory.shared.budget, "level": wantLevel,
-            "seen": seenPages(), "inked": views.keys.sorted().map { n in "\(n): gen \(inkGen[n] ?? 0) strokes \(ink?.inkOf(page: n).count ?? -1) pic \(views[n]!.pictureLevel) tiles \(views[n]!.tileLayers.mapValues { $0.count })" }, "inkBusy": inkBusy.count, "inkLog": Array(inkLog.suffix(6)), "inkJobs": inkJobs.count, "marks": marksShown(), "marksTold": marksByPage.values.reduce(0) { $0 + $1.count }, "boxesTold": marksByPage.values.reduce(0) { $0 + $1.filter { $0.k == "box" }.count },
+            "seen": seenPages(), "inked": views.keys.sorted().map { n in "\(n): gen \(inkGen[n] ?? 0) strokes \(ink?.inkOf(page: n).count ?? -1) pic \(views[n]!.pictureLevel) tiles \(views[n]!.tileLayers.mapValues { $0.count })" }, "veiled": view.isHidden, "holesCut": view.holes.count, "inkBusy": inkBusy.count, "inkLog": Array(inkLog.suffix(6)), "inkJobs": inkJobs.count, "marks": marksShown(), "marksTold": marksByPage.values.reduce(0) { $0 + $1.count }, "boxesTold": marksByPage.values.reduce(0) { $0 + $1.filter { $0.k == "box" }.count },
             "opened": openedAt, "laid": laidOut.suffix(6).joined(separator: " "),
             "hits": text?.hitCount ?? 0, "current": text?.current.map { [$0.0, $0.1] } as Any, "selected": text?.selection?.string ?? "",
             "offset": [Double(scroll.contentOffset.x), Double(scroll.contentOffset.y)], "content": [Double(scroll.contentSize.width), Double(scroll.contentSize.height)], "dark": dark, "holes": view.holes.count]

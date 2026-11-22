@@ -129,7 +129,11 @@ export function holesOver(el: HTMLElement): SurfaceHole[] {
       if (known && !known.contains(el)) { found.add(known); continue; }
       while (at.parentElement && !at.parentElement.contains(el)) at = at.parentElement;
       found.add(at);
-      wide.add(at);
+      // (laid over much of the pages, a shade or a sheet sliding in: the surface stands aside under it, a picture of
+      // itself in its place; a small thing is a hole like any other)
+      const ab = at.getBoundingClientRect();
+      const over = Math.max(0, Math.min(ab.right, r.right) - Math.max(ab.left, r.left)) * Math.max(0, Math.min(ab.bottom, r.bottom) - Math.max(ab.top, r.top));
+      if (over >= r.width * r.height * 0.2) wide.add(at);
     }
   }
   const out: SurfaceHole[] = [];

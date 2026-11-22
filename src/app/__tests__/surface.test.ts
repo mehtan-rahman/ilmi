@@ -199,6 +199,14 @@ describe('what the page lays over a surface', () => {
     expect(holesOver(el)).toEqual([{ x: 100, y: 50, w: 200, h: 800, wide: true }]);
   });
 
+  it('a small thing over it that is no part of it is a hole, and the surface does not stand aside for it', () => {
+    const dot = add(document.body, 'lamp', [140, 700, 90, 90]);
+    under = (x, y) => (within(dot, x, y) ? dot : el);
+    const hs = holesOver(el);
+    expect(hs.length).toBe(1);
+    expect(hs[0]!.wide).toBeUndefined();
+  });
+
   it('a menu, a notice, the go-to field: each is its own hole, not the whole of what holds it', () => {
     // a menu in a backdrop as large as the window: the surface stands aside for the menu alone
     const backdrop = add(document.body, 'backdrop', [0, 0, 1000, 900]);

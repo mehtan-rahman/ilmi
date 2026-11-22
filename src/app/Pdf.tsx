@@ -478,6 +478,14 @@ function sendPdfSurface(spec: Record<string, unknown> & { id: string }): void {
   const told = { ...spec, seq: ++pdfSeq };
   void import('@tauri-apps/api/core').then((m) => m.invoke('ink_pdf', { spec: told })).catch((e: unknown) => { pdfSaid.delete(spec.id); console.error(e); });
 }
+/** A picture of a book's surface as it is shown now (a JPEG's URL), for the page to show in its place; null if none. */
+async function pdfPicture(id: string): Promise<string | null> {
+  try {
+    const m = await import('@tauri-apps/api/core');
+    const got = await m.invoke<{ data?: string }>('ink_pdf_do', { ask: { id, op: 'picture' } });
+    return got?.data ? `data:image/jpeg;base64,${got.data}` : null;
+  } catch { return null; }
+}
 function dropPdfSurface(id: string): void {
   if (!pdfSaid.has(id)) return;
   pdfSaid.delete(id);
@@ -777,6 +785,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   const surfaceId = useMemo(() => `surface:${++surfaceSeq}`, []);
   const pdfSurfId = useMemo(() => `pdf:${++surfaceSeq}`, []);
   const [pdfSurfEl, setPdfSurfEl] = useState<HTMLDivElement | null>(null);
+  /** The book's surface standing aside, a picture of it in its place, under something laid over all of the pages. */
+  const pdfVeil = useRef<{ state: 'off' | 'asking' | 'on' }>({ state: 'off' });
   /** Where the last box a held finger drew on the surface lies on the glass: its bar goes under it. */
   const [pdfPend, setPdfPend] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const pdfSurfRef = useRef(false);
@@ -3826,12 +3836,32 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     if (readPoint && readPoint.pos >= first && readPoint.pos <= last) marksOut.push({ k: 'read', page: readPoint.pos, x: 0, y: readPoint.y, w: 1, h: 0 });
     for (const [key, m] of bookmarks) marksOut.push({ k: 'bm', key, page: m.page, x: 0, y: m.y, w: 0, h: 0 });
     for (const [key, m] of portals) marksOut.push({ k: 'portal', key, page: m.page, x: 1, y: m.y, w: 0, h: 0 });
+    // what lies over the pages is cut out of the surface; something laid over all of them that is not known to be
+    // over pages (a palette's shade, a dialog's) cannot be cut to: the page shows a picture of the surface in its
+    // place, under that, and the surface stands aside until it is gone, as a notebook's does
+    const holes = holesOver(el);
+    const wanted = holes.some((h) => h.wide);
+    const veil = pdfVeil.current;
+    if (wanted && veil.state === 'off') {
+      veil.state = 'asking';
+      void pdfPicture(pdfSurfId).then((url) => {
+        if (pdfVeil.current.state !== 'asking') return;
+        if (url) el.style.backgroundImage = `url(${url})`;
+        pdfVeil.current.state = 'on';
+        pdfSend.current();
+      });
+    } else if (!wanted && veil.state !== 'off') {
+      veil.state = 'off';
+      // (the surface is shown again first, then the picture under it goes)
+      setTimeout(() => { if (pdfVeil.current.state === 'off') el.style.backgroundImage = ''; }, 250);
+    }
     sendPdfSurface({
       id: pdfSurfId, x: r.left, y: r.top, w: r.width, h: r.height,
       root: at.root, hash: at.hash,
       zoom: zoomRef.current, open: pdfOpen.current,
       dark: theme === 'dark', desk: hexOf(css.backgroundColor, '#e9e9e9'),
-      holes: holesOver(el), top: 12, first, last,
+      holes: veil.state === 'on' ? [] : holes, top: 12, first, last,
+      ...(veil.state === 'on' ? { veiled: true } : {}),
       marks: marksOut,
       accent: hexOf(css.getPropertyValue('--accent').trim(), '#b58a2a'),
       fg: hexOf(css.getPropertyValue('--fg').trim() || css.color, '#333333'),

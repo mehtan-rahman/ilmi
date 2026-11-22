@@ -21295,6 +21295,111 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       log('done');
       return;
     }
+    if (part.split(',').includes('reader')) {
+      // ── the native reader's prototype (phase 1 of the native page view, `Reader.swift`; `"part": "reader"` with
+      // `"books"` holding vector.pdf and scan.pdf, under the rig; `"kinds": "B,A"`, `"only"` a file): each way of showing
+      // the pages, A (PDFKit's view) and B (a scroll view of tiled layers), laid over the page's area, zoomed by the
+      // bar's way (animated, to 200%, 50%, fit) and by two fingers (spread and closed), scrolled and flung, frame by
+      // frame on the native side: frames late, frames where B shows any part of a page in view coarser than it will
+      // be drawn, and for both how sharp the middle of the view looks every fourth frame against how it ends; then
+      // the Pencil's ink on a page (written, erased, a lasso moving it). `reader:` lines; a measure, no checks ──
+      const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+      if (!books) throw new Error('ILMI_BOOKS (smoke.json: "books") names the folder with vector.pdf and scan.pdf');
+      const kinds = ((await invoke<string | null>('dev_env', { name: 'ILMI_KINDS' })) ?? 'B,A').split(',');
+      const only = (await invoke<string | null>('dev_env', { name: 'ILMI_ONLY' })) ?? '';
+      const R = (args: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_reader', { args });
+      interface Frame { t: number; dur: number; z: number; oy?: number; moving?: boolean; coarse?: number; edge?: number }
+      const top = 200;
+      const area = { x: 0, y: top, w: window.innerWidth, h: window.innerHeight - top };
+      const cx = area.x + area.w / 2; const cy = area.y + area.h / 2;
+      const pinch = (from: number, to: number, secs: number) => ask('pinch', fx(cx - from / 2), fy(cy), fx(cx + from / 2), fy(cy), fx(cx - to / 2), fy(cy), fx(cx + to / 2), fy(cy), secs);
+      /** What a stretch of frames says: how many, how many late (over one and a half frames after the one before) and the longest gap; for B the frames with a coarse part in view and when the last was; how sharp the middle looked against how it ended. */
+      const sum = (fs: Frame[]) => {
+        let late = 0; let longest = 0;
+        const gaps: string[] = [];
+        for (let i = 1; i < fs.length; i++) { const gap = fs[i]!.t - fs[i - 1]!.t; if (gap > fs[i]!.dur * 1.5) late++; if (gap > 50) gaps.push(`${gap.toFixed(0)}@${fs[i - 1]!.t.toFixed(0)}`); longest = Math.max(longest, gap); }
+        const coarse = fs.filter((f) => (f.coarse ?? 0) > 0);
+        const edges = fs.filter((f) => f.edge !== undefined && f.edge >= 0);
+        const end = edges.slice(-5).map((f) => f.edge!).sort((a, b) => a - b)[2] ?? edges[edges.length - 1]?.edge ?? -1;
+        const blurry = edges.filter((f) => end > 0 && f.edge! < end * 0.85);
+        const lastMove = [...fs].reverse().find((f) => f.moving)?.t ?? 0;
+        return `${fs.length} frames over ${(fs[fs.length - 1]?.t ?? 0).toFixed(0)} ms; ${late} late, the longest gap ${longest.toFixed(0)} ms${gaps.length ? ` (${gaps.slice(0, 6).join(' ')})` : ''}; coarse in ${coarse.length} (the last at ${coarse.length ? coarse[coarse.length - 1]!.t.toFixed(0) : '-'} ms, ${coarse.length ? Math.max(...coarse.map((f) => f.coarse!)).toFixed(2) : '0'} of the view at most); the moving ended at ${lastMove.toFixed(0)} ms; sharpness at the end ${end.toFixed(3)}, blurrier than that by 15% in ${blurry.length} of ${edges.length} looks (the last at ${blurry.length ? blurry[blurry.length - 1]!.t.toFixed(0) : '-'} ms)`;
+      };
+      const measure = async (what: string, act: () => Promise<void> | void, ms: number, snap = 0) => {
+        await R({ op: 'mark', snap });
+        await act();
+        await sleep(ms);
+        const st = await R({ op: 'stats' });
+        log(`reader: ${st.kind}: ${name}: ${what}${snap ? ' (looked at)' : ''}: zoom ${Number(st.zoom).toFixed(2)}; ${sum(st.frames as Frame[])}${st.tiles !== undefined ? `; ${st.tiles} tiles drawn, ${(Number(st.tileMs) / Math.max(1, Number(st.tiles))).toFixed(1)} ms each` : ''}`);
+      };
+      let name = '';
+      for (const kind of kinds) {
+        for (const file of ['vector', 'scan'].filter((x) => !only || x === only)) {
+          name = file;
+          phase(`${kind} ${file}`);
+          const t0 = performance.now();
+          const opened = await R({ op: 'open', path: `${books}/${file}.pdf`, kind, ...area });
+          log(`reader: ${kind}: ${file}: open, ${opened.pages} pages, in ${(performance.now() - t0).toFixed(0)} ms`);
+          await sleep(1500);
+          await R({ op: 'go', page: 40 });
+          await sleep(1500);
+          await shot(`reader-${kind}-${file}-fit`);
+          for (const snap of [0, 4]) {
+            await measure('the bar to 200%', () => { void R({ op: 'zoom', zoom: 2, animated: true }); }, 2000, snap);
+            if (!snap) await shot(`reader-${kind}-${file}-200`);
+            await measure('the bar to 50%', () => { void R({ op: 'zoom', zoom: 0.5, animated: true }); }, 2000, snap);
+            if (!snap) await shot(`reader-${kind}-${file}-50`);
+            await measure('the bar to fit', () => { void R({ op: 'zoom', zoom: 1, animated: true }); }, 2000, snap);
+            await measure('two fingers spread', () => pinch(160, 400, 0.9), 4500, snap);
+            await measure('two fingers closed', () => pinch(420, 130, 0.9), 4500, snap);
+            await R({ op: 'zoom', zoom: 1, animated: false });
+            await sleep(800);
+            await measure('a scroll of three pages in a second and a half', () => { void R({ op: 'scroll', dy: area.w * 1.3 * 3, ms: 1500 }); }, 2500, snap);
+            await measure('a finger\'s fling', () => ask('flick', fx(cx), fy(cy + 250), fx(cx), fy(cy - 250)), 4000, snap);
+            await R({ op: 'zoom', zoom: 2.5, animated: false });
+            await sleep(1200);
+            await measure('a scroll of a page at 250%', () => { void R({ op: 'scroll', dy: area.w * 1.3 * 2.5, ms: 1500 }); }, 2500, snap);
+            await R({ op: 'zoom', zoom: 1, animated: false });
+            await R({ op: 'go', page: 40 });
+            await sleep(1000);
+          }
+          if (file === 'vector') {
+            // the ink: written, erased, and moved by the lasso, a finger standing for the Pencil
+            await R({ op: 'go', page: 40 });
+            await sleep(800);
+            const at = async (x: number, y: number) => { const p = await R({ op: 'where', page: 40, x, y }); return [Number(p.x), Number(p.y)] as [number, number]; };
+            const strokes = async () => ((await R({ op: 'ink' })).pages as { page: number; strokes: number; bounds: number[] }[]).find((p) => p.page === 40);
+            await R({ op: 'tool', tool: 'pen' });
+            const [ax, ay] = await at(0.3, 0.3); const [bx, by] = await at(0.6, 0.32);
+            ask('drag', fx(ax), fy(ay), fx(bx), fy(by), 0.05);
+            const w1 = await poll(async () => { const s = await strokes(); return s && s.strokes >= 1 ? s : null; }, `${kind}: a stroke written on p. 40`, 20000).catch(() => null);
+            log(`reader: ${kind}: ink: written ${w1 ? `${w1.strokes} stroke(s) at ${w1.bounds.map((v) => v.toFixed(0)).join(' ')}` : 'none'}`);
+            await shot(`reader-${kind}-ink`);
+            await R({ op: 'tool', tool: 'lasso' });
+            const ring = [[0.25, 0.25], [0.65, 0.25], [0.65, 0.4], [0.25, 0.4], [0.25, 0.26]];
+            const pts: number[] = [];
+            for (const [u, v] of ring) { const [x, y] = await at(u!, v!); pts.push(fx(x), fy(y)); }
+            ask('loop', ...pts);
+            await sleep(2500);
+            const [mx, my] = await at(0.45, 0.31); const [nx, ny] = await at(0.45, 0.55);
+            ask('drag', fx(mx), fy(my), fx(nx), fy(ny), 0.4);
+            const moved = await poll(async () => { const s = await strokes(); return s && w1 && s.bounds[1]! > w1.bounds[1]! + 20 ? s : null; }, `${kind}: the lasso moves the stroke`, 15000).catch(() => null);
+            log(`reader: ${kind}: ink: lassoed and moved ${moved ? `to ${moved.bounds.map((v) => v.toFixed(0)).join(' ')}` : 'no (it stayed)'}`);
+            await R({ op: 'tool', tool: 'eraser' });
+            const [ex, ey] = await at(0.2, moved ? 0.55 : 0.31); const [gx, gy] = await at(0.8, moved ? 0.55 : 0.31);
+            ask('drag', fx(ex), fy(ey), fx(gx), fy(gy), 0.05);
+            const gone = await poll(async () => { const s = await strokes(); return s && s.strokes === 0 ? s : null; }, `${kind}: the eraser takes it`, 15000).catch(() => null);
+            log(`reader: ${kind}: ink: erased ${gone ? 'yes' : 'no'}`);
+          }
+          await R({ op: 'close' });
+          await sleep(800);
+        }
+      }
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('zoomfeel')) {
       // ── zooming a long PDF, frame by frame (`"part": "zoomfeel"`, with `books` naming a folder that holds
       // `vector.pdf`, or `scan.pdf` with `"only": "scan"`; the pinches only under the rig, `"pinch": "1"`): the bar's

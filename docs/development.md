@@ -1111,7 +1111,9 @@ app's own container on an iPad (in the app's caches on a Mac), begun anew past
 512 KB with the one before kept as `ilmi-zoom.1.log`. From a device:
 `xcrun devicectl device copy from --device <udid> --domain-type
 appDataContainer --domain-identifier dev.ilmi.app --source
-Library/Caches/ilmi-zoom.log --destination <file>`. `zoomfeel`'s
+Library/Caches/ilmi-zoom.log --destination <file>`. The native page view's prototype (phase 1, `Reader.swift`, `ink_reader`,
+debug builds only) and its plan: `docs/native-reader-plan.md`; `pdfink`'s
+`"part": "reader"` measures it. `zoomfeel`'s
 `"tileslow": "<factor>"` and `"workers": "<n>"` hold the app's drawings (and
 pdf.js's) to that many times as long on that many threads, `"within":
 "<ms>"` makes the time to sharp a hard check, and `"notiles": "1"` draws with

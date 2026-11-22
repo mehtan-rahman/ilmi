@@ -75,6 +75,34 @@ The live check (ilmi, every ink, the dark theme) still passes, at most 26 of 255
 
 ---
 
+## 2026-11-22 — a native page view for a PDF on iOS, phase 1: a prototype of two ways, measured, and the plan
+
+**Why.** The device's zoom log (iPad Air 5, M1) had the app's tiles at 6 ms and every zoom sharp 34 to 95 ms after its layout. The user still found it short of GoodNotes. What is left is the web view's zoom model, so on iOS the pages go native. The plan, with every feature of the web reader and how it moves, is `docs/native-reader-plan.md`.
+
+**The prototype.** `src-tauri/ink/ios/Sources/Reader.swift`, reached by `ink_reader` (debug builds only; nothing a user has uses it). It lays a native reader over the web view, of one of two kinds:
+- A: PDFKit's `PDFView`, a `PKCanvasView` over each page by `PDFPageOverlayViewProvider`.
+- B: a `UIScrollView` zooming `CATiledLayer` page views drawing CGPDF (7 levels, bias 4, no fade), with a fitted picture made ahead under each and a canvas over each.
+
+Each frame is written down by a `CADisplayLink`. For B it records whether any part of a page in view is coarser than the level it settles at. For both, every fourth frame a piece of the middle of the view is captured and its edges measured. `pdfink` `"part": "reader"` (under the rig, `"books"`, `"kinds"`, `"only"`) drives it: the bar's zoom, two fingers, a scroll, a fling, a scroll at 250%, then ink written, moved by the lasso and erased.
+
+**Numbers** (Air 11 simulator, 60 Hz; `n2`; the table is in the plan):
+- Both pinch, scroll and fling with almost no late frames.
+- A held the main thread 1.26 s at its first pinch. B never held it over 84 ms.
+- Blur after a pinch is about even: 9 of 50 and 9 of 57 looks after closing, 15 of 50 and 13 of 50 on the scan.
+- B shows the fitted picture under undrawn tiles for about 1.3 s when scrolled at 250%: CATiledLayer draws only what is in view.
+- Opening: B 319 and 120 ms against A's 706 and 1526.
+- Ink: written, lassoed and moved, and erased on both (B's lasso move failed on the first run, not the second).
+
+**Recommendation.** B, with our own prefetching tiles in place of CATiledLayer, and PDFKit's `PDFDocument` and `PDFPage` as the model for the text, the selection and the links. It is the same scroll view and ink engine as the notebook surface (`Surface.swift`).
+
+**Found.** A `PKCanvasView` let go together with the views it lies in, in one release, crashed the app (`PKTiledView dealloc` asking after a view already gone). The prototype lets its canvases go one by one first.
+
+**Checks.** Typecheck clean; npm test 2672 passed and 2 skipped; cargo test 83 passed.
+
+**Not seen.** A device, 120 Hz, the user's own book, selection or links in either kind (not built in the prototype), and memory over a long session.
+
+---
+
 ## 2026-11-21 — on a device the app draws a PDF's pages itself, in bands on several cores at once, and writes down every zoom
 
 **Reported** after 003429b, on the iPad Air (M1): "When I zoom in it takes a second to get clearer and when i zoom out it takes a second to load." The layering held; the drawing is slow there, and a simulator on this Mac's processor did not show it.

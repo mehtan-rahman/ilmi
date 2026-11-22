@@ -459,6 +459,10 @@ impl<R: Runtime> Ink<R> {
         self.call("caps", serde_json::json!({})).await
     }
     /// Two fingers pinch a host's pages: its sheets shown at `k * p + (dx, dy)`; with no `k`, as they lie.
+    /// (dev) The prototype native reader (`Reader.swift`): `{ op, … }` as it says, what it answers.
+    pub async fn reader(&self, args: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.call("reader", args).await
+    }
     pub async fn pinch(&self, pinch: serde_json::Value) -> Result<(), String> {
         self.call::<_, serde_json::Value>("pinch", pinch).await.map(|_| ())
     }

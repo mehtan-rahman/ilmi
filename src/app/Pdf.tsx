@@ -458,6 +458,27 @@ interface Rect { left: number; top: number; width: number; height: number }
 
 /** Each notebook open as a surface of the system's own has a name of its own (milestone 87). */
 let surfaceSeq = 0;
+/**
+ * Whether a book's pages on an iPad are the native page view (`PdfSurface.swift`): a setting until it passes its
+ * checks, off unless `ilmi.pdf.native` is `1` in this device's storage (the tweaks' `pages: native`, or a check).
+ */
+export function nativePdfOn(): boolean {
+  try { return localStorage.getItem('ilmi.pdf.native') === '1'; } catch { return false; }
+}
+/** A book's native surface told what it is and holds (`ink_pdf`), only when that is not what it was last told. */
+const pdfSaid = new Map<string, string>();
+function sendPdfSurface(spec: Record<string, unknown> & { id: string }): void {
+  const text = JSON.stringify(spec);
+  if (pdfSaid.get(spec.id) === text) return;
+  pdfSaid.set(spec.id, text);
+  void import('@tauri-apps/api/core').then((m) => m.invoke('ink_pdf', { spec })).catch((e: unknown) => { pdfSaid.delete(spec.id); console.error(e); });
+}
+function dropPdfSurface(id: string): void {
+  if (!pdfSaid.has(id)) return;
+  pdfSaid.delete(id);
+  void import('@tauri-apps/api/core').then((m) => m.invoke('ink_pdf', { spec: { id } })).catch(() => {});
+}
+const pdfDo = (ask: Record<string, unknown>): Promise<Record<string, unknown> | null> => import('@tauri-apps/api/core').then((m) => m.invoke<Record<string, unknown>>('ink_pdf_do', { ask })).catch(() => null);
 /** Room left round a notebook's pages on its surface, px at fit: as the reader leaves round a PDF's. */
 const SURFACE_PAD = { top: 18, side: 30, bottom: 80 };
 
@@ -731,14 +752,26 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
    * The bar, the menus, page setup, the overview and the box's bar stay this page's, over it.
    */
   const native = !!written && mobile && !phone && hasCanvas() && hash !== null;
+  /**
+   * On an iPad with the setting on, a book's pages are a native surface too (`PdfSurface.swift`): the system's scroll
+   * and zoom, its tiles drawn on several cores, nothing laid out again when a zoom ends. The bar stays this page's.
+   */
+  // (the setting changed: drawn again, as the one or the other)
+  const [, setNativeSaid] = useState(0);
+  useEffect(() => { const f = () => setNativeSaid((t) => t + 1); window.addEventListener('ilmi-pdf-native', f); return () => window.removeEventListener('ilmi-pdf-native', f); }, []);
+  const pdfSurf = !written && mobile && !phone && hasCanvas() && hash !== null && nativePdfOn();
   /** The rows over the pages are outside the scroller (a device's, where the pages are the page's own): nothing of them scrolls, or is pulled, with the pages. */
-  const outside = mobile && !native;
+  const outside = mobile && !native && !pdfSurf;
   const overPages = (rows: ReactNode): ReactNode => (outside ? head && createPortal(rows, head) : rows);
   /** Something of the rows over the pages, wherever they are drawn. */
   const inBar = (sel: string): Element | null => (outside ? head : viewRef.current)?.querySelector(sel) ?? null;
   const inBarRef = useRef(inBar);
   inBarRef.current = inBar;
   const surfaceId = useMemo(() => `surface:${++surfaceSeq}`, []);
+  const pdfSurfId = useMemo(() => `pdf:${++surfaceSeq}`, []);
+  const [pdfSurfEl, setPdfSurfEl] = useState<HTMLDivElement | null>(null);
+  const pdfSurfRef = useRef(false);
+  const pdfSurfIdRef = useRef(pdfSurfId);
   const [surfaceEl, setSurfaceEl] = useState<HTMLDivElement | null>(null);
   /** What the surface last said: where the last box drawn lies (on the page), and whether the pages are moving. */
   const [surfaceAt, setSurfaceAt] = useState<{ pend: InkBox | null; moving: boolean; lay: readonly number[] | null }>({ pend: null, moving: false, lay: null });
@@ -1292,7 +1325,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   /** Whether this book's pages are the app's drawing (tiles), not pdf.js's canvases. */
   const tilesRef = useRef(false);
   // (`window.ilmiNoTiles`, dev: pdf.js's canvases as before, to measure the one against the other)
-  tilesRef.current = !native && !written && useApp.getState().mobile && !!picturesOf(rel) && !(import.meta.env.DEV && (window as unknown as { ilmiNoTiles?: boolean }).ilmiNoTiles);
+  tilesRef.current = !native && !pdfSurf && !written && useApp.getState().mobile && !!picturesOf(rel) && !(import.meta.env.DEV && (window as unknown as { ilmiNoTiles?: boolean }).ilmiNoTiles);
   /** The generation of the tiles asked for: a zoom makes a new one, and the app does not draw an older one's asking still waiting. */
   const tileGen = useRef(0);
   // (one count for every book open, ever larger: a book opened again asks with a generation past what the app was last told for it)
@@ -2155,6 +2188,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
 
   const scrollTo = (n: number) => {
     if (native) { void surfaceGo(surfaceId, { page: Math.max(first, Math.min(last, n)), y: 0 }); return; }
+    if (pdfSurf) { void pdfDo({ id: pdfSurfId, op: 'go', page: Math.max(first, Math.min(last, n)), y: 0 }); return; }
     const el = pageEls.current.get(Math.max(first, Math.min(last, n)));
     const sc = scroller();
     const x = sc?.scrollLeft;
@@ -2188,6 +2222,12 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
       place.current = { page: n, y: p.y };
       return;
     }
+    if (pdfSurf) {
+      landed.current = true;
+      void pdfDo({ id: pdfSurfId, op: 'go', page: n, y: Math.max(0, p.y - room / 1000), ...(p.x !== null && p.x !== undefined ? { x: p.x } : {}) });
+      place.current = { page: n, y: p.y };
+      return;
+    }
     const el = pageEls.current.get(n);
     if (!sc || !el) return;
     const pr = el.getBoundingClientRect();
@@ -2206,7 +2246,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
    * picture is a few milliseconds' work). So a jump never shows bare paper first.
    */
   const whenSeen = (n: number, go: () => void) => {
-    const at = native ? null : picturesOf(rel);
+    const at = native || pdfSurf ? null : picturesOf(rel);
     const el = pageEls.current.get(Math.max(first, Math.min(last, n)));
     if (!at || !el || el.querySelector(':scope > canvas') || el.querySelector<HTMLImageElement>(':scope > img.pg-low')?.complete) { go(); return; }
     let gone = false;
@@ -2479,6 +2519,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   const clearBoxes = () => {
     setPending([]);
     setSel(null);
+    if (pdfSurfRef.current) void pdfDo({ id: pdfSurfIdRef.current, op: 'clear' });
     window.getSelection()?.removeAllRanges();
   };
 
@@ -3727,6 +3768,146 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     if (Math.abs(surfaceZoomAt.current - zoom) > 0.0005) { surfaceZoomAt.current = zoom; void surfaceZoom(surfaceId, zoom, true); }
   }, [native, zoom, surfaceId]);
 
+
+  // ── a book's native surface (the native page view, phase 1): what it is told, what it says ──
+  pdfSurfRef.current = pdfSurf;
+  pdfSurfIdRef.current = pdfSurfId;
+  /** Where it opens: where these pages were left, read once (it says where it is from then on). */
+  const pdfOpen = useRef<{ page: number; y: number; x: number | null } | null | undefined>(undefined);
+  const pdfZoomAt = useRef<number | null>(null);
+  const pdfSend = useRef<() => void>(() => {});
+  pdfSend.current = () => {
+    const el = pdfSurfEl;
+    const at = picturesOf(rel);
+    // (not before the pages' count is known: a surface told it shows one page goes to the first)
+    if (!pdfSurf || !el || !at || !hash || !sizes.length) return;
+    const r = el.getBoundingClientRect();
+    // a tab not shown has no surface
+    if (!el.isConnected || r.width < 8 || r.height < 8) { dropPdfSurface(pdfSurfId); pdfOpen.current = undefined; return; }
+    if (pdfOpen.current === undefined) {
+      const was = places.get(id);
+      const open = was?.at ? { page: was.at.page, y: was.at.y, x: was.x } : null;
+      pdfOpen.current = open;
+    }
+    el.dataset.open = pdfOpen.current ? `${pdfOpen.current.page} ${pdfOpen.current.y.toFixed(3)}` : 'none';
+    if (pdfZoomAt.current === null) pdfZoomAt.current = zoomRef.current;
+    const css = getComputedStyle(el);
+    sendPdfSurface({
+      id: pdfSurfId, x: r.left, y: r.top, w: r.width, h: r.height,
+      root: at.root, hash: at.hash,
+      zoom: zoomRef.current, open: pdfOpen.current,
+      dark: theme === 'dark', desk: hexOf(css.backgroundColor, '#e9e9e9'),
+      holes: holesOver(el), top: 12, first, last,
+    });
+  };
+  useEffect(() => { if (pdfSurf) pdfSend.current(); });
+  useEffect(() => {
+    if (!pdfSurf || !pdfSurfEl) return;
+    let timers: ReturnType<typeof setTimeout>[] = [];
+    const soon = () => {
+      for (const t of timers) clearTimeout(t);
+      timers = [0, 140, 360, 700].map((ms) => setTimeout(() => pdfSend.current(), ms));
+    };
+    const ro = new ResizeObserver(soon);
+    ro.observe(pdfSurfEl);
+    const mo = new MutationObserver(soon);
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open', 'data-open', 'data-on'] });
+    const off = onLayout(soon);
+    window.addEventListener('resize', soon);
+    document.addEventListener('transitionend', soon, true);
+    soon();
+    return () => {
+      for (const t of timers) clearTimeout(t);
+      ro.disconnect(); mo.disconnect(); off();
+      window.removeEventListener('resize', soon);
+      document.removeEventListener('transitionend', soon, true);
+    };
+  }, [pdfSurf, pdfSurfEl]);
+  useEffect(() => {
+    if (!pdfSurf) return;
+    return () => { dropPdfSurface(pdfSurfId); pdfOpen.current = undefined; };
+  }, [pdfSurf, pdfSurfId]);
+  // what it says: where the pages are (the page in view, the place kept, the read point), and the zoom it came to
+  useEffect(() => {
+    if (!pdfSurf) return;
+    return onSurface(pdfSurfId, (e) => {
+      const m = e as unknown as { what: string; page: number; y: number; x?: number; zoom: number; settled: boolean; asked?: boolean; foot: number; footY: number };
+      if (m.what !== 'pdfplace') { pdfHear.current(e as unknown as Record<string, unknown>); return; }
+      setCurrent(m.page);
+      place.current = { page: m.page, y: m.y };
+      placeX.current = m.x ?? null;
+      landed.current = true;
+      places.set(id, { top: 0, at: place.current, x: placeX.current });
+      const v = viewRef.current;
+      if (v) { v.dataset.atPage = String(m.foot); v.dataset.atY = m.footY.toFixed(3); v.dataset.topPage = String(m.page); v.dataset.topY = m.y.toFixed(4); }
+      afterScroll.current();
+      if (m.settled && !m.asked) {
+        // the reader's own zoom (two fingers, two taps): kept, held as a pinch is held (to a hundredth, fit within 3%),
+        // and the surface put exactly there where that is not where it stopped
+        const z = zoomHeld(m.zoom);
+        pdfZoomAt.current = z;
+        if (Math.abs(z - zoomRef.current) > 0.005) setBookZoom(id, z);
+        if (Math.abs(z - m.zoom) > 0.0005) void pdfDo({ id: pdfSurfId, op: 'zoom', zoom: z, animated: true });
+      } else if (!m.settled) {
+        // (the bar's word follows the fingers)
+        const t = inBarRef.current('.pt-pct')?.firstChild;
+        if (t && t.nodeType === 3) t.nodeValue = `${Math.round(m.zoom * 100)}%`;
+      }
+    });
+  }, [pdfSurf, pdfSurfId, id]);
+  /** What the surface says besides where it is: a selection, an action from its menu, a tap (a link's place). */
+  const pdfHear = useRef<(m: Record<string, unknown>) => void>(() => {});
+  pdfHear.current = (m) => {
+    if (m.what === 'pdfsel') {
+      const text = String(m.text ?? '');
+      if (!text) { setSel(null); return; }
+      const quads = (m.quads as number[][]).map((q) => [q[0], q[1], q[2], q[3], q[4]] as Quad);
+      const byPage = new Map<number, { x: number; y: number; w: number; h: number }[]>();
+      for (const q of quads) byPage.set(q[0], [...(byPage.get(q[0]) ?? []), { x: q[1], y: q[2], w: q[3], h: q[4] }]);
+      const boxes = [...byPage].sort((a, b) => a[0] - b[0]).map(([n, rs]) => boxAround(n, rs)).filter((b): b is Box => b !== null);
+      const r = m.rect as number[];
+      setSel({ text, page: Number(m.page), rect: new DOMRect(r[0], r[1], r[2], r[3]), line: '', boxes, quads });
+      return;
+    }
+    if (m.what === 'pdfact') {
+      if (m.act === 'passage') void makeSection().catch(console.error);
+      else if (m.act === 'card') void cardOrClip().catch(console.error);
+      return;
+    }
+    if (m.what === 'pdftap') {
+      // a link there is followed, as a press on the web reader's page follows it (its links read by pdf.js, as they come)
+      const n = Number(m.page); const x = Number(m.x); const y = Number(m.y);
+      void (async () => {
+        if (!pdf) return;
+        if (!links.current.has(n)) {
+          try {
+            const page = await pdf.getPage(n);
+            const v1 = page.getViewport({ scale: 1 });
+            const toView = typeof v1.convertToViewportPoint === 'function'
+              ? (rr: number[]) => [...v1.convertToViewportPoint(rr[0]!, rr[1]!), ...v1.convertToViewportPoint(rr[2]!, rr[3]!)] as number[]
+              : flipRect([0, 0, v1.width, v1.height]);
+            links.current.set(n, pageLinks(await page.getAnnotations(), toView, v1.width, v1.height));
+          } catch { links.current.set(n, []); }
+        }
+        const l = (links.current.get(n) ?? []).find((k) => x >= k.x && x <= k.x + k.w && y >= k.y && y <= k.y + k.h);
+        if (l) await followLink(l, n);
+      })();
+    }
+  };
+  // a search's hits drawn by the surface, the current one brought into view
+  useEffect(() => {
+    if (!pdfSurf) return;
+    if (!find || !find.q.trim()) { void pdfDo({ id: pdfSurfId, op: 'find', q: '' }); return; }
+    const hit = hitAt(find.pages, find.at);
+    void pdfDo({ id: pdfSurfId, op: 'find', q: find.q, ...(hit ? { page: hit.page, k: hit.k } : {}) });
+  }, [pdfSurf, pdfSurfId, find?.q, find?.at, find?.go, find?.pages]);
+  // the bar's zoom steps, ⌘0: the surface goes to the zoom the store has, when it is not the one it said
+  useEffect(() => {
+    if (!pdfSurf) return;
+    if (pdfZoomAt.current === null) { pdfZoomAt.current = zoom; return; }
+    if (Math.abs(pdfZoomAt.current - zoom) > 0.0005) { pdfZoomAt.current = zoom; void pdfDo({ id: pdfSurfId, op: 'zoom', zoom, animated: true }); }
+  }, [pdfSurf, zoom, pdfSurfId]);
+
   if ((status === 'unreadable' || status === 'gone') && info) {
     // why, in plain words, and a way to try again (it is tried by itself when the file lands)
     const why = fail ?? { kind: 'other' as const, said: 'could not open this pdf', detail: '' };
@@ -3789,11 +3970,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
   const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
 
   return (
-    <div className="reader-wrap" ref={outerRef} data-wide={wide && !native ? '1' : undefined} data-native={native ? '1' : undefined}>
-      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} data-written={written ? '1' : undefined} data-layout={pageless ? 'pageless' : undefined} data-tools={inkRow ? '1' : undefined} data-surface={native ? surfaceId : undefined} style={native ? undefined : colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
+    <div className="reader-wrap" ref={outerRef} data-wide={wide && !native && !pdfSurf ? '1' : undefined} data-native={native || pdfSurf ? '1' : undefined}>
+      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} data-written={written ? '1' : undefined} data-layout={pageless ? 'pageless' : undefined} data-tools={inkRow ? '1' : undefined} data-surface={native ? surfaceId : undefined} data-sel={sel ? sel.text.length : undefined} style={native || pdfSurf ? undefined : colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
         {/* the bar over the pages, as wide as the pane whatever the page's width: what the book is, its notes, the zoom, the page, search */}
         {overPages(<>
-        <div className="meta pdf-tools" data-ink={inkRow ? '1' : undefined} style={native || outside ? undefined : colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
+        <div className="meta pdf-tools" data-ink={inkRow ? '1' : undefined} style={native || pdfSurf || outside ? undefined : colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
           {/* the bar's first row: the row itself only where the tools make a second under it (an iPad); anywhere else its words are the bar's own */}
           <div className="pt-row">
           {status === 'ok' && !written && <button type="button" className="pt-btn" data-tool="contents" title="contents t" aria-label="contents" onClick={() => openContents(id)}><Icon name="menu" /></button>}
@@ -3920,7 +4101,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
               )}
             </div>
           )}
-          {!native && <div className="pdf-pages" ref={pagesRef} data-run={pageless && colH < tops.total ? '1' : undefined} data-run-len={pageless && runLen ? `${runLen.len} ${runLen.foot.toFixed(1)}` : undefined} style={{ height: colH || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
+          {/* an iPad's book with the setting on: its pages are a native surface lying over this place */}
+          {pdfSurf && <div className="note-surface pdf-surface" ref={setPdfSurfEl} data-surface={pdfSurfId} />}
+          {!native && !pdfSurf && <div className="pdf-pages" ref={pagesRef} data-run={pageless && colH < tops.total ? '1' : undefined} data-run-len={pageless && runLen ? `${runLen.len} ${runLen.foot.toFixed(1)}` : undefined} style={{ height: colH || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (
               // a notebook's page is its sheet: known by the sheet's number, so a page deleted before it leaves it as it is

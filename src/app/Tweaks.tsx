@@ -241,6 +241,28 @@ function StorageRows() {
 }
 
 /**
+ * A book's pages on a device: the web view's (as before), or the native page view (the system's scroll and zoom,
+ * `PdfSurface.swift`). A setting kept on this device until the native one has passed its checks.
+ */
+function PagesRow() {
+  const [on, setOn] = useState(() => { try { return localStorage.getItem('ilmi.pdf.native') === '1'; } catch { return false; } });
+  const pick = (v: boolean) => {
+    try { if (v) localStorage.setItem('ilmi.pdf.native', '1'); else localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+    setOn(v);
+    window.dispatchEvent(new Event('ilmi-pdf-native'));
+  };
+  return (
+    <div className="tw-row">
+      <span className="tw-lbl">book pages</span>
+      <div className="tw-seg">
+        <button type="button" data-active={on ? '0' : '1'} onClick={() => pick(false)}>web</button>
+        <button type="button" data-active={on ? '1' : '0'} onClick={() => pick(true)}>native</button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Mirror: a folder kept as the collection is, one way, for other tools to
  * read (`keep.ts`). Off by default; `choose…` asks for a folder and the
  * mirror is a folder of the collection's name inside it.
@@ -325,6 +347,7 @@ export function Tweaks() {
           </label>
         </div>
       </div>
+      {mobile && <PagesRow />}
       <div className="tw-row">
         <span className="tw-lbl">density <span className="tw-val">{density.toFixed(2)}</span></span>
         <input

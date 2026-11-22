@@ -20681,6 +20681,8 @@ export async function smokePdfInk(path: string | null): Promise<void> {
     if (window.innerWidth > window.innerHeight) { log('do: turn portrait'); await poll(() => window.innerWidth < window.innerHeight, 'upright', 25000); await sleep(1500); }
     useApp.getState().setReopen(false);
     useApp.getState().setTheme('light');
+    // (the native page view is the `surface` part's alone: a run that fell left it set)
+    try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
     await openVault(await devCollection(path));
     try { localStorage.removeItem(tools.INK_KEY); } catch { /* none */ }
     tools.useInkTools.setState({ kept: { ...tools.DEFAULTS, snap: false } });
@@ -21290,6 +21292,254 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       const ms = [...lagsAll].sort((x, y2) => x - y2);
       if (ms.length) log(`live: from a touch to its drawing: ${ms[Math.floor(ms.length / 2)]!.toFixed(1)} ms in the middle, ${ms[Math.floor(ms.length * 0.95)]!.toFixed(1)} ms at the 95th of ${ms.length}, ${ms[ms.length - 1]!.toFixed(1)} ms at most`);
       await invoke('dev_ink_pen', { on: false });
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
+    if (part.split(',').includes('surfacetext')) {
+      // ── the native surface's text (`PdfText.swift`; `"part": "surfacetext"`, `"links"` naming a PDF with links in
+      // it, around.pdf; a held finger under the rig): the sample's chapter as a surface, a selection made and the page
+      // told it (its text, its lines), a held finger's selection, a search's hits drawn and the current one in view,
+      // and a link pressed followed with the way back. `surfacetext:` lines; hard checks ──
+      const linksPdf = await invoke<string | null>('dev_env', { name: 'ILMI_LINKS' });
+      const { currentVault } = await import('./vault.js');
+      const v = currentVault()!;
+      const sfs = v.fs as import('../vault/index.js').StoreFs;
+      try { localStorage.setItem('ilmi.pdf.native', '1'); } catch { /* none */ }
+      const surfaceOf = async (book: string) => {
+        const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === book); return x && x.getClientRects().length && q('.pdf-surface', x) ? x : null; }, `${book} as a native surface`, 60000);
+        const sid = q<HTMLElement>('.pdf-surface', b)!.dataset.surface!;
+        const S = (ask: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...ask } });
+        await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'its pages shown', 30000);
+        return { b, S, view: q<HTMLElement>('.pdf-view', b)! };
+      };
+      openNode(queueId('today'));
+      await sleep(800);
+      openNode(PAGEINK_BOOK);
+      const { b, S, view } = await surfaceOf(PAGEINK_BOOK);
+      const st0 = await S({ op: 'state' });
+      log(`surfacetext: the chapter as a surface: p. ${st0.page}, ${st0.views} pages near`);
+      await S({ op: 'go', page: PAGEINK_PAGE, y: 0 });
+      await sleep(1200);
+      // a selection made on the page: the page told its text and lines
+      await S({ op: 'select', page: PAGEINK_PAGE, x: 0.12, y: 0.3, x2: 0.85, y2: 0.34 });
+      const selLen = await poll(() => Number(view.dataset.sel ?? 0), 'a selection on the surface is the page\'s selection', 10000);
+      const said = await S({ op: 'state' });
+      log(`surfacetext: selected ${selLen} characters: "${String(said.selected).slice(0, 60).replace(/\s+/g, ' ')}"`);
+      must(selLen > 10 && String(said.selected).replace(/\s+/g, ' ').trim().length > 10, 'the selection has its text');
+      await shot('surfacetext-selected');
+      await S({ op: 'clear' });
+      await poll(() => !view.dataset.sel, 'and let go of', 10000);
+      // a held finger selects a word and carries it on
+      const sr = q<HTMLElement>('.pdf-surface', b)!.getBoundingClientRect();
+      const y0 = sr.top + sr.height * 0.35;
+      ask('drag', fx(sr.left + sr.width * 0.2), fy(y0), fx(sr.left + sr.width * 0.7), fy(y0 + 30), 0.7);
+      const held = await poll(() => Number(view.dataset.sel ?? 0), 'a held finger selects, and moved carries the selection on', 20000).catch(() => 0);
+      log(`surfacetext: a held finger selected ${held} characters`);
+      must(held > 3, 'a held finger selects');
+      await shot('surfacetext-held');
+      await S({ op: 'clear' });
+      // a search: its hits drawn, the current one in view
+      q<HTMLElement>('.meta [data-tool="search"], .meta .pt-btn[title^="search"]', b)?.click();
+      const inp = await poll(() => q<HTMLInputElement>('.pdf-bar input[type="search"], .pdf-bar input:not([type="number"])', b), 'the search field', 8000);
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      set.call(inp, 'energy'); inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      inp.closest('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      const found = await poll(async () => { const st = await S({ op: 'state' }); return Number(st.hits) > 0 && st.current ? st : null; }, 'a search\'s hits are drawn on the surface, the current one known', 30000);
+      log(`surfacetext: "energy": ${found.hits} hits, the current on p. ${(found.current as number[])[0]} (#${(found.current as number[])[1]}); in view p. ${found.page}`);
+      must(Math.abs(Number(found.page) - (found.current as number[])[0]!) <= 1, 'the current hit is in view');
+      await shot('surfacetext-found');
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      // a link pressed: followed, with the way back
+      if (linksPdf) {
+        const rel = 'library/around.pdf';
+        if (!(await v.fs.stat(v.abs(rel)))) { await sfs.take(v.abs(rel), linksPdf); await v.changed([rel]); }
+        await poll(() => useApp.getState().docs[rel], 'around.pdf is in the collection', 60000);
+        openNode(rel);
+        const a = await surfaceOf(rel);
+        let link: Record<string, unknown> | undefined;
+        let onPage = 1;
+        for (let n = 1; n <= 4 && !link; n++) {
+          await a.S({ op: 'go', page: n, y: 0 });
+          await sleep(800);
+          const ls = ((await a.S({ op: 'links', page: n })).links as Record<string, unknown>[]) ?? [];
+          const inView = (l: Record<string, unknown>) => l.to !== undefined && Number(l.y) > sr.top + 20 && Number(l.y) < window.innerHeight - 20;
+          // (one to another page if there is one: a jump that is seen)
+          link = ls.find((l) => inView(l) && Number(l.to) !== n) ?? ls.find(inView);
+          onPage = n;
+        }
+        if (!link) throw new Error('no inside link in view on around.pdf');
+        const back0 = Number(a.view.dataset.back ?? 0);
+        log(`surfacetext: a link on p. ${onPage} to p. ${link.to} at ${Number(link.x).toFixed(0)}, ${Number(link.y).toFixed(0)}`);
+        ask('tap', fx(Number(link.x)), fy(Number(link.y)));
+        const went = await poll(async () => { const st = await a.S({ op: 'state' }); return Number(st.page) === Number(link!.to) && Number(a.view.dataset.back ?? 0) > back0 ? st : null; }, 'a link pressed on the surface is followed, with the way back', 20000);
+        log(`surfacetext: followed to p. ${went.page}; the way back ${a.view.dataset.back}`);
+        await shot('surfacetext-link');
+      }
+      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
+    if (part.split(',').includes('surface')) {
+      // ── a book's pages as the native surface (`PdfSurface.swift`, the setting on; `"part": "surface"` with `"books"`
+      // holding vector.pdf and scan.pdf, the pinches and the fling under the rig): the bar's zoom one step and several,
+      // out to 50% and in to 400%, scrolled at 250%, two fingers spread and closed, a fling, from far in to far out
+      // where nothing was drawn; then the dark theme, two books side by side, and the place kept across a closing.
+      // Each frame the surface weighs, of points over the pages in view, how many levels coarser than the zoom asks
+      // each shows. Hard checks: no stretch of frames where any shows two levels or more coarser lasting over 100 ms,
+      // the bar's zoom and the surface's the same once at rest, the place kept. `surface:` lines ──
+      const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+      if (!books) throw new Error('ILMI_BOOKS (smoke.json: "books") names the folder with vector.pdf and scan.pdf');
+      const measureOnly = (await invoke<string | null>('dev_env', { name: 'ILMI_MEASURE' })) === '1';
+      const pinching = (await invoke<string | null>('dev_env', { name: 'ILMI_PINCH' })) === '1';
+      try { localStorage.setItem('ilmi.pdf.native', '1'); } catch { /* none */ }
+      const { currentVault, setBookZoom } = await import('./vault.js');
+      const v = currentVault()!;
+      const sfs = v.fs as import('../vault/index.js').StoreFs;
+      for (const f of ['vector', 'scan']) {
+        const rel = `library/${f}.pdf`;
+        if (!(await v.fs.stat(v.abs(rel)))) { await sfs.take(v.abs(rel), `${books}/${f}.pdf`); await v.changed([rel]); }
+        await poll(() => useApp.getState().docs[rel], `${f}.pdf is in the collection`, 120000);
+      }
+      const rel = 'library/vector.pdf';
+      const bookEl = (r = rel) => qa<HTMLElement>('.book').find((k) => k.dataset.path === r) ?? null;
+      openNode(rel);
+      const b = await poll(() => { const x = bookEl(); return x && q('.pdf-surface', x) ? x : null; }, 'vector.pdf opens as a native surface', 60000);
+      const view = q<HTMLElement>('.pdf-view', b)!;
+      const sid = q<HTMLElement>('.pdf-surface', b)!.dataset.surface!;
+      const S = (ask: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...ask } });
+      await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'the surface shows its pages', 30000);
+      const zoomNow = () => Number(view.dataset.zoom);
+      const fails: string[] = [];
+      interface Frame { t: number; dur: number; z: number; worst: number; coarse: number; moving: boolean; depth: number; edge?: number }
+      /** What a stretch of frames says, and what falls short. */
+      const weigh = (what: string, fs: Frame[], st: Record<string, unknown>) => {
+        let late = 0; let longest = 0; let run2 = 0; let worstRun2 = 0; let start2 = -1; let lastCoarse = -1; let coarseFrames = 0; let maxWorst = 0;
+        for (let i = 0; i < fs.length; i++) {
+          const f = fs[i]!;
+          if (i > 0) { const gap = f.t - fs[i - 1]!.t; if (gap > f.dur * 1.5) late++; longest = Math.max(longest, gap); }
+          maxWorst = Math.max(maxWorst, f.worst);
+          if (f.worst >= 1) { coarseFrames++; lastCoarse = f.t; }
+          if (f.worst >= 2) { if (start2 < 0) start2 = i > 0 ? fs[i - 1]!.t : f.t; run2 = f.t - start2; worstRun2 = Math.max(worstRun2, run2 + f.dur); } else start2 = -1;
+        }
+        const lastMove = [...fs].reverse().find((f) => f.moving)?.t ?? 0;
+        const edges = fs.filter((f) => f.edge !== undefined && f.edge >= 0);
+        const end = edges.slice(-5).map((f) => f.edge!).sort((a, c) => a - c)[2] ?? -1;
+        const blurry = edges.filter((f) => end > 0 && f.edge! < end * 0.85);
+        log(`surface: ${what}: zoom ${Number(st.zoom).toFixed(2)}; ${fs.length} frames over ${(fs[fs.length - 1]?.t ?? 0).toFixed(0)} ms; ${late} late, the longest gap ${longest.toFixed(0)} ms; any part a level or more coarser in ${coarseFrames} frames (the last at ${lastCoarse.toFixed(0)} ms, the moving ended at ${lastMove.toFixed(0)} ms); two levels or more coarser for ${worstRun2.toFixed(0)} ms at most (the most levels ${maxWorst})${edges.length ? `; looks blurrier than the end in ${blurry.length} of ${edges.length} (the last at ${blurry.length ? blurry[blurry.length - 1]!.t.toFixed(0) : '-'} ms)` : ''}; ${st.drawn} drawn, ${(Number(st.drawMs) / Math.max(1, Number(st.drawn))).toFixed(1)} ms each on ${st.workers} threads; ${Math.round(Number(st.memory) / 1048576)} of ${Math.round(Number(st.budget) / 1048576)} MB of pictures`);
+        if (worstRun2 > 100) { fails.push(`${what}: two levels coarser for ${worstRun2.toFixed(0)} ms`); log(`surface: in view at the end: ${(st.seen as string[] | undefined)?.join('; ') ?? '-'}; the frames two levels coarser: ${fs.filter((f) => f.worst >= 2).slice(0, 8).map((f) => `${f.t.toFixed(0)}:${f.worst} (${(f as Frame & { why?: string }).why ?? ''})`).join(' ')}`); }
+      };
+      const measure = async (what: string, act: () => Promise<void> | void, settle: () => Promise<unknown>, snap = 0) => {
+        await S({ op: 'mark', snap });
+        await act();
+        await settle();
+        await sleep(1200);
+        const st = await S({ op: 'stats' });
+        weigh(`${what}${snap ? ' (looked at)' : ''}`, st.frames as Frame[], st);
+        return st;
+      };
+      const click = (tool: string) => q<HTMLElement>(`.meta [data-tool="${tool}"]`, b)!.click();
+      let lastZ = '';
+      const atZoom = (z: number) => poll(async () => { const st = await S({ op: 'state' }); lastZ = `${Number(st.zoom).toFixed(3)} and ${zoomNow()}`; return Math.abs(Number(st.zoom) - z) < 0.01 && Math.abs(zoomNow() - z) < 0.01 ? st : null; }, `the surface and the bar at ${Math.round(z * 100)}%`, 20000).catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}: the surface and the bar at ${lastZ}`); });
+      const sr = q<HTMLElement>('.pdf-surface', b)!.getBoundingClientRect();
+      const cx = sr.left + sr.width / 2; const cy = sr.top + sr.height / 2;
+      const pinch = (from: number, to: number, secs: number) => ask('pinch', fx(cx - from / 2), fy(cy), fx(cx + from / 2), fy(cy), fx(cx - to / 2), fy(cy), fx(cx + to / 2), fy(cy), secs);
+      await S({ op: 'go', page: 40, y: 0 });
+      await sleep(1500);
+      await shot('surface-fit');
+      // (`"cases": "kept"`: the dark theme, the place kept and the panes alone)
+      const casesS = (await invoke<string | null>('dev_env', { name: 'ILMI_CASES' })) ?? '';
+      if (casesS !== 'kept') {
+      phase('the bar');
+      await measure('+ once, fit to 125%', () => click('zoom-in'), () => atZoom(1.25));
+      await measure('+ twice quickly, to 200%', async () => { click('zoom-in'); await sleep(120); click('zoom-in'); }, () => atZoom(2));
+      await measure('+ to 250%', () => click('zoom-in'), () => atZoom(2.5));
+      await shot('surface-250');
+      await measure('a scroll of a page and a half at 250%', () => { void S({ op: 'scroll', dy: sr.width * 2.5 * 1.3 * 1.5, ms: 2000 }); }, () => sleep(2100));
+      await measure('+ twice, to 400%', async () => { click('zoom-in'); await sleep(150); click('zoom-in'); }, () => atZoom(4));
+      await shot('surface-400');
+      await measure('a scroll of a page at 400%', () => { void S({ op: 'scroll', dy: sr.width * 4 * 1.3, ms: 2000 }); }, () => sleep(2100));
+      await measure('− four times quickly, 400% to 150%', async () => { for (let k = 0; k < 4; k++) { click('zoom-out'); await sleep(120); } }, () => atZoom(1.5));
+      await measure('− twice, 150% to fit', async () => { click('zoom-out'); await sleep(150); click('zoom-out'); }, () => atZoom(1));
+      await measure('− once, fit to 75%', () => click('zoom-out'), () => atZoom(0.75));
+      await measure('− once, 75% to 50%: many pages', () => click('zoom-out'), () => atZoom(0.5));
+      await shot('surface-50');
+      await measure('fit again (the bar\'s word), 50% to fit', () => click('zoom-fit'), () => atZoom(1));
+      await S({ op: 'go', page: 300, y: 0 });
+      setBookZoom(rel, 2);
+      await atZoom(2);
+      await sleep(1500);
+      await measure('from 200% at a page never seen, fit and − twice at once: to 50%', async () => { click('zoom-fit'); await sleep(120); click('zoom-out'); await sleep(120); click('zoom-out'); }, () => atZoom(0.5));
+      await shot('surface-out-far');
+      click('zoom-fit');
+      await atZoom(1);
+      await sleep(800);
+      await measure('a scroll of three pages in a second and a half at fit', () => { void S({ op: 'scroll', dy: sr.width * 1.3 * 3, ms: 1500 }); }, () => sleep(1600));
+      if (pinching) {
+        phase('two fingers');
+        const zoomed = (want: (z: number) => boolean) => poll(async () => { const st = await S({ op: 'state' }); return want(Number(st.zoom)) ? st : null; }, 'the pinch lands', 30000);
+        for (const snap of [0, 4]) {
+          const zNow = async () => Number((await S({ op: 'state' })).zoom);
+          let z0 = await zNow();
+          await measure('two fingers spread', () => pinch(160, 400, 0.9), async () => { await zoomed((z) => z > z0 * 1.3); await sleep(1500); }, snap);
+          z0 = await zNow();
+          await measure('two fingers closed', () => pinch(400, 160, 0.9), async () => { await zoomed((z) => z < z0 * 0.8); await sleep(1500); }, snap);
+          z0 = await zNow();
+          await measure('two fingers closed far', () => pinch(520, 110, 0.9), async () => { await zoomed((z) => z < Math.max(0.55, z0 * 0.7)); await sleep(1500); }, snap);
+          z0 = await zNow();
+          await measure('two fingers spread far', () => pinch(110, 560, 1.2), async () => { await zoomed((z) => z > z0 * 1.6); await sleep(1500); }, snap);
+          z0 = await zNow();
+          await measure('two fingers closed from there', () => pinch(500, 130, 0.9), async () => { await zoomed((z) => z < z0 * 0.8); await sleep(1500); }, snap);
+          click('zoom-fit');
+          await atZoom(1);
+          await sleep(800);
+          await measure('a finger\'s fling', () => ask('flick', fx(cx), fy(cy + 250), fx(cx), fy(cy - 250)), () => sleep(3500), snap);
+        }
+        // the bar says what the fingers left
+        const st = await S({ op: 'state' });
+        await poll(() => Math.abs(zoomNow() - Number(st.zoom)) < 0.011, `the bar's zoom is the surface's (${zoomNow()} and ${Number(st.zoom).toFixed(3)})`, 10000);
+      }
+      }
+      phase('dark');
+      useApp.getState().setTheme('dark');
+      await poll(async () => (await S({ op: 'state' })).dark === true, 'the dark theme turns the pages', 10000);
+      await sleep(1500);
+      await shot('surface-dark');
+      useApp.getState().setTheme('light');
+      await poll(async () => (await S({ op: 'state' })).dark === false, 'and light again', 10000);
+      phase('kept');
+      setBookZoom(rel, 1);
+      await atZoom(1);
+      await S({ op: 'go', page: 123, y: 0.25 });
+      await sleep(1200);
+      openNode(queueId('today'));
+      await sleep(1500);
+      openNode(rel);
+      const back = await poll(async () => { const x = bookEl(); const id2 = x && q<HTMLElement>('.pdf-surface', x)?.dataset.surface; if (!id2) return null; const st = await invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: id2, op: 'state' } }).catch(() => null); return st && Number(st.views) > 0 ? st : null; }, 'opened again as a surface', 30000);
+      log(`surface: opened again on p. ${back.page} at ${Number(back.y).toFixed(2)} (left on p. 123 at 0.25); it was told to open at ${q<HTMLElement>('.pdf-surface', bookEl()!)?.dataset.open ?? '-'}; it opened at ${back.opened}, laid out at ${back.laid}`);
+      await sleep(1500);
+      { const id2 = q<HTMLElement>('.pdf-surface', bookEl()!)?.dataset.surface; const later = await invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: id2, op: 'state' } }); log(`surface: a moment on, p. ${later.page} at ${Number(later.y).toFixed(2)}`); }
+      if (Number(back.page) !== 123 || Math.abs(Number(back.y) - 0.25) > 0.05) fails.push(`the place kept: p. ${back.page} at ${Number(back.y).toFixed(2)}`);
+      phase('beside');
+      useApp.getState().setPanes((p) => openTab(splitPane(p, 0), 'library/scan.pdf'));
+      const two = await poll(async () => {
+        const els = qa<HTMLElement>('.pdf-surface').filter((x) => x.getClientRects().length && x.getBoundingClientRect().width > 8);
+        if (els.length < 2) return null;
+        const sts = await Promise.all(els.map((x) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: x.dataset.surface, op: 'state' } }).catch(() => null)));
+        return sts.every((st) => st && Number(st.views) > 0) ? els.map((x) => x.getBoundingClientRect()) : null;
+      }, 'two books side by side, each its own surface', 30000);
+      log(`surface: side by side at ${two.map((r) => `${Math.round(r.left)}..${Math.round(r.right)}`).join(' and ')}`);
+      await sleep(1500);
+      await shot('surface-beside');
+      useApp.getState().setPanes((p) => closePane(p, 1));
+      await sleep(800);
+      if (fails.length) log(`surface: ${fails.length} fell short: ${fails.join('; ')}`);
+      if (!measureOnly) must(fails.length === 0, 'no part of a page in view two levels coarser than its zoom asks for over 100 ms, and the place kept');
+      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
       phase('done');
       finished = true;
       log('done');

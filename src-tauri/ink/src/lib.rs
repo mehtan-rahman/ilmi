@@ -459,6 +459,14 @@ impl<R: Runtime> Ink<R> {
         self.call("caps", serde_json::json!({})).await
     }
     /// Two fingers pinch a host's pages: its sheets shown at `k * p + (dx, dy)`; with no `k`, as they lie.
+    /// A book's pages as a native surface (`PdfSurface.swift`): made, moved, told what it holds; let go with no `x`.
+    pub async fn pdf_surface(&self, spec: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.call("pdfSurface", spec).await
+    }
+    /// A book's surface asked to go, zoom, or say how it is.
+    pub async fn pdf_surface_do(&self, ask: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.call("pdfSurfaceDo", ask).await
+    }
     /// (dev) The prototype native reader (`Reader.swift`): `{ op, … }` as it says, what it answers.
     pub async fn reader(&self, args: serde_json::Value) -> Result<serde_json::Value, String> {
         self.call("reader", args).await

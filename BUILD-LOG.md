@@ -75,6 +75,77 @@ The live check (ilmi, every ink, the dark theme) still passes, at most 26 of 255
 
 ---
 
+## 2026-11-22 — the native page view, phases 1 and 2: a book's pages as the system's own scroll view, behind a setting
+
+**What.** On an iPad with the settings' `book pages: native` (off by default, `ilmi.pdf.native`), a book's pages are `PdfSurface.swift`: a `UIScrollView` over the pane where `Pdf.tsx` puts a `.pdf-surface`. It is told what to show by `ink_pdf` and asked by `ink_pdf_do`.
+
+Bottom to top, a page shows:
+- its pictures, whole: half the fitted size for every page a zoom out to 50% could show, made further ahead still and kept in a memory pool of their own; and the fitted size for the pages in view;
+- its tiles, a layer a level: bands 2048 × 384 px at 2× and 4× the fitted size, over the view and about it, nearest first, on `PagePainter`'s threads (as many as the cores, each with its own document). This replaces CATiledLayer.
+
+During a zoom or scroll:
+- The level the zoom has come to is asked for while the fingers move.
+- At rest the next level up is drawn ahead.
+- At 250% and over, the level under it is kept for a wider area, so a scroll finds at worst one level coarser.
+- Nothing is laid out again when a zoom ends.
+
+What the surface says to the page:
+- the page, the place, the zoom and the read point (`pdfplace`; a zoom the page asked for is never taken back as the reader's);
+- a selection (`pdfsel`);
+- its menu's `copy`, `passage` and `card` (`pdfact`);
+- a tap (`pdftap`): the page follows a link there by pdf.js's annotations, with the way back.
+
+Text is PDFKit's document model (`PdfText.swift`, not `PDFView`):
+- A held finger selects a word and carries the selection on, across pages.
+- A search's hits are found on a document of their own off the main thread and drawn; the current one is brought into view.
+
+Also covered: the dark theme turned in the tiles, two books in two panes, and the place kept across a closing.
+
+**Measured** (`pdfink` `"part": "surface"`, Air 11 simulator, 60 Hz, `vector.pdf`, `u14`). Each frame the surface weighs how many levels coarser than the zoom asks any of 48 points over the pages in view shows:
+
+| case | frames a level coarser | longest two levels coarser |
+|---|---|---|
+| bar: + to 125%, + + to 200%, + to 250%, + + to 400% | 0 | 0 ms |
+| − ×4 400% to 150%, − − to fit, fit to 75%, to 50%, fit word | 0 | 0 |
+| from 200% at a page never seen to 50% | 0 | 0 |
+| scroll 1.5 pages at 250% | 1 | 0 (prototype B: 78 frames, 1.3 s) |
+| scroll a page at 400% | 1 | 0 |
+| scroll 3 pages at fit | 2 | 0 |
+| pinches: spread, closed, closed far, spread far, closed again | 0 | 0 (prototype: blurry 0.8–1.4 s) |
+| a fling | 0 | 0 |
+
+Late frames are 0–6 a case, apart from a 437 to 565 ms gap at the start of the first pinch. The edge-sharpness looks are no fair measure across scales: as the glyphs shrink on a pinch out, the share of steep steps falls, and it reads blurrier than the end where the tiles say otherwise.
+
+- Memory in pictures: 495 to 639 MB of 640 MB.
+- Draws: 15 to 21 ms each, on 8 threads.
+
+**Text** (`"part": "surfacetext"`, `x6`, `x7`, hard checks):
+- A selection of 129 characters, told to the page.
+- A held finger selected 157 characters.
+- "energy": 98 hits drawn, the current one in view. The bar's count is pdf.js's (42); the current hit is mapped by page and order there.
+- A link on around.pdf p. 1 to p. 2 followed, with the way back.
+
+**Found and mended on the way.**
+- The surface's place grew with the zoom: the `.pdf-view`'s width was still the web reader's `pageW`.
+- `UIScrollView.zoom(to:)` with a rect wider than the pages does not zoom out. An asked zoom now animates zoom scale and offset together, about the middle.
+- An asked zoom's end was taken as the reader's own and set the bar back.
+- A surface told it showed one page (the count not yet known) opened on page 1: now nothing is said before the count is known.
+- The small pictures were pushed out of memory by the tiles of a zoom: they have a pool of their own.
+
+**The canvas crash, properly.** `CanvasKeep.letGo` takes a PencilKit canvas out of its superview on its own, its drawing gesture off, and keeps it a turn. It is used by `InkPlugin.retire`, a host's teardown, and the prototype. `Surface.swift`'s `remove()` takes its view away with its canvas inside: it needs the same one line, once the ink agent's work there is merged (that file is not touched here).
+
+**Disk caches budgeted by free space** (the iPad said "not enough storage" twice).
+- Applies to `ilmi-pages` (`pages.rs`) and `ilmi-pdf` (`DiskBudget`).
+- The rule: a twentieth of the device's free space, at most 160 MB each, nothing kept (and what there is let go) under 500 MB free. The oldest go first, to three quarters of the budget.
+- The system's memory warning lets go of the pictures in memory and cuts both caches to half their budget.
+- At launch each cache is cut to what there is room for now.
+
+**Checks.** Typecheck clean; npm test 2672 passed and 2 skipped; cargo test 84 passed (the `pages` tests now include the budget's rule). The ink parts were not touched: the surface has no canvases yet (phase 4).
+
+**Not seen.** A device and its 120 Hz; the user's own book; memory over a long session on a device (the simulator gives no memory limit, so the budget is the 640 MB ceiling); a phone; selection handles (a held finger only, as yet); marks, highlights, portals and the read point drawn on the surface (phase 3); ink on it (phase 4).
+
+---
+
 ## 2026-11-22 — a native page view for a PDF on iOS, phase 1: a prototype of two ways, measured, and the plan
 
 **Why.** The device's zoom log (iPad Air 5, M1) had the app's tiles at 6 ms and every zoom sharp 34 to 95 ms after its layout. The user still found it short of GoodNotes. What is left is the web view's zoom model, so on iOS the pages go native. The plan, with every feature of the web reader and how it moves, is `docs/native-reader-plan.md`.

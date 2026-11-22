@@ -1,6 +1,6 @@
 # A PDF's pages as a native view on iOS: the plan (phase 1)
 
-Status: a plan for review. The prototype (`src-tauri/ink/ios/Sources/Reader.swift`, `ink_reader`, dev builds only;
+Status: approved (B). Phases 1 and 2 are built behind the settings' `book pages: native` (`PdfSurface.swift`, `PdfText.swift`); 3 and 4 to come. The prototype (`src-tauri/ink/ios/Sources/Reader.swift`, `ink_reader`, dev builds only;
 `pdfink` `"part": "reader"`) is measuring code. It is not the reader, and nothing a user has uses it.
 
 ## Why

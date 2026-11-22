@@ -1113,7 +1113,45 @@ app's own container on an iPad (in the app's caches on a Mac), begun anew past
 appDataContainer --domain-identifier dev.ilmi.app --source
 Library/Caches/ilmi-zoom.log --destination <file>`. The native page view's prototype (phase 1, `Reader.swift`, `ink_reader`,
 debug builds only) and its plan: `docs/native-reader-plan.md`; `pdfink`'s
-`"part": "reader"` measures it. `zoomfeel`'s
+`"part": "reader"` measures it.
+
+The native page view itself (phases 1 and 2 of that plan), behind the
+settings' `book pages: web | native` on a device (`ilmi.pdf.native` in the
+device's storage; web by default): `PdfSurface.swift` lays a `UIScrollView`
+of the book's pages over the pane where `Pdf.tsx` puts a `.pdf-surface`
+(`ink_pdf` the spec: where, the file by collection and hash, the zoom, the
+place to open at, dark, the holes, the pages shown; `ink_pdf_do` go, zoom,
+find, select, clear, state). A page shows, bottom to top, its pictures whole
+(half the fitted size for every page a zoom out to 50% could show, the fitted
+size for the pages in view), and its tiles a layer a level (bands of 2048 × 384
+px at 2, 4 times the fitted size, for the view and about it, nearest first,
+drawn by `PagePainter` on as many threads as the cores, each with its own open
+document); at 250% and over the level under it is kept for a wider area too,
+so a scroll finds at worst a level coarser. The level the zoom has come to is
+asked for while the fingers move, and the next one up is drawn ahead when the
+pages rest. The pictures live in memory within a budget (a quarter of what the
+app may still use, at most 640 MB) and the whole pages on disk
+(`Caches/ilmi-pdf`). The surface says `pdfplace` (page, place, zoom, the read
+point, settled or not, whether the page asked for it), `pdfsel` (a selection:
+its text and lines), `pdfact` (`copy`, `passage`, `card` from its menu) and
+`pdftap` (the page follows a link there by pdf.js's annotations). Text is
+PDFKit's (`PdfText.swift`: a held finger selects a word and carries the
+selection on; a search's hits found on a document of its own and drawn).
+`pdfink`'s `"part": "surface"` (with `"books"`, `"pinch": "1"` under the
+rig) weighs each frame natively: how many levels coarser than the zoom asks
+any point over the pages in view shows. Hard checks: none two levels coarser
+for more than 100 ms in any zoom, scroll, pinch or fling; the bar's zoom and
+the surface's the same at rest; the place kept across a closing; two books in
+two panes. `"part": "surfacetext"` (`"links"` naming around.pdf): a selection
+told to the page, a held finger's selection, a search's hits, a link followed
+with the way back.
+
+The disk caches of pages (`ilmi-pages`, the scheme's, and `ilmi-pdf`, the
+surface's) budget themselves by the device's free space: a twentieth of it, at
+most 160 MB each, nothing kept (and what there is let go) under 500 MB free;
+the oldest go first, to three quarters of the budget. The system's memory
+warning lets go of the pictures in memory and cuts both to half their budget
+(`DiskBudget` in `PdfSurface.swift`, `disk_budget` in `pages.rs`). `zoomfeel`'s
 `"tileslow": "<factor>"` and `"workers": "<n>"` hold the app's drawings (and
 pdf.js's) to that many times as long on that many threads, `"within":
 "<ms>"` makes the time to sharp a hard check, and `"notiles": "1"` draws with

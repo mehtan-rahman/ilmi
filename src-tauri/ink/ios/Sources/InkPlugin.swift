@@ -1045,6 +1045,8 @@ class InkPlugin: Plugin, PenEars {
 
   override func load(webview: WKWebView) {
     web = webview
+    // the disk caches of pages kept within the room the device has (`DiskBudget`)
+    DiskBudget.start()
     // the page fills the window. The web view does, but it lays the page out short by the status bar and the home
     // bar (its scroll view keeps clear of them), and what is left along the foot is nothing, black; the page keeps
     // clear of both by itself (`env(safe-area-inset-*)`), so the scroll view is told to keep clear of neither
@@ -2683,10 +2685,8 @@ class InkPlugin: Plugin, PenEars {
   private func retire(_ s: Sheet) {
     if picked?.sheet === s { unpick() }
     if s.stepped { forget() }
-    let g = s.canvas.drawingGestureRecognizer
-    g.isEnabled = false
-    g.view?.removeGestureRecognizer(g)
-    s.canvas.removeFromSuperview()
+    // (on its own, kept a turn: `CanvasKeep`)
+    CanvasKeep.letGo(s.canvas)
     s.quiet?.cancel()
     sheets[s.id] = nil
     if armed === s { armed = nil; armedHost = nil }
@@ -2856,6 +2856,7 @@ class InkPlugin: Plugin, PenEars {
           h.spec.sheets = []
           continue
         }
+        CanvasKeep.letGoAll(in: h.clip)
         h.clip.removeFromSuperview()
         self.hosts[id] = nil
         if self.armedHost === h { self.armed = nil; self.armedHost = nil }

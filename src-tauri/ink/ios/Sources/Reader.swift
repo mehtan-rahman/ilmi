@@ -143,11 +143,8 @@ final class ProtoReader: NSObject {
     link = nil
     // (the canvases first, each on its own: a PencilKit canvas let go with the views it lies in, in one go, went on
     // to ask after a view already gone, and the app fell)
-    if let t = tiled { for (_, c) in t.canvases() { c.removeFromSuperview() } }
+    CanvasKeep.letGoAll(in: view)
     view.removeFromSuperview()
-    // and the rest let go a moment later, outside this turn's own release of what it made
-    let keep: [Any] = [view, tiled as Any, pdfView as Any, overlay as Any]
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { _ = keep.count }
   }
 
   /// The zoom, 1 at fitted.
@@ -442,7 +439,7 @@ final class TiledColumn: UIScrollView, UIScrollViewDelegate {
         p.addSubview(c)
         p.canvas = c
       } else if !near && p.superview != nil && (p.canvas?.drawing.strokes.isEmpty ?? true) {
-        p.canvas?.removeFromSuperview()
+        if let c = p.canvas { CanvasKeep.letGo(c) }
         p.canvas = nil
         p.removeFromSuperview()
         p.under.image = nil

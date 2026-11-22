@@ -65,6 +65,8 @@ final class LiveInk {
   private var points: [PKStrokePoint] = []
   private var began: TimeInterval = 0
   private var made = Date()
+  /// The touches of the stroke being written as they came, for the device's log (`InkLog`).
+  private var raw: [[String: Any]] = []
   private var seed: UInt32 = 1
   private var force: CGFloat?
   private var ink = PKInk(.pen, color: .black)
@@ -102,6 +104,7 @@ final class LiveInk {
     asked = max(0.05, width)
     self.sense = CGFloat(min(max(sense ?? 1, 0), 2))
     points = []
+    raw = []
     force = nil
     began = 0
     rounding = 0
@@ -118,8 +121,13 @@ final class LiveInk {
   func add(_ t: UITouch, _ event: UIEvent?, ended last: Bool) {
     guard writing, let c = canvas else { return }
     let all = event?.coalescedTouches(for: t) ?? [t]
-    for u in all.isEmpty ? [t] : all { points.append(point(u, in: c, keep: true)) }
-    let ahead = last ? [] : (event?.predictedTouches(for: t) ?? []).map { point($0, in: c, keep: false) }
+    for u in all.isEmpty ? [t] : all {
+      points.append(point(u, in: c, keep: true))
+      if InkLog.on { raw.append(InkLog.touch(u, in: c, predicted: false, event: t.timestamp)) }
+    }
+    let predicted = last ? [] : (event?.predictedTouches(for: t) ?? [])
+    if InkLog.on { for u in predicted { raw.append(InkLog.touch(u, in: c, predicted: true, event: t.timestamp)) } }
+    let ahead = predicted.map { point($0, in: c, keep: false) }
     draw(points + ahead, at: t.timestamp)
     if last { finish() }
   }
@@ -131,8 +139,12 @@ final class LiveInk {
     draw(points, at: nil)
     if let l = current { shown.append(l) }
     current = nil
-    if let k = stroke(points) { ended.append(k) }
+    if let k = stroke(points) {
+      ended.append(k)
+      if InkLog.on, let c = canvas { InkLog.shared.stroke(k, touches: raw, canvas: c, rounding: rounding, asPage: asPage) }
+    }
     points = []
+    raw = []
   }
 
   /// What began is no stroke after all (a second finger joined, the tool changed under it): gone from the glass.
@@ -453,5 +465,74 @@ final class EraseGlass {
     CATransaction.setDisableActions(true)
     layer.removeFromSuperlayer()
     CATransaction.commit()
+  }
+}
+
+/// What the Pencil gave and what was made of it, for the last twenty or so strokes, in the app's own data (2026-11-22):
+/// `Library/Caches/ilmi-ink.log` in the app's container (bundle `dev.ilmi.app`), never in a collection. One JSON line a
+/// stroke: where it was written (`surface`), the canvas's zoom and the screen's scale, the ink, how far UIKit's rounded
+/// place of a touch was from its precise one at most (`rounding`, screen points), every touch as it came (`touches`:
+/// its time, its precise and its rounded place in the canvas's points on the glass, force, altitude, azimuth, whether
+/// it was predicted, and the time of the event it came in), the stroke kept (`points`: the `PKStroke`'s control
+/// points in the drawing's points, with size, force and time), and its outline's middle as drawn (`middle`: places
+/// `x, y, radius` after evening), the step its points were found rounded to and the sigma they were evened by, and
+/// its turns on the glass. Over a megabyte, the newest fifteen strokes are kept. `on = false` turns it off.
+final class InkLog {
+  static let on = true
+  static let shared = InkLog()
+  private let queue = DispatchQueue(label: "ilmi.inklog", qos: .utility)
+  private let url: URL? = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("ilmi-ink.log")
+  private let most = 1_000_000
+
+  static func r(_ v: CGFloat) -> Double { (Double(v) * 1000).rounded() / 1000 }
+
+  static func touch(_ u: UITouch, in c: UIView, predicted: Bool, event: TimeInterval) -> [String: Any] {
+    let p = u.preciseLocation(in: c), l = u.location(in: c)
+    var d: [String: Any] = ["t": (u.timestamp * 10000).rounded() / 10000, "px": r(p.x), "py": r(p.y), "lx": r(l.x), "ly": r(l.y), "f": r(u.force), "ty": u.type.rawValue]
+    if u.type == .pencil { d["alt"] = r(u.altitudeAngle); d["az"] = r(u.azimuthAngle(in: c)) }
+    if predicted { d["pred"] = 1 }
+    d["ev"] = (event * 10000).rounded() / 10000
+    return d
+  }
+
+  func stroke(_ k: PKStroke, touches: [[String: Any]], canvas c: PKCanvasView, rounding: Double, asPage: Bool) {
+    let zoom = Double(c.zoomScale)
+    let scale = Double(c.window?.screen.scale ?? UIScreen.main.scale)
+    let surface = asPage ? "pdf" : (c.superview is UIScrollView ? "notebook" : "area")
+    let when = ISO8601DateFormatter().string(from: Date())
+    queue.async { [weak self] in
+      guard let self = self, let url = self.url else { return }
+      let pts: [[Double]] = k.path.map { [Self.r($0.location.x), Self.r($0.location.y), Self.r($0.size.width), Self.r($0.force), ($0.timeOffset * 10000).rounded() / 10000] }
+      var line: [String: Any] = ["at": when, "surface": surface, "zoom": zoom, "scale": scale, "ink": k.ink.inkType.rawValue, "rounding": rounding, "touches": touches, "points": pts]
+      if let g = Geom(k, dark: false) {
+        let m = g.places()
+        var middle: [[Double]] = []
+        var i = 0
+        while i + 2 < m.count {
+          middle.append([m[i], m[i + 1], m[i + 2]].map { v in (v * 1000).rounded() / 1000 })
+          i += 3
+        }
+        line["middle"] = middle
+        let e = g.evening()
+        line["step"] = e[0]
+        line["even"] = e[1]
+        line["turns"] = g.turns(at: zoom * scale)
+      }
+      guard let data = try? JSONSerialization.data(withJSONObject: line), var text = String(data: data, encoding: .utf8) else { return }
+      text += "\n"
+      let fm = FileManager.default
+      if let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int, size + text.utf8.count > self.most,
+         let old = try? String(contentsOf: url, encoding: .utf8) {
+        let keep = old.split(separator: "\n").suffix(15).joined(separator: "\n") + "\n"
+        try? keep.write(to: url, atomically: true, encoding: .utf8)
+      }
+      if let h = try? FileHandle(forWritingTo: url) {
+        h.seekToEndOfFile()
+        h.write(text.data(using: .utf8)!)
+        try? h.close()
+      } else {
+        try? text.write(to: url, atomically: true, encoding: .utf8)
+      }
+    }
   }
 }

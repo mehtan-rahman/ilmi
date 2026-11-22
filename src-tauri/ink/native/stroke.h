@@ -29,6 +29,9 @@ int ilmi_stroke_places(void *made, double *out, int most);
 /// pixels at a time, the turn between neighbouring pieces in degrees, the largest (`out[0]`) and the 99th of a hundred
 /// (`out[1]`). The count of turns; 0 for other inks.
 int ilmi_stroke_turns(void *made, double k, double *out);
+/// The step a pen's or the even line's points were found rounded to (`out[0]`, its own points; 0: not rounded) and
+/// the sigma its middle was evened by (`out[1]`).
+void ilmi_stroke_evening(void *made, double *out);
 /// The checks' tuning of the outline: the walk's step and flatness (points), and how much it is evened (a sigma in
 /// points; negative: by the step its points were rounded to, as ilmi draws).
 void ilmi_stroke_tune(double step, double flat, double even);

@@ -17,6 +17,8 @@ import UIKit
 @_silgen_name("ilmi_stroke_page_picture") private func c_stroke_page_picture(_ made: UnsafeMutableRawPointer, _ box: UnsafeMutablePointer<Double>) -> Unmanaged<CGImage>?
 @_silgen_name("ilmi_stroke_turns") private func c_stroke_turns(_ made: UnsafeMutableRawPointer, _ k: Double, _ out: UnsafeMutablePointer<Double>) -> Int32
 @_silgen_name("ilmi_stroke_tune") func ilmi_stroke_tune(_ step: Double, _ flat: Double, _ even: Double)
+@_silgen_name("ilmi_stroke_places") private func c_stroke_places(_ made: UnsafeMutableRawPointer, _ out: UnsafeMutablePointer<Double>, _ most: Int32) -> Int32
+@_silgen_name("ilmi_stroke_evening") private func c_stroke_evening(_ made: UnsafeMutableRawPointer, _ out: UnsafeMutablePointer<Double>)
 @_silgen_name("ilmi_stroke_outline") private func c_stroke_outline(_ made: UnsafeMutableRawPointer, _ path: UnsafeMutablePointer<UnsafeRawPointer?>, _ rgba: UnsafeMutablePointer<Double>, _ round: UnsafeMutablePointer<Double>, _ alpha: UnsafeMutablePointer<Double>) -> Int32
 
 /// A stroke made ready to be drawn, on any thread, as often as it is asked.
@@ -45,6 +47,20 @@ final class Geom {
   func draw(_ c: CGContext) { c_stroke_draw(made, c) }
 
   /// How smooth its outline is on the glass at `k` pixels to the point (`ilmi_stroke_turns`): the largest turn and the 99th, in degrees.
+  /// The middle of its outline as drawn (a pen's or the even line's): `x, y, radius` each, in the drawing's points.
+  func places() -> [Double] {
+    var out = [Double](repeating: 0, count: 3 * 20000)
+    let n = Int(c_stroke_places(made, &out, 20000))
+    return Array(out.prefix(3 * min(n, 20000)))
+  }
+
+  /// The step its points were found rounded to and the sigma its middle was evened by (`ilmi_stroke_evening`).
+  func evening() -> [Double] {
+    var o = [0.0, 0.0]
+    c_stroke_evening(made, &o)
+    return o
+  }
+
   func turns(at k: Double) -> [Double] {
     var o = [0.0, 0.0]
     _ = c_stroke_turns(made, k, &o)

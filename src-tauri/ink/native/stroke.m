@@ -119,6 +119,9 @@ API_AVAILABLE(macos(11.0), ios(14.0))
 @property (nonatomic) CGFloat alpha;
 /// A pen's and the even line's places (x, y, radius, in the drawing's points), as the outline is made from them.
 @property (nonatomic, strong) NSData *places;
+/// The step its points were found rounded to (its own points; 0: not rounded), and the sigma its middle was evened by.
+@property (nonatomic) CGFloat step;
+@property (nonatomic) CGFloat even;
 /// A stroke PencilKit draws: the stroke, and the picture of it last made, with the pixels to the point it was made at.
 @property (nonatomic, strong) PKStroke *theirs;
 @property (nonatomic) BOOL dark;
@@ -285,7 +288,10 @@ void *ilmi_stroke_make(void *stroke, int dark) {
     // how much the stroke's own transform makes of a length
     CGFloat grow = sqrt(fabs(m.a * m.d - m.b * m.c));
     // points rounded as they were taken: the steps evened out (twice the step, a Gaussian along the path)
-    CGFloat even = EVEN_FIXED >= 0 ? EVEN_FIXED * grow : EVEN_BY * roundedTo(path) * grow;
+    CGFloat step = roundedTo(path);
+    CGFloat even = EVEN_FIXED >= 0 ? EVEN_FIXED * grow : EVEN_BY * step * grow;
+    g.step = step;
+    g.even = even;
     NSUInteger count = path.count;
     if (marker) {
       // the nib's middle line at each place, and what it sweeps from each place to the next
@@ -445,6 +451,15 @@ int ilmi_stroke_turns(void *made, double k, double *out) {
     return (int)q;
   }
   return 0;
+}
+
+void ilmi_stroke_evening(void *made, double *out) {
+  out[0] = out[1] = 0;
+  if (STROKE_AVAILABLE) {
+    if (!made) return;
+    IlmiStroke *g = (__bridge IlmiStroke *)made;
+    out[0] = g.step; out[1] = g.even;
+  }
 }
 
 int ilmi_stroke_weight(void *made) {

@@ -44,6 +44,8 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-opener = "2"
 # ink (milestone 58): the PencilKit canvas on iOS, and a drawing read as strokes and drawn as a picture on the Mac too
 tauri-plugin-ink = { path = "ink" }
+# the free space a disk cache budgets itself by (`pages.rs`, statvfs)
+libc = "0.2"
 # `fit to my reviews` (the scheduler slot): FSRS-7's optimiser, on the CPU (no burn since 7), built for iOS too
 fsrs = "7.0.0"
 # sync (milestone 53): the vault as a git repository, libgit2 built in; HTTPS with a token, no SSH, no git binary.

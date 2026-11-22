@@ -5,7 +5,8 @@
 //! with the least `p` first (the reader says how near the middle of the view a piece is), so a screen's tiles are
 //! drawn together and the one under the eye first. An asking of a generation the reader has gone past (`g`, set by
 //! [`set_generation`] at each zoom) is not drawn. Whole pages are kept on disk (a small cache under the app's caches,
-//! let go oldest first past [`DISK_MOST`]) and the latest pictures in memory, so a page seen once comes back at once.
+//! let go oldest first past [`disk_budget`]: a twentieth of the free space, at most 160 MB, nothing on a nearly full
+//! device) and the latest pictures in memory, so a page seen once comes back at once.
 //! Each drawing is written down in the zoom log ([`note`]) with what it was, its pixels and how long it took.
 
 use std::collections::{BinaryHeap, HashMap, VecDeque};
@@ -15,8 +16,47 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Instant;
 
-/// The most the disk cache of whole pages holds, bytes.
+/// The most the disk cache of whole pages ever holds, bytes.
 const DISK_MOST: u64 = 160 << 20;
+/// Under this much free space on the device the cache keeps nothing on disk, and lets go of what it has.
+const DISK_FLOOR: u64 = 500 << 20;
+
+/// What the disk cache may hold now: a twentieth of the device's free space, at most [`DISK_MOST`], nothing when the
+/// device has under [`DISK_FLOOR`] free (an iPad said "not enough storage" with a cache of 160 MB beside a full disk).
+/// The free space is read again at most every half minute.
+pub fn disk_budget(dir: &Path) -> u64 {
+    static SAID: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
+    let mut said = SAID.lock().unwrap();
+    if let Some((at, b)) = *said { if at.elapsed().as_secs() < 30 { return b; } }
+    let b = budget_for(free_space(dir));
+    *said = Some((Instant::now(), b));
+    b
+}
+/// The budget for so many bytes free: a twentieth of it, at most `DISK_MOST`, none under `DISK_FLOOR`.
+pub fn budget_for(free: Option<u64>) -> u64 {
+    match free {
+        Some(f) if f < DISK_FLOOR => 0,
+        Some(f) => (f / 20).min(DISK_MOST),
+        // (not known: as little as the floor allows)
+        None => DISK_MOST / 4,
+    }
+}
+/// The free space on the volume holding `dir`, bytes.
+fn free_space(dir: &Path) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let mut probe = dir.to_path_buf();
+        while !probe.exists() { if !probe.pop() { return None; } }
+        let c = std::ffi::CString::new(probe.as_os_str().as_bytes()).ok()?;
+        let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+        // SAFETY: `c` is a NUL-terminated path and `st` a zeroed statvfs the call fills
+        if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 { return None; }
+        Some(st.f_bavail as u64 * st.f_frsize as u64)
+    }
+    #[cfg(not(unix))]
+    { let _ = dir; None }
+}
 /// The most the memory cache holds, bytes.
 const MEMORY_MOST: usize = 64 << 20;
 /// The zoom log is begun anew past this (the one before kept beside it): about a megabyte in all.
@@ -219,7 +259,20 @@ fn disk() -> &'static Mutex<Option<(PathBuf, u64)>> {
 }
 pub fn set_disk(dir: PathBuf) {
     let size = walk(&dir).iter().map(|(_, n, _)| n).sum();
-    *disk().lock().unwrap() = Some((dir, size));
+    *disk().lock().unwrap() = Some((dir.clone(), size));
+    // (what was kept when there was more room is let go down to what there is room for now)
+    trim(&dir, disk_budget(&dir));
+}
+/// The oldest let go until the cache holds no more than `most` (all of it at 0).
+fn trim(dir: &Path, most: u64) {
+    let mut all = walk(dir);
+    all.sort_by_key(|f| f.2);
+    let mut size: u64 = all.iter().map(|f| f.1).sum();
+    for (p, n, _) in all {
+        if size <= most { break; }
+        if std::fs::remove_file(&p).is_ok() { size -= n; }
+    }
+    if let Some(d) = disk().lock().unwrap().as_mut() { d.1 = size; }
 }
 fn walk(dir: &Path) -> Vec<(PathBuf, u64, std::time::SystemTime)> {
     let mut out = vec![];
@@ -236,6 +289,12 @@ fn from_disk(key: &str) -> Option<Vec<u8>> {
 }
 fn to_disk(key: &str, bytes: &[u8]) {
     let Some(dir) = disk().lock().unwrap().as_ref().map(|d| d.0.clone()) else { return };
+    let most = disk_budget(&dir);
+    if most == 0 {
+        // the device is short of room: nothing kept, and what there is let go
+        if disk().lock().unwrap().as_ref().is_some_and(|d| d.1 > 0) { trim(&dir, 0); }
+        return;
+    }
     let at = dir.join(key);
     if let Some(p) = at.parent() { let _ = std::fs::create_dir_all(p); }
     let tmp = at.with_extension("part");
@@ -244,19 +303,10 @@ fn to_disk(key: &str, bytes: &[u8]) {
         let mut d = disk().lock().unwrap();
         let Some(d) = d.as_mut() else { return };
         d.1 += bytes.len() as u64;
-        d.1 > DISK_MOST
+        d.1 > most
     };
-    if over {
-        // the oldest let go until a quarter under the most
-        let mut all = walk(&dir);
-        all.sort_by_key(|f| f.2);
-        let mut size: u64 = all.iter().map(|f| f.1).sum();
-        for (p, n, _) in all {
-            if size <= DISK_MOST * 3 / 4 { break; }
-            if std::fs::remove_file(&p).is_ok() { size -= n; }
-        }
-        if let Some(d) = disk().lock().unwrap().as_mut() { d.1 = size; }
-    }
+    // the oldest let go until a quarter under the most
+    if over { trim(&dir, most * 3 / 4); }
 }
 
 /// A picture for an asking: from memory, from disk, or drawn (by `draw`, given the PDF's path); with where it came
@@ -339,6 +389,15 @@ mod tests {
         for (p, s) in [(5, 1), (1, 2), (5, 3), (0, 4)] { h.push(Job { priority: p, seq: s, asked: Instant::now(), run: Box::new(|_, _| {}) }); }
         let order: Vec<_> = std::iter::from_fn(|| h.pop().map(|j| j.seq)).collect();
         assert_eq!(order, vec![4, 2, 1, 3]);
+    }
+
+    #[test]
+    fn the_disk_cache_is_a_twentieth_of_the_free_space_and_nothing_on_a_full_disk() {
+        assert_eq!(budget_for(Some(100 << 20)), 0);
+        assert_eq!(budget_for(Some(499 << 20)), 0);
+        assert_eq!(budget_for(Some(1000 << 20)), 50 << 20);
+        assert_eq!(budget_for(Some(64 << 30)), DISK_MOST);
+        assert!(free_space(&std::env::temp_dir().join("not/there")).is_some());
     }
 
     #[test]

@@ -32,6 +32,12 @@ int ilmi_stroke_turns(void *made, double k, double *out);
 /// The step a pen's or the even line's points were found rounded to (`out[0]`, its own points; 0: not rounded) and
 /// the sigma its middle was evened by (`out[1]`).
 void ilmi_stroke_evening(void *made, double *out);
+/// A stroke PencilKit drew and that was kept as it drew it (`LiveInk.pencilKit`) is marked in its random seed, which a
+/// pen's and a highlighter's drawing does not use: its top twenty-four bits are 0x1DCC5E (one seed in sixteen million
+/// carries them by chance; ilmi's own never do). Such a stroke is drawn as PencilKit's own picture of it here.
+int ilmi_stroke_seed_drawn(unsigned int seed);
+/// A seed marked so (its low eight bits kept).
+unsigned int ilmi_stroke_seed_mark(unsigned int seed);
 /// The checks' tuning of the outline: the walk's step and flatness (points), and how much it is evened (a sigma in
 /// points; negative: by the step its points were rounded to, as ilmi draws).
 void ilmi_stroke_tune(double step, double flat, double even);

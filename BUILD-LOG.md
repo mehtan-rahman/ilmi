@@ -6,6 +6,75 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-24 — PencilKit's own pen, thin, behind a mode; ilmi's stroke evened along itself, centred
+
+The user: "it needs more smoothing", then whether PencilKit's own pen could do it, then "see if there's a way we could get this to work with pencilkit". Two pieces, both under study.
+
+**PencilKit's own pen (`LiveInk.pencilKit`, a mode; `pencilKitBuild` the build's choice, `pencilDev` `live-pk` a dev run's).** PencilKit draws the stroke while it is written, and the same stroke stays its own after the lift, so nothing changes at the lift.
+
+Its least width, checked rather than assumed:
+- **Capture:** with PencilKit's tool, a 0.3 pt pen written at 100% and at 400% on a notebook made the same stroke in the drawing at both: every point 3.084 in size, from a tool PencilKit clamps to 0.878. So the least is the drawing's, not the glass's.
+- **Drawing:** PencilKit's own drawing of a pen stroke (`PKDrawing.image`, 8 px to the point) is as thin as the stroke says, whether stored thin or four times as wide under a quarter's transform: 0.3 draws 0.306 pt, 0.6 draws 0.605, 1.0 draws 1.000, 2.2 draws 2.194.
+- **The tool's ranges** (`validWidthRange`; what a tool asked 0.3 gets):
+
+| ink | range (pt) | a tool asked 0.3 |
+|---|---|---|
+| pen | 0.878–25.7 | 0.878 |
+| marker | 7.5–60 | 7.5 |
+| pencil | 2.4–16 | 2.4 |
+| monoline (iOS 17) | 0.5–4 | 0.3 |
+| fountain pen (iOS 17) | 1.5–14 | 0.3 |
+
+So the canvases that take the Pencil and hold nothing at rest (a PDF's page, a notebook's surface) draw, in this mode, in a space S times the sheet's points. S is four, unless the ink's widest over the width asked is less, and never under its least over it. The tool is S times as wide (the even line half that: PencilKit draws it twice its tool's width, measured). The stroke is kept exactly as PencilKit made it, under a transform of 1/S, its random seed marked (`ilmi_stroke_seed_drawn`: top 24 bits 0x1DCC5E; not for a fountain pen or a pencil, whose seed is their grain and which are PencilKit's picture already). `stroke.m` draws a marked stroke as PencilKit's own picture, as it does a fountain pen's.
+
+Measured on the Air simulator (`written` `"part": "pkside"`): PencilKit's kept even line at 0.3, 0.6 and 2 pt is 0.300, 0.600 and 2.000 pt on the sheet. On the glass at 250%: 2.07, 3.76 and 12.30 px wide at half (0.33, 0.61, 1.98 pt); at 100% the 0.3 is faint (95 of 255 dark), as any 0.3 pt line on a 2× screen.
+
+The live check in this mode (`pdfink` `"part": "live"` with `"pk": "1"`), live against kept on a PDF's page, largest pixel difference:
+
+| case | largest difference (of 255) |
+|---|---|
+| pen 0.3 | 0 |
+| pen 0.6 / 2.2 | 38 / 40 |
+| the even line 0.5 / 2 | 31 / 33 |
+| fountain 1.5 / 4 | 33 / 30 |
+| pencil 2.4 / 4 | 82 / 68 |
+| highlighter 7.5 / 16 | 26 / 33 |
+| dark: pen 0.6 / 2.2 | 53 / 38 |
+| dark: fountain 4 | 56 |
+| dark: highlighter 16 | 113 |
+
+Widths are the same. On a page the stroke is PencilKit's canvas while written and the page's `<image>` of PencilKit's picture (6 px to the point, brought down by WebKit) once kept; in the dark theme PencilKit turns a colour its own way and the page turns its picture with `invert(0.92) hue-rotate(180deg)`. On a notebook the word live against kept differs at most 96 to 174 of 255 over a few hundred pixels (the sheet's picture against the canvas).
+
+On the same touches with a third of a point of tremor, PencilKit's own word follows the tremor visibly more than ilmi's: `gaps/runs/pk-side-by-side.png`, at 100% and 250%. The rig's input (a finger, no force, a polygon of 45 ms pieces) does not separate them by the turn measure (`"part": "compare"`: 99th turn about 30° for ilmi, PencilKit and the raw touches alike); a real Pencil's (the device's log) will.
+
+What stays ilmi's in this mode:
+- **The eraser, the lasso and undo:** ilmi's, on the sheet's strokes.
+- **Typed notes' areas:** their canvas holds their strokes, so its tool is PencilKit's least wide there.
+- **Pressure:** PencilKit's own (the `pressure` setting does nothing in this mode).
+- **Where `stroke.m` draws a marked stroke:** as PencilKit's picture. That is the Mac, the pages' pictures, a PDF exported (`pages_pdf`: an image in place of a shape), another device after a sync, and on a PDF's page the page itself.
+
+Not seen: palm rejection and latency with a real Pencil in this mode; the iPad's own PencilKit.
+
+**ilmi's own stroke, evened along itself.** The one-euro filter (b6e25a7) can only trail; it is gone. Each place kept is a Gaussian mean of those before and after it along the stroke (2 screen points), its window as wide on both sides. So the newest place is where the Pencil is, nothing trails the tip, and a place settles as the hand goes on past it: a soft settle, no jump at the lift, the stroke kept the one last drawn. The force is evened over 15 ms the same way.
+
+On the Mac harness (synthetic 240 Hz tremor 0.15 pt, force noise 0.15; every setting the same noise):
+
+| zoom | turn (99th): one-euro → centred 2 pt | edge wobble | tip lag (px) | sharp corner rounded by |
+|---|---|---|---|---|
+| 100% | 30.0° → 11.1° | 0.03 → 0.03 px | 2.57 → 1.22 | 1.05 → 2.10 px |
+| 250% | 27.0° → 11.2° | 0.06 → 0.08 px | 2.57 → 1.22 | 1.21 → 2.17 px |
+| 400% | 22.2° → 10.7° | 0.09 → 0.11 px | 2.57 → 1.22 | 1.35 → 2.12 px |
+
+Tip lag is the tremor itself with no filter (1.22 px). With 0.30 pt of tremor at 250%: 37.1° → 16.0°.
+
+The live check (ilmi, every ink, the dark theme) still passes, at most 26 of 255 live against kept.
+
+**Checks.** Air simulator: `pdfink` live by ilmi (passes, at most 26 of 255 live against kept) and in PencilKit's mode (the table above); `written` (25 strokes kept as drawn, 0 as PencilKit's) and `ink`: done, `written` on a quiet machine (run beside a build and the unit tests it failed at a popover's and a pinch's timing). `pdfink` whole failed three runs at three places (a page's drawing on opening, a flick, a pinch's hand-over); origin/main as it is (b6e25a7) failed it too, at the first of them. Typecheck clean; npm test whole beside a smoke: 34 failed in 12 files, deck, queue, exam and perf views with nothing of ink in them, all 64 passing alone. The device's hand-over measures (`lastTurns`) are taken only when a dev run asks (`compare-on`): on the main thread at each stroke they were in the way of the popover's timing.
+
+**Dropped this round, at the user's word:** a settings row choosing the pen's drawer, and PencilKit's stroke kept as before 2026-11-21.
+
+---
+
 ## 2026-11-21 — on a device the app draws a PDF's pages itself, in bands on several cores at once, and writes down every zoom
 
 **Reported** after 003429b, on the iPad Air (M1): "When I zoom in it takes a second to get clearer and when i zoom out it takes a second to load." The layering held; the drawing is slow there, and a simulator on this Mac's processor did not show it.

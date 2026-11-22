@@ -22,8 +22,30 @@ final class LiveInk {
   /// The one switch: false, and PencilKit's canvas draws the stroke being written itself, as before 2026-11-21.
   static let ours = true
   /// Whether it is so now: `ours`, unless a dev run measures PencilKit's own against it (`pencilDev` `live-kit`).
-  static var on: Bool { ours && !kitForDev }
+  static var on: Bool { ours && !kitForDev && !pencilKit }
   static var kitForDev = false
+
+  /// PencilKit draws the pen and the stroke stays its own (2026-11-23, under study): its drawing while it writes and
+  /// the same stroke kept and drawn by PencilKit after the lift (`ilmi_stroke_seed_drawn`), so nothing changes at the
+  /// lift. PencilKit's tool is no thinner than 0.88 points (a pen) in its canvas's drawing; its drawing of a stroke is
+  /// as thin as the stroke says (0.3 is 0.3). So the canvases that take the Pencil and hold nothing at rest (a PDF's
+  /// page, a notebook's surface) draw in a space `scale` times as large: the tool `scale` times as wide, the stroke
+  /// kept under a transform of one over `scale`. A typed note's area holds its strokes in its canvas: its tool is no
+  /// thinner than PencilKit's least. `pencilKitBuild` is the build's choice; a dev run sets `pencilKit` (`live-pk`).
+  static let pencilKitBuild = false
+  static var pencilKit = pencilKitBuild
+  /// The tool's: four, unless the ink's widest over the width asked is less (never under its narrowest over it).
+  static var scale: CGFloat = 4
+  /// The width asked of the tool, before PencilKit's range has it.
+  static var asked: CGFloat = 1
+  static func scale(for type: PKInkingTool.InkType, width: CGFloat) -> CGFloat {
+    let r = type.validWidthRange
+    var w = max(width, 0.01)
+    if #available(iOS 17.0, *), type == .monoline { w /= 2 }
+    return max(r.lowerBound / w, min(4, r.upperBound / w), 1)
+  }
+  /// A dev run's: each stroke kept measured, by who drew it (`lastCompare`).
+  static var compare = false
   /// A dev run's: the touch's place as UIKit rounds it, as before 2026-11-22, to compare.
   static var roughForDev = false
 
@@ -33,6 +55,10 @@ final class LiveInk {
   private var shown: [CALayer] = []
   private var current: CALayer?
   weak var canvas: PKCanvasView?
+  /// The canvas draws `LiveInk.scale` times as large (`pencilKit`): what it hands over is kept under a transform of one over it.
+  var scaled = false
+  /// How much larger the canvas drew the stroke last begun than the sheet's points.
+  private(set) var drawnAt: CGFloat = 1
   /// Where the stroke kept is drawn by the page itself (a PDF's page): a fountain pen's and a pencil's picture is then
   /// the one the page is given, scaled as the page scales it; else (a notebook's surface) the one its sheets paint.
   var asPage = false
@@ -68,7 +94,6 @@ final class LiveInk {
   /// The touches of the stroke being written as they came, for the device's log (`InkLog`).
   private var raw: [[Double]] = []
   private var seed: UInt32 = 1
-  private var force: CGFloat?
   private var ink = PKInk(.pen, color: .black)
   private var asked: CGFloat = 1
   private var sense: CGFloat = 1
@@ -93,9 +118,18 @@ final class LiveInk {
   }
 
   /// The ink a canvas is given while this draws: PencilKit's stroke is made, and nothing of it is seen.
-  static func unseen(_ tool: PKInkingTool) -> PKInkingTool {
-    on ? PKInkingTool(tool.inkType, color: tool.color.withAlphaComponent(0), width: tool.width) : tool
+  static func unseen(_ tool: PKInkingTool, scaled: Bool = false) -> PKInkingTool {
+    if pencilKit {
+      // (PencilKit's own drawing: in a canvas drawn `scale` times as large, `scale` times as wide)
+      // (PencilKit's even line is drawn twice as wide as its tool, measured: its tool is half the width asked)
+      var half: CGFloat = 1
+      if #available(iOS 17.0, *), tool.inkType == .monoline { half = 0.5 }
+      return scaled ? PKInkingTool(tool.inkType, color: tool.color, width: asked * scale * half) : tool
+    }
+    return on ? PKInkingTool(tool.inkType, color: tool.color.withAlphaComponent(0), width: tool.width) : tool
   }
+  /// How much larger a canvas's drawing is than the sheet's points (`pencilKit`, on a canvas that holds nothing at rest).
+  static func drawn(scaled: Bool) -> CGFloat { pencilKit && scaled ? scale : 1 }
 
   /// A stroke begins: under this ink (its real colour), `width` points wide as asked (thinner than PencilKit's
   /// thinnest too), the pen's `pressure` as the tool has it.
@@ -103,13 +137,11 @@ final class LiveInk {
     ink = PKInk(tool.inkType, color: tool.color)
     asked = max(0.05, width)
     self.sense = CGFloat(min(max(sense ?? 1, 0), 2))
+    drawnAt = LiveInk.drawn(scaled: scaled)
     points = []
     raw = []
-    force = nil
-    forceAt = 0
-    ex = Even()
-    ey = Even()
-    tip = nil
+    touches = []
+    settled = 0
     began = 0
     rounding = 0
     made = Date()
@@ -126,14 +158,15 @@ final class LiveInk {
     guard writing, let c = canvas else { return }
     let all = event?.coalescedTouches(for: t) ?? [t]
     for u in all.isEmpty ? [t] : all {
-      points.append(point(u, in: c, keep: true))
+      touches.append(touch(u, in: c))
       if InkLog.on { raw.append(InkLog.touch(u, in: c, predicted: false, event: t.timestamp)) }
     }
     let predicted = last ? [] : (event?.predictedTouches(for: t) ?? [])
     if InkLog.on { for u in predicted { raw.append(InkLog.touch(u, in: c, predicted: true, event: t.timestamp)) } }
-    let ahead = predicted.map { point($0, in: c, keep: false) }
-    // (moving, the predicted touches lead it; held still, it ends where the Pencil is, as it will when it lifts)
-    draw(points + (ahead.isEmpty ? held() : ahead), at: t.timestamp)
+    // the stroke as it stands, evened along itself; the predicted touches lead it for this frame only
+    points = made(touches, in: c)
+    let ahead = predicted.isEmpty ? points : made(touches + predicted.map { touch($0, in: c) }, in: c, from: points)
+    if !shadow { draw(ahead, at: t.timestamp) }
     if last { finish() }
   }
 
@@ -141,8 +174,9 @@ final class LiveInk {
   private func finish() {
     guard writing else { return }
     writing = false
-    points += held()
-    draw(points, at: nil)
+    if let c = canvas { points = made(touches, in: c) }
+    rawStroke = stroke(touches.map { plain($0) })
+    if !shadow { draw(points, at: nil) }
     if let l = current { shown.append(l) }
     current = nil
     if let k = stroke(points) {
@@ -159,6 +193,7 @@ final class LiveInk {
     current?.removeFromSuperlayer()
     current = nil
     points = []
+    touches = []
   }
 
   /// PencilKit handed over its stroke `theirs`: the one drawn here for it, if there is one, in its place.
@@ -187,30 +222,116 @@ final class LiveInk {
 
   // ── the stroke ──
 
-  /// One touch as a point of the stroke, in the canvas's drawing's points; `keep`: one of the stroke's own (its force
-  /// counts for those after it), not a predicted one.
-  private func point(_ u: UITouch, in c: PKCanvasView, keep: Bool) -> PKStrokePoint {
+  /// A touch as it came, in the canvas's drawing's points (the precise place: UIKit's `location` is rounded to the
+  /// screen's points, and a curve of places rounded so, divided by the zoom, is short straight steps meeting at
+  /// corners, 2026-11-22) and how far along the stroke it is on the glass (screen points).
+  struct Touch {
+    var at: CGPoint
+    var along: CGFloat
+    var t: TimeInterval
+    var force: CGFloat
+    var pencil: Bool
+    var azimuth: CGFloat
+    var altitude: CGFloat
+  }
+  private var touches: [Touch] = []
+  /// How many of `points` are final: their windows lie wholly behind the newest touch.
+  private var settled = 0
+  /// The stroke made of the touches as they came, not evened (a dev run's comparison, `lastCompare`).
+  private(set) var rawStroke: PKStroke?
+  /// Drawing nothing: a dev run has PencilKit draw the pen (`live-kit`); the stroke is still made, and goes.
+  var shadow: Bool { !LiveInk.on }
+
+  /// The screen's points to the drawing's on this canvas: its zoom, and its frame against its bounds.
+  private func onGlass(_ c: PKCanvasView) -> CGFloat {
+    let per = c.frame.width > 0 ? c.bounds.width / c.frame.width : 1
+    return max(c.zoomScale, 0.0001) / max(per, 0.0001)
+  }
+
+  private func touch(_ u: UITouch, in c: PKCanvasView) -> Touch {
     let z = max(c.zoomScale, 0.0001)
-    // (where a touch is in a scroll view is in its content's points: the drawing's, as large as it is zoomed). The
-    // precise place: UIKit's `location` is rounded to the screen's points, and a curve made of places rounded so,
-    // divided by the zoom, is a run of short straight steps meeting at corners (2026-11-22, BUILD-LOG)
     let at = LiveInk.roughForDev ? u.location(in: c) : u.preciseLocation(in: c)
-    if keep {
-      let rough = u.location(in: c)
-      rounding = max(rounding, Double(hypot(rough.x - at.x, rough.y - at.y)))
-    }
-    // evened as it comes (a one-euro filter, `Even`): a predicted touch is evened from where the filter stands and
-    // moves it on not at all
-    let q = LiveInk.roughForDev ? at : evened(at, u.timestamp, in: c, keep: keep)
-    let p = CGPoint(x: q.x / z, y: q.y / z)
+    let rough = u.location(in: c)
+    rounding = max(rounding, Double(hypot(rough.x - at.x, rough.y - at.y)))
     if began == 0 { began = u.timestamp }
+    let p = CGPoint(x: at.x / z, y: at.y / z)
+    let k = onGlass(c)
+    let along = touches.last.map { $0.along + hypot(p.x - $0.at.x, p.y - $0.at.y) * k } ?? 0
     let pencil = u.type == .pencil
-    let f = factor(u, keep: keep)
+    let follows: Bool = {
+      var f = ink.inkType == .pen || ink.inkType == .pencil
+      if #available(iOS 17.0, *) { f = f || ink.inkType == .fountainPen }
+      return f && pencil && u.maximumPossibleForce > 0
+    }()
+    return Touch(at: p, along: along, t: u.timestamp, force: follows ? u.force : 1, pencil: pencil, azimuth: pencil ? u.azimuthAngle(in: c) : .pi / 2, altitude: pencil ? u.altitudeAngle : .pi / 2)
+  }
+
+  /// How far along itself a stroke is evened, in the screen's points (a Gaussian's sigma), and its force over time
+  /// (2026-11-23). Centred: each place is the mean of those before and after it, the window as wide on both sides,
+  /// so the newest is where the Pencil is (nothing trails it) and a place settles as the hand goes on past it; at the
+  /// lift every place's window is whole, and the stroke kept is the one last drawn. Measured on a Pencil's
+  /// synthesized tremor (BUILD-LOG 2026-11-23): at 250% the turns from 21° (the one-euro filter before) to 12°,
+  /// nothing behind at the tip, a sharp corner 0.8 pt rounder.
+  static let along: CGFloat = 2
+  static let forceSpan: TimeInterval = 0.015
+
+  /// The stroke of these touches, evened along itself; `from`: points already made of the same touches, of which
+  /// those settled are kept as they are.
+  private func made(_ ts: [Touch], in c: PKCanvasView, from: [PKStrokePoint]? = nil) -> [PKStrokePoint] {
+    guard !ts.isEmpty else { return [] }
+    let sigma = LiveInk.roughForDev ? 0 : LiveInk.along
+    let span = LiveInk.roughForDev ? 0 : LiveInk.forceSpan
+    let last = ts[ts.count - 1]
+    var out: [PKStrokePoint] = []
+    out.reserveCapacity(ts.count)
+    let keep = from ?? points
+    let first = ts[0]
+    var start = 0
+    // (those whose windows lie wholly behind the newest touch are as they were)
+    if settled > 0, settled <= keep.count {
+      out.append(contentsOf: keep[0..<settled])
+      start = settled
+    }
+    var nowSettled = start
+    for i in start..<ts.count {
+      let a = ts[i]
+      let h = min(3 * sigma, min(a.along - first.along, last.along - a.along))
+      var sx: CGFloat = 0, sy: CGFloat = 0, sw: CGFloat = 0
+      if sigma > 0, h > 0 {
+        var j = i
+        while j >= 0, a.along - ts[j].along <= h { let w = exp(-0.5 * pow((a.along - ts[j].along) / sigma, 2)); sx += w * ts[j].at.x; sy += w * ts[j].at.y; sw += w; j -= 1 }
+        j = i + 1
+        while j < ts.count, ts[j].along - a.along <= h { let w = exp(-0.5 * pow((ts[j].along - a.along) / sigma, 2)); sx += w * ts[j].at.x; sy += w * ts[j].at.y; sw += w; j += 1 }
+      }
+      let p = sw > 0 ? CGPoint(x: sx / sw, y: sy / sw) : a.at
+      let ht = min(3 * span, min(a.t - first.t, last.t - a.t))
+      var sf: CGFloat = 0, sfw: CGFloat = 0
+      if span > 0, ht > 0 {
+        var j = i
+        while j >= 0, a.t - ts[j].t <= ht { let w = CGFloat(exp(-0.5 * pow((a.t - ts[j].t) / span, 2))); sf += w * ts[j].force; sfw += w; j -= 1 }
+        j = i + 1
+        while j < ts.count, ts[j].t - a.t <= ht { let w = CGFloat(exp(-0.5 * pow((ts[j].t - a.t) / span, 2))); sf += w * ts[j].force; sfw += w; j += 1 }
+      }
+      let f = sfw > 0 ? sf / sfw : a.force
+      out.append(point(a, at: p, force: f))
+      if from == nil, last.along - a.along > 3 * sigma, a.along - first.along > 3 * sigma, last.t - a.t > 3 * span, i == nowSettled { nowSettled = i + 1 }
+    }
+    if from == nil { settled = nowSettled }
+    return out
+  }
+
+  /// A touch as it came, not evened (the comparison's raw stroke).
+  private func plain(_ a: Touch) -> PKStrokePoint { point(a, at: a.at, force: a.force) }
+
+  /// A point of the stroke: at `p`, as wide as the ink and the hand's force `f` have it. The force by a mapping fixed
+  /// at the touch: 1 for an average touch (UIKit's force 1), never under three tenths or over twice and a half; 1 for
+  /// a finger, for an ink that does not follow the hand (the even line, the highlighter), and at `pressure` 0.
+  private func point(_ a: Touch, at p: CGPoint, force: CGFloat) -> PKStrokePoint {
+    let f = min(max(1 + sense * 0.85 * (force - 1), 0.3), 2.4)
     let type = ink.inkType
     var w: CGFloat
     var opacity: CGFloat = 1
-    var azimuth: CGFloat = .pi / 2
-    if pencil { azimuth = u.azimuthAngle(in: c) }
+    var azimuth = a.azimuth
     switch type {
     case .marker:
       w = asked * 2 / 3
@@ -222,76 +343,13 @@ final class LiveInk {
       if #available(iOS 17.0, *), type == .fountainPen {
         // (PencilKit's own fountain pen, read off: 2.03 + 0.62 of the width; its nib lies as it is held)
         w = (2.03 + 0.62 * asked) * f
-        if !pencil { azimuth = -.pi }
+        if !a.pencil { azimuth = -.pi }
       } else {
         // a round nib, as `stroke.m` draws it: twice the point's size less four is the line's width
         w = (asked * f + 4) / 2
       }
     }
-    let made = PKStrokePoint(location: p, timeOffset: u.timestamp - began, size: CGSize(width: w, height: w), opacity: opacity, force: pencil ? u.force : 1, azimuth: azimuth, altitude: pencil ? u.altitudeAngle : .pi / 2)
-    if keep {
-      // (and where the touch truly is: the evened place trails it, and a Pencil held still sends nothing more to catch up with)
-      tip = PKStrokePoint(location: CGPoint(x: at.x / z, y: at.y / z), timeOffset: made.timeOffset, size: made.size, opacity: made.opacity, force: made.force, azimuth: made.azimuth, altitude: made.altitude)
-    }
-    return made
-  }
-
-  /// How much wider the pen is for the hand's force at a touch, by a mapping fixed at the touch: 1 for an average
-  /// touch (UIKit's force 1), never under three tenths or over twice and a half; 1 for a finger, for an ink that does
-  /// not follow the hand (the even line, the highlighter), and at `pressure` 0. The force is evened with the touches
-  /// before it, never after: what is drawn is never drawn again.
-  private func factor(_ u: UITouch, keep: Bool) -> CGFloat {
-    var follows = ink.inkType == .pen || ink.inkType == .pencil
-    if #available(iOS 17.0, *) { follows = follows || ink.inkType == .fountainPen }
-    guard follows, u.type == .pencil, u.maximumPossibleForce > 0 else { return 1 }
-    // (evened over 30 ms by the clock, not by the touch: the force's noise is what wobbles a pen's edges)
-    var even = u.force
-    if let was = force {
-      let dt = max(0, u.timestamp - forceAt)
-      even = was + CGFloat(1 - exp(-dt / LiveInk.forceTime)) * (u.force - was)
-    }
-    if keep { force = even; forceAt = u.timestamp }
-    return min(max(1 + sense * 0.85 * (even - 1), 0.3), 2.4)
-  }
-
-  // ── the place, evened as it comes ──
-
-  /// A one-euro filter (Casiez, Roussel and Vogel, 2012) on one coordinate: a low pass whose cutoff rises with the
-  /// speed, so a slow hand's tremor goes and a fast one is not dragged behind. In the screen's points: below 8 Hz at
-  /// rest, 0.2 more for each point a second (measured on a Pencil's synthesized jitter, BUILD-LOG 2026-11-22: the turns
-  /// a 0.15 pt jitter makes at 250% from 35° to 21°, the tip 0.7 pt behind at 250 pt/s, a sharp corner 0.4 px rounder).
-  struct Even {
-    var x: CGFloat = 0, dx: CGFloat = 0, t: TimeInterval = 0, have = false
-    static let rest = 8.0, beta = 0.2, slope = 1.0
-    static func alpha(_ cutoff: Double, _ dt: Double) -> CGFloat { CGFloat(1 / (1 + 1 / (2 * .pi * cutoff) / dt)) }
-    /// `per` is how many of the coordinate's units a screen point is.
-    mutating func step(_ v: CGFloat, _ at: TimeInterval, per: CGFloat) -> CGFloat {
-      guard have else { x = v; dx = 0; t = at; have = true; return v }
-      let dt = max(at - t, 1e-4)
-      dx += Self.alpha(Self.slope, dt) * ((v - x) / CGFloat(dt) - dx)
-      let cutoff = Self.rest + Self.beta * Double(abs(dx) / max(per, 0.0001))
-      x += Self.alpha(cutoff, dt) * (v - x)
-      t = at
-      return x
-    }
-  }
-  private var ex = Even(), ey = Even()
-  /// The last touch's own place, not evened.
-  private var tip: PKStrokePoint?
-  /// The stroke's end where the Pencil is, when the evened place trails it by more than a twentieth of a point.
-  private func held() -> [PKStrokePoint] {
-    guard let t = tip, let last = points.last, hypot(t.location.x - last.location.x, t.location.y - last.location.y) > 0.05 else { return [] }
-    return [t]
-  }
-  private var forceAt: TimeInterval = 0
-  static let forceTime = 0.03
-
-  private func evened(_ at: CGPoint, _ t: TimeInterval, in c: PKCanvasView, keep: Bool) -> CGPoint {
-    // (the canvas's own points to the screen's: its bounds against its frame, which its transform scales)
-    let per = c.frame.width > 0 ? c.bounds.width / c.frame.width : 1
-    if keep { return CGPoint(x: ex.step(at.x, t, per: per), y: ey.step(at.y, t, per: per)) }
-    var x = ex, y = ey
-    return CGPoint(x: x.step(at.x, t, per: per), y: y.step(at.y, t, per: per))
+    return PKStrokePoint(location: p, timeOffset: a.t - began, size: CGSize(width: w, height: w), opacity: opacity, force: a.pencil ? force : 1, azimuth: azimuth, altitude: a.altitude)
   }
 
   private func stroke(_ pts: [PKStrokePoint]) -> PKStroke? {

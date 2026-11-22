@@ -16862,8 +16862,8 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
     const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
-    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase') {
-      if (part === 'smooth' || part === 'erase') await writtenSmoothErase(log, part);
+    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside') {
+      if (part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside') await writtenSmoothErase(log, part);
       else if (part === 'more') await writtenMore(log, vault.root);
       else if (part === 'tabs') await writtenTabs(log);
       else if (part === 'tall') await writtenTall(log);
@@ -18580,8 +18580,161 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
     await sleep(800);
   };
 
+  if (part === 'pkwidth') {
+    // ── where PencilKit's least width lies (`"part": "pkwidth"`, under the rig): PencilKit drawing the pen (a dev run's
+    // `live-kit`), a 0.3 pt pen writes a level line on a notebook at 100% and at 400%; how wide PencilKit made its
+    // stroke in the drawing's points says whether the least is the drawing's (the same at both) or the glass's (four
+    // times thinner in the drawing at 400%); and its own pictures of thin strokes (`pkthin`) ──
+    const { NB, b, sheet } = await notebook('pencilkit width');
+    tools.setTool('pen');
+    tools.setInk('pen');
+    tools.setRecent('pen', '#000000');
+    tools.setWidth('pen', 0.3);
+    await invoke('dev_ink_pen', { on: true });
+    await invoke('dev_ink_pencil', { what: 'live-kit' });
+    await invoke('dev_ink_pencil', { what: 'pkthin' });
+    for (const z of [1, 4]) {
+      await zoomTo(NB, b, z);
+      const g = await onGlass(b, sheet);
+      const y = (90 + (z === 4 ? 60 : 0)) / (g.k / dpr);
+      const n0 = (await surfaceNow(b))!.sheets.find((l) => l.id === sheet)!.strokes;
+      const xs: number[] = [];
+      for (let x = 40; x <= 300; x += 20) xs.push(...g.at(x / (g.k / dpr), y));
+      ask('rest', ...xs, 1.5);
+      await poll(async () => (await state()).down, 'the finger writes', 20000);
+      await sleep(1200);
+      log(`inkgeo: ${JSON.stringify({ shot: `pkwidth-${z}-down`, dpr, k: g.k, zoom: z, x: [g.at(80 / (g.k / dpr), 0)[0] * window.innerWidth * dpr, g.at(260 / (g.k / dpr), 0)[0] * window.innerWidth * dpr], lines: [{ w: 0.3, y: g.at(0, y)[1] * window.innerHeight * dpr }], drawn: 'pencilkit, while written' })}`);
+      await shot(`pkwidth-${z}-down`);
+      await poll(async () => { const st = await state(); const f = (st.surfaces ?? []).find((x) => x.sheets.some((l) => l.id === sheet)); return !st.down && f && f.sheets.find((l) => l.id === sheet)!.strokes === n0 + 1; }, 'kept', 30000);
+      const st = (await state()) as unknown as { lastPoints?: string; lastWidths?: number[] };
+      log(`pkwidth: at ${z * 100}%: ${st.lastPoints ?? ''}; on the glass ${((st.lastWidths?.[0] ?? 0) * g.k / dpr).toFixed(2)} pt`);
+    }
+    await invoke('dev_ink_pencil', { what: 'live-ours' });
+    await invoke('dev_ink_pen', { on: false });
+    await ink.settled();
+    return;
+  }
+
+  if (part === 'pkside') {
+    // ── PencilKit's own drawing against ilmi's on the same touches (`"part": "pkside"`, under the rig): a notebook of
+    // blank paper at 100% and at 250%; the same word with a third of a point of tremor in it written by ilmi and,
+    // under it, by PencilKit (`live-pk`: its drawing kept its own); and level lines of the even line at 0.3, 0.6 and
+    // 2 points in PencilKit's mode (`inkgeo:` for `scripts/ink-thin.py`) ──
+    const { NB, b, sheet } = await notebook('pencilkit beside');
+    tools.setTool('pen');
+    tools.setRecent('pen', '#000000');
+    await invoke('dev_ink_pen', { on: true });
+    for (const z of [1, 2.5]) {
+      await zoomTo(NB, b, z);
+      const g = await onGlass(b, sheet);
+      const tag = String(z).replace('.', '-');
+      for (const [row, who] of [[0, 'ilmi'], [1, 'pencilkit']] as const) {
+        await invoke('dev_ink_pencil', { what: who === 'pencilkit' ? 'live-pk' : 'live-ours' });
+        tools.setInk('pen');
+        tools.setWidth('pen', 0.6);
+        await sleep(600);
+        let seed = 7;
+        const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+        const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-9)) * Math.cos(2 * Math.PI * rnd());
+        const r = 4.5 / (g.k / dpr), x0 = 40 / (g.k / dpr) + 4, y0 = (70 + 60 * row) / (g.k / dpr) + 4;
+        const pts: number[] = [];
+        for (let i = 0; i <= 4 * 30; i++) {
+          const t = (i / 30) * 2 * Math.PI;
+          pts.push(...g.at(x0 + r * (t / 2.2) - r * Math.sin(t) + (0.33 * gauss()) / (g.k / dpr), y0 - r * Math.cos(t) * 1.4 + (0.33 * gauss()) / (g.k / dpr)));
+        }
+        const n0 = (await surfaceNow(b))!.sheets.find((l) => l.id === sheet)!.strokes;
+        const box = { x: g.at(30 / (g.k / dpr), 0)[0] * window.innerWidth * dpr, y: g.at(0, (50 + 60 * row) / (g.k / dpr))[1] * window.innerHeight * dpr, w: 200 * dpr, h: 60 * dpr };
+        ask('rest', ...pts, 3.2);
+        await poll(async () => (await state()).down, 'the finger writes', 20000);
+        await sleep(5800);
+        log(`smoothgeo: ${JSON.stringify({ shot: `pkside-${who}-${tag}-down`, ...box })}`);
+        await shot(`pkside-${who}-${tag}-down`, 500);
+        await poll(async () => { const st = await state(); const f = (st.surfaces ?? []).find((x) => x.sheets.some((l) => l.id === sheet)); return !st.down && f && f.sheets.find((l) => l.id === sheet)!.strokes === n0 + 1; }, `${who}: the word kept`, 30000);
+        await sleep(700);
+        log(`smoothgeo: ${JSON.stringify({ shot: `pkside-${who}-${tag}-rest`, ...box })}`);
+        await shot(`pkside-${who}-${tag}-rest`, 500);
+        log(`pkside: ${who} at ${z * 100}%: ${((await state()) as unknown as { lastPoints?: string }).lastPoints ?? ''}`);
+      }
+      log(`smoothgeo: ${JSON.stringify({ shot: `pkside-${tag}`, x: g.at(30 / (g.k / dpr), 0)[0] * window.innerWidth * dpr, y: g.at(0, 50 / (g.k / dpr))[1] * window.innerHeight * dpr, w: 200 * dpr, h: 130 * dpr })}`);
+      await shot(`pkside-${tag}`);
+      // level lines of the even line, PencilKit's
+      await invoke('dev_ink_pencil', { what: 'live-pk' });
+      tools.setInk('monoline');
+      const lines: { w: number; y: number }[] = [];
+      for (const [i, w] of [0.3, 0.6, 2].entries()) {
+        tools.setWidth('pen', w);
+        await sleep(500);
+        const y = (210 + 22 * i) / (g.k / dpr);
+        const n0 = (await surfaceNow(b))!.sheets.find((l) => l.id === sheet)!.strokes;
+        const xs: number[] = [];
+        for (let x = 40; x <= 300; x += 20) xs.push(...g.at(x / (g.k / dpr), y));
+        ask('rest', ...xs, 0.4);
+        await poll(async () => { const st = await state(); const f = (st.surfaces ?? []).find((x) => x.sheets.some((l) => l.id === sheet)); return !st.down && f && f.sheets.find((l) => l.id === sheet)!.strokes === n0 + 1; }, `the even line, ${w} pt, kept`, 30000);
+        lines.push({ w, y: g.at(0, y)[1] * window.innerHeight * dpr });
+        log(`pkside: the even line ${w} pt at ${z * 100}%: ${((await state()) as unknown as { lastPoints?: string }).lastPoints ?? ''}`);
+      }
+      await sleep(900);
+      log(`inkgeo: ${JSON.stringify({ shot: `pkside-${tag}-lines`, dpr, k: g.k, zoom: z, x: [g.at(80 / (g.k / dpr), 0)[0] * window.innerWidth * dpr, g.at(260 / (g.k / dpr), 0)[0] * window.innerWidth * dpr], lines, drawn: 'pencilkit, kept' })}`);
+      await shot(`pkside-${tag}-lines`);
+    }
+    await invoke('dev_ink_pencil', { what: 'live-ours' });
+    await invoke('dev_ink_pen', { on: false });
+    tools.setInk('pen');
+    await ink.settled();
+    return;
+  }
+
+  if (part === 'compare') {
+    // ── ilmi's stroke against PencilKit's on the same touches (`"part": "compare"`): a notebook at 250%, a cursive
+    // word with a hand's tremor in it (the rig's finger, its places shaken by a third of a point, the same each time)
+    // written five times; PencilKit makes its own stroke of the very touches ilmi does (drawn with no colour), and
+    // each is measured with the touches as they came (`lastCompare`: the largest turn and the 99th between two-pixel
+    // pieces, the edge's wobble, largest and 99th, px) ──
+    const { NB, b, sheet } = await notebook('compare ink');
+    tools.setTool('pen');
+    tools.setInk('pen');
+    tools.setRecent('pen', '#000000');
+    tools.setWidth('pen', 0.6);
+    await invoke('dev_ink_pen', { on: true });
+    await invoke('dev_ink_pencil', { what: 'compare-on' });
+    await zoomTo(NB, b, 2.5);
+    const g = await onGlass(b, sheet);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-9)) * Math.cos(2 * Math.PI * rnd());
+    const all: Record<string, number[][]> = {};
+    for (const shake of [0, 0.33]) {
+      for (let n = 0; n < 5; n++) {
+        const r = 4.5 / (g.k / dpr), x0 = 40 / (g.k / dpr) + 4, y0 = (60 + 52 * n + (shake > 0 ? 270 : 0)) / (g.k / dpr) + 4;
+        const pts: number[] = [];
+        for (let i = 0; i <= 4 * 30; i++) {
+          const t = (i / 30) * 2 * Math.PI;
+          const jx = (shake * gauss()) / (g.k / dpr), jy = (shake * gauss()) / (g.k / dpr);
+          pts.push(...g.at(x0 + r * (t / 2.2) - r * Math.sin(t) + jx, y0 - r * Math.cos(t) * 1.4 + jy));
+        }
+        const n0 = (await surfaceNow(b))!.sheets.find((l) => l.id === sheet)!.strokes;
+        ask('rest', ...pts, 0.4);
+        await poll(async () => { const st = await state(); const f = (st.surfaces ?? []).find((x) => x.sheets.some((l) => l.id === sheet)); return !st.down && f && f.sheets.find((l) => l.id === sheet)!.strokes === n0 + 1; }, `word ${n + 1} kept`, 30000);
+        await sleep(400);
+        const c = ((await state()) as unknown as { lastCompare?: Record<string, number[]> }).lastCompare ?? {};
+        log(`compare: tremor ${shake} pt, word ${n + 1}: ${Object.entries(c).map(([k, v]) => `${k} ${v.join('/')}`).join('; ')}`);
+        for (const [k, v] of Object.entries(c)) (all[`tremor ${shake} pt: ${k}`] ??= []).push(v);
+      }
+    }
+    log(`smoothgeo: ${JSON.stringify({ shot: 'compare-words', x: g.at(40 / (g.k / dpr), 0)[0] * window.innerWidth * dpr, y: g.at(0, 40 / (g.k / dpr))[1] * window.innerHeight * dpr, w: 220 * dpr, h: 540 * dpr })}`);
+    await shot('compare-words');
+    const med = (xs: number[]) => { const v = [...xs].sort((a, c) => a - c); return v[v.length >> 1] ?? 0; };
+    for (const [k, rows] of Object.entries(all)) log(`compare: ${k}: median turn ${med(rows.map((r) => r[0]!)).toFixed(1)}° largest, ${med(rows.map((r) => r[1]!)).toFixed(1)}° 99th; edge wobble ${med(rows.map((r) => r[2]!)).toFixed(2)} px largest, ${med(rows.map((r) => r[3]!)).toFixed(2)} px 99th`);
+    await invoke('dev_ink_pencil', { what: 'compare-off' });
+    await invoke('dev_ink_pen', { on: false });
+    await ink.settled();
+    return;
+  }
+
   if (part === 'smooth') {
     const { NB, b, sheet } = await notebook('smooth ink');
+    // (the turns of each stroke kept, measured: a dev run's, asked for)
+    await invoke('dev_ink_pencil', { what: 'compare-on' });
     tools.setTool('pen');
     tools.setInk('pen');
     tools.setRecent('pen', '#000000');
@@ -18645,6 +18798,7 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
       }
     }
     await invoke('dev_ink_pencil', { what: 'smooth-new' });
+    await invoke('dev_ink_pencil', { what: 'compare-off' });
     await invoke('dev_ink_pen', { on: false });
     await ink.settled();
     return;
@@ -21086,6 +21240,9 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       tools.setSense(1);
       await invoke('dev_ink_pen', { on: true });
       const only = (await invoke<string | null>('dev_env', { name: 'ILMI_ONLY' })) ?? '';
+      // (`"pk": "1"`: PencilKit draws the pen and the stroke stays its own, `LiveInk.pencilKit`: nothing may change at the lift either)
+      const pk = !!(await invoke<string | null>('dev_env', { name: 'ILMI_PK' }));
+      if (pk) await invoke('dev_ink_pencil', { what: 'live-pk' });
       const lagsAll: number[] = [];
       const cases: [string, string, number, boolean][] = [
         ['pen', 'pen', 0.3, false], ['pen', 'pen', 0.6, false], ['pen', 'pen', 2.2, false],
@@ -21121,7 +21278,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         log(`live: ${tag}: ${lw[0]?.toFixed(3)} pt while it was written, ${lw[1]?.toFixed(3)} pt kept; ${st.lastPoints ?? ''}`);
         must(((st as { liveMissed?: number }).liveMissed ?? 0) === 0, `${tag}: kept as it was drawn while written, not as pencilkit's`);
         must(lw.length === 2 && Math.abs(lw[0]! - lw[1]!) <= Math.max(0.005, lw[1]! * 0.01), `${tag}: the stroke on the glass while it was written is the one kept (${lw.map((x) => x.toFixed(3)).join(' and ')})`);
-        if (kind === 'pen' && (ink === 'pen' || ink === 'monoline')) must(Math.abs(lw[1]! - w) <= Math.max(0.01, w * 0.02), `${tag}: kept as wide as it was asked to be (${lw[1]?.toFixed(3)} of ${w})`);
+        if (kind === 'pen' && (ink === 'pen' || ink === 'monoline') && !pk) must(Math.abs(lw[1]! - w) <= Math.max(0.01, w * 0.02), `${tag}: kept as wide as it was asked to be (${lw[1]?.toFixed(3)} of ${w})`);
         // (the capture is the host's, a moment after it is asked for, later when the host is busy: undone only once it has surely been taken)
         await sleep(6000);
         await tools.undo();
@@ -21129,6 +21286,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         await sleep(500);
       }
       useApp.getState().setTheme('light');
+      if (pk) await invoke('dev_ink_pencil', { what: 'live-ours' });
       const ms = [...lagsAll].sort((x, y2) => x - y2);
       if (ms.length) log(`live: from a touch to its drawing: ${ms[Math.floor(ms.length / 2)]!.toFixed(1)} ms in the middle, ${ms[Math.floor(ms.length * 0.95)]!.toFixed(1)} ms at the 95th of ${ms.length}, ${ms[ms.length - 1]!.toFixed(1)} ms at most`);
       await invoke('dev_ink_pen', { on: false });

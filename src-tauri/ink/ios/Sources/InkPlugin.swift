@@ -464,6 +464,8 @@ struct State: Encodable {
   var eraseShown: [Double] = []
   /// A dev run's: the turn between neighbouring two-pixel pieces of the last stroke kept, as drawn on the glass now (degrees: largest, 99th).
   var lastTurns: [Double] = []
+  /// A dev run's: the last stroke kept, measured (`lastCompare` in the plugin).
+  var lastCompare: [String: [Double]] = [:]
   /// A dev run's: strokes kept as they were drawn while written (`Live.swift`), and those kept as PencilKit's.
   var liveKept: Int = 0
   var liveMissed: Int = 0
@@ -633,7 +635,7 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
     let k = Sheet.plain ? 1 : max(1, min(2, (Sheet.most / max(px, 1)).squareRoot()))
     // (a whole number of the canvas's own pixels each way, so nothing of it is between two)
     let size = Sheet.plain ? frame.size : CGSize(width: (frame.width * k * screen).rounded() / screen, height: (frame.height * k * screen).rounded() / screen)
-    if box == frame, over == k, abs(z - zoom) <= 0.0001, canvas.zoomScale == z * k { return false }
+    if box == frame, over == k, abs(z - zoom) <= 0.0001, canvas.zoomScale == z * k / LiveInk.drawn(scaled: vector) { return false }
     let first = box == .zero
     box = frame
     over = k
@@ -642,7 +644,8 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
     canvas.bounds = CGRect(origin: .zero, size: size)
     canvas.center = CGPoint(x: frame.midX, y: frame.midY)
     canvas.transform = CGAffineTransform(scaleX: frame.width / size.width, y: frame.height / size.height)
-    let zz = z * k
+    // (PencilKit's own drawing draws in a space `LiveInk.scale` times as large on a page the page draws: `LiveInk.pencilKit`)
+    let zz = z * k / LiveInk.drawn(scaled: vector)
     if canvas.zoomScale != zz {
       canvas.maximumZoomScale = max(canvas.maximumZoomScale, zz)
       canvas.minimumZoomScale = min(canvas.minimumZoomScale, zz)
@@ -665,7 +668,7 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
 
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
     // (the canvas emptied, in the turn the page shows what it held: what was drawn of it here goes with it)
-    if LiveInk.on, canvasView.drawing.strokes.isEmpty { live.clearGlass() }
+    if LiveInk.ours, canvasView.drawing.strokes.isEmpty { live.clearGlass() }
     if vector {
       if clearing { return }
       let all = canvasView.drawing.strokes
@@ -1622,8 +1625,10 @@ class InkPlugin: Plugin, PenEars {
     } else {
       unpick()
       // a pen's or a highlighter's stroke: drawn here as it is written
-      if LiveInk.on {
+      // (and made when a dev run has PencilKit draw it, drawing nothing)
+      if LiveInk.ours {
         s.live.asPage = s.vector
+        s.live.scaled = s.vector
         s.live.begin(ink, width: CGFloat(tool.width), sense: tool.sense.map { CGFloat($0) })
       }
     }
@@ -1631,7 +1636,7 @@ class InkPlugin: Plugin, PenEars {
   }
 
   func penSample(_ t: UITouch, _ event: UIEvent?, ended: Bool) {
-    guard LiveInk.on, let s = active, s.live.writing else { return }
+    guard LiveInk.ours, let s = active, s.live.writing else { return }
     s.live.add(t, event, ended: ended)
   }
 
@@ -1853,6 +1858,32 @@ class InkPlugin: Plugin, PenEars {
   private var erasedSaid = 0
   private var erasedSheet = ""
   func eraseNote(hit: Double) { eraseHit.append(hit) }
+
+  /// A dev run's: what PencilKit's own drawing makes of a thin pen stroke, as stored points and as points four times
+  /// as wide under a quarter's transform, as pictures at 8 px to the point (`pkthin-<width>-<scale>.png` in the app's
+  /// temporary folder); and each ink's widths as PencilKit's tool takes them (`pkthin.txt`).
+  private func pkThin() {
+    let dir = FileManager.default.temporaryDirectory
+    var text = ""
+    for w in [0.3, 0.6, 1.0, 2.2] {
+      for scale in [1.0, 4.0] {
+        let size = (w * scale + 4) / 2
+        let pts = (0...20).map { i in PKStrokePoint(location: CGPoint(x: (5 + Double(i) * 2.5) * scale, y: 10 * scale), timeOffset: Double(i) * 0.01, size: CGSize(width: size, height: size), opacity: 1, force: 1, azimuth: .pi / 2, altitude: .pi / 2) }
+        let k = PKStroke(ink: PKInk(.pen, color: .black), path: PKStrokePath(controlPoints: pts, creationDate: Date()), transform: CGAffineTransform(scaleX: 1 / scale, y: 1 / scale), mask: nil)
+        var img: UIImage?
+        UITraitCollection(userInterfaceStyle: .light).performAsCurrent { img = PKDrawing(strokes: [k]).image(from: CGRect(x: 0, y: 0, width: 60, height: 20), scale: 8) }
+        if let d = img?.pngData() { try? d.write(to: dir.appendingPathComponent("pkthin-\(w)-\(Int(scale)).png")) }
+      }
+    }
+    var types: [(String, PKInkingTool.InkType)] = [("pen", .pen), ("marker", .marker), ("pencil", .pencil)]
+    if #available(iOS 17.0, *) { types += [("monoline", .monoline), ("fountain", .fountainPen), ("watercolor", .watercolor), ("crayon", .crayon)] }
+    for (n, t) in types {
+      let r = t.validWidthRange
+      let made = PKInkingTool(t, color: .black, width: 0.3)
+      text += "\(n): widths \(r.lowerBound) to \(r.upperBound); a tool asked 0.3 is \(made.width)\n"
+    }
+    try? text.write(to: dir.appendingPathComponent("pkthin.txt"), atomically: true, encoding: .utf8)
+  }
 
   /// The eraser down on a sheet the page draws: its strokes on the glass, the page holding them unseen.
   private func beginGlass(_ s: Sheet) {
@@ -2132,7 +2163,7 @@ class InkPlugin: Plugin, PenEars {
     s.dirty = true
     step(s, from: before, to: s.drawing)
     // (the area's canvas draws its strokes itself: what was drawn here of the one just ended goes as it does)
-    if LiveInk.on { s.live.clearGlass() }
+    if LiveInk.ours { s.live.clearGlass() }
     changed(s)
   }
 
@@ -2160,10 +2191,40 @@ class InkPlugin: Plugin, PenEars {
   /// The stroke PencilKit handed over on a sheet, as it is kept: the one drawn for it while it was written (`Live.swift`),
   /// or where there is none (`LiveInk.ours` off), PencilKit's own as the pen has it (`sensed`).
   func keep(_ theirs: PKStroke, live: LiveInk) -> PKStroke {
+    if LiveInk.pencilKit, LiveInk.ours {
+      // PencilKit drew it and it stays its own: kept exactly as it drew it (its widths, its pressure, its smoothing),
+      // under a transform of one over the space its canvas draws in, and marked to be drawn as PencilKit draws it
+      _ = live.take(theirs)
+      var k = theirs
+      let by = 1 / live.drawnAt
+      k.transform = theirs.transform.concatenating(CGAffineTransform(scaleX: by, y: by))
+      // (a pen's, the even line's and a highlighter's: a fountain pen's and a pencil's are PencilKit's picture already,
+      // and a pencil's seed is its grain)
+      let outlined = k.ink.inkType == .pen || k.ink.inkType == .marker || { if #available(iOS 17.0, *) { return k.ink.inkType == .monoline }; return false }()
+      if outlined, #available(iOS 16.0, *) { k.randomSeed = ilmi_stroke_seed_mark(k.randomSeed) }
+      let pts = Array(k.path)
+      let mean = pts.isEmpty ? 0 : Double(pts.reduce(0) { $0 + max(0.05, 2 * $1.size.width - 4) }) / Double(pts.count) * Double(by)
+      lastWidths = [mean, mean]
+      lastPoints = "pencilkit's own, kept: \(pts.count) points, \(String(format: "%.3f", mean)) pt wide on the sheet"
+      if LiveInk.compare { lastCompare = ["pencilkit": measure(k, live), "raw": live.rawStroke.map { measure($0, live) } ?? []] }
+      return k
+    }
     // (a stroke with a colour was not taken from the Pencil under the ink with none: a dev run's stroke put on the canvas)
+    if LiveInk.ours, !LiveInk.on, theirs.ink.color.cgColor.alpha >= 0.001 {
+      // (a dev run's PencilKit drawing, `pencilDev` `live-kit`: its stroke kept as before; the one made of the same
+      // touches, drawing nothing, goes; how wide PencilKit made it, in the drawing's points, said)
+      _ = live.take(theirs)
+      let pts = Array(theirs.path)
+      let mean = pts.isEmpty ? 0 : Double(pts.reduce(0) { $0 + max(0.05, 2 * $1.size.width - 4) }) / Double(pts.count)
+      lastWidths = [mean, mean]
+      lastPoints = "pencilkit's own: \(pts.count) points, \(String(format: "%.3f", mean)) pt wide in the drawing, the canvas at \(String(format: "%.3f", live.canvas?.zoomScale ?? 0))"
+      let k = sensed(theirs)
+      if LiveInk.compare { lastTurns = turns(k, live) }
+      return k
+    }
     guard LiveInk.on, theirs.ink.color.cgColor.alpha < 0.001 else {
       let k = sensed(theirs)
-      lastTurns = turns(k, live)
+      if LiveInk.compare { lastTurns = turns(k, live) }
       return k
     }
     guard let ours = live.take(theirs) else {
@@ -2173,7 +2234,7 @@ class InkPlugin: Plugin, PenEars {
       // (its ink is the one PencilKit was given to draw with no colour: kept in the pen's own)
       var k = sensed(theirs)
       k.ink = PKInk(k.ink.inkType, color: k.ink.color.withAlphaComponent(ink.color.cgColor.alpha))
-      lastTurns = turns(k, live)
+      if LiveInk.compare { lastTurns = turns(k, live) }
       return k
     }
     liveKept += 1
@@ -2185,17 +2246,49 @@ class InkPlugin: Plugin, PenEars {
     lastPoints = "\(ours.ink.inkType.rawValue) asked \(String(format: "%.3f", tool.width)) n \(pts.count): " + pick.map { String(format: "%.3f×%.3f f%.3f a%.3f z%.3f o%.3f", $0.size.width, $0.size.height, $0.force, $0.altitude, $0.azimuth, $0.opacity) }.joined(separator: " | ")
     lastLags = live.lags
     lastRounding = live.rounding
-    lastTurns = turns(ours, live)
+    // (a dev run's measure, on the main thread: only when one asks for it)
+    if LiveInk.compare { lastTurns = turns(ours, live) }
+    // (PencilKit made its own of the same touches, drawn with no colour: measured too)
+    if LiveInk.compare { lastCompare = ["pencilkit": measure(sensed(theirs), live), "ilmi": measure(ours, live), "raw": live.rawStroke.map { measure($0, live) } ?? []] }
     return ours
   }
   private func keep(_ theirs: PKStroke, on s: Sheet) -> PKStroke { keep(theirs, live: s.live) }
   private(set) var lastLags: [Double] = []
   private(set) var lastRounding: Double = 0
   private(set) var lastTurns: [Double] = []
+  /// A dev run's (`pencilDev` `compare-on`): the last stroke as kept, by who drew it, and as its touches came: the
+  /// largest turn and the 99th between two-pixel pieces of its middle, and its edge's wobble (the radius against its
+  /// own evening over three pixels: largest and 99th, px), on the glass now.
+  private(set) var lastCompare: [String: [Double]] = [:]
+  private func measure(_ k: PKStroke, _ live: LiveInk) -> [Double] {
+    guard let c = live.canvas, let g = Geom(k, dark: false) else { return [] }
+    let px = Double(c.zoomScale * (c.window?.screen.scale ?? UIScreen.main.scale) * LiveInk.drawn(scaled: live.scaled))
+    let t = g.turns(at: px)
+    let m = g.places()
+    var at: [Double] = [], r: [Double] = []
+    var i = 0
+    var run = 0.0
+    while i + 2 < m.count {
+      if i > 0 { run += hypot(m[i] - m[i - 3], m[i + 1] - m[i - 2]) * px }
+      at.append(run); r.append(m[i + 2] * px)
+      i += 3
+    }
+    var off: [Double] = []
+    var lo = 0, hi = 0, sum = 0.0
+    for j in 0..<r.count {
+      while hi < r.count, at[hi] - at[j] <= 3 { sum += r[hi]; hi += 1 }
+      while lo < j, at[j] - at[lo] > 3 { sum -= r[lo]; lo += 1 }
+      let n = Double(hi - lo)
+      if n > 0 { off.append(abs(r[j] - sum / n)) }
+    }
+    off.sort()
+    let w = off.last ?? 0, w99 = off.isEmpty ? 0 : off[Int(Double(off.count - 1) * 0.99)]
+    return (t + [w, w99]).map { ($0 * 100).rounded() / 100 }
+  }
   /// A dev run's: how smooth a stroke's outline is as its canvas shows it now (pixels to the point: the canvas's zoom and the screen's).
   private func turns(_ k: PKStroke, _ live: LiveInk) -> [Double] {
     guard let c = live.canvas, let g = Geom(k, dark: false) else { return [] }
-    return g.turns(at: Double(c.zoomScale * (c.window?.screen.scale ?? UIScreen.main.scale)))
+    return g.turns(at: Double(c.zoomScale * (c.window?.screen.scale ?? UIScreen.main.scale) * LiveInk.drawn(scaled: live.scaled)))
   }
   /// A dev run's: the strokes kept as drawn while written, and those that were PencilKit's (none drawn for them).
   private(set) var liveKept = 0
@@ -2579,7 +2672,7 @@ class InkPlugin: Plugin, PenEars {
     s.host = h
     s.canvas.drawingPolicy = fingerWrites ? .anyInput : .pencilOnly
     s.canvas.overrideUserInterfaceStyle = dark ? .dark : .light
-    s.canvas.tool = LiveInk.unseen(ink)
+    s.canvas.tool = LiveInk.unseen(ink, scaled: s.vector)
     h.content.addSubview(s.canvas)
     let g = s.canvas.drawingGestureRecognizer
     web?.addGestureRecognizer(g)
@@ -2918,6 +3011,14 @@ class InkPlugin: Plugin, PenEars {
         // (a tool made narrower than PencilKit's range writes no narrower: tried, and the stroke under the finger was
         // as wide as at the range's foot. So the foot it is, and what is missing is thinned at the hand-over.)
         made = PKInkingTool(type, color: c, width: min(max(CGFloat(t.width), range.lowerBound), range.upperBound))
+        // (PencilKit's own drawing: its canvases draw in a space as many times as large as the tool needs, `LiveInk.scale`)
+        let before = LiveInk.scale
+        LiveInk.scale = LiveInk.scale(for: type, width: CGFloat(t.width))
+        LiveInk.asked = CGFloat(t.width)
+        if LiveInk.pencilKit, LiveInk.scale != before {
+          for s in self.sheets.values where s.box != .zero { _ = s.place(s.box, zoom: s.zoom) }
+          for f in self.surfaces.values { f.replace() }
+        }
         // thinner than PencilKit's thinnest: written at its thinnest, and thinned by this much when it is handed over
         self.thin = t.kind == "pen" && CGFloat(t.width) < range.lowerBound ? max(0.1, CGFloat(t.width) / range.lowerBound) : 1
       case "eraser", "select":
@@ -2936,7 +3037,7 @@ class InkPlugin: Plugin, PenEars {
       for s in self.sheets.values where s.vector { self.lay(s) }
       if let ink = made {
         self.ink = ink
-        for s in self.sheets.values { s.canvas.tool = LiveInk.unseen(ink) }
+        for s in self.sheets.values { s.canvas.tool = LiveInk.unseen(ink, scaled: s.vector) }
       }
       for f in self.surfaces.values { f.toolChanged() }
       invoke.resolve()
@@ -3202,13 +3303,22 @@ class InkPlugin: Plugin, PenEars {
         let old = args.what == "smooth-old"
         LiveInk.roughForDev = old
         if old { ilmi_stroke_tune(0.5, 0.012, 0) } else { ilmi_stroke_tune(0.2, 0.004, -1) }
+      } else if args.what == "pkthin" {
+        self.pkThin()
+      } else if args.what == "compare-on" || args.what == "compare-off" {
+        LiveInk.compare = args.what == "compare-on"
       } else if args.what == "erase-reset" {
         self.eraseReset()
-      } else if args.what == "live-kit" || args.what == "live-ours" {
-        // (a dev run's: the stroke being written drawn by PencilKit, as before, or by ilmi, to measure one against the other)
+      } else if args.what == "live-kit" || args.what == "live-ours" || args.what == "live-pk" {
+        // (a dev run's: the stroke being written drawn by PencilKit as before 2026-11-21, by ilmi, or by PencilKit and
+        // kept its own, `LiveInk.pencilKit`)
         LiveInk.kitForDev = args.what == "live-kit"
-        for s in self.sheets.values { s.canvas.tool = LiveInk.unseen(self.ink) }
-        for f in self.surfaces.values { f.canvas.tool = LiveInk.unseen(self.ink) }
+        LiveInk.pencilKit = args.what == "live-pk" || (LiveInk.pencilKitBuild && args.what != "live-ours")
+        for s in self.sheets.values {
+          s.canvas.tool = LiveInk.unseen(self.ink, scaled: s.vector)
+          if s.box != .zero { _ = s.place(s.box, zoom: s.zoom) }
+        }
+        for f in self.surfaces.values { f.toolChanged(); f.replace() }
       } else if args.what == "clock-on", let w = self.web?.window {
         LiveClock.shared.start(in: w)
       } else if args.what == "clock-off" {
@@ -3400,6 +3510,7 @@ class InkPlugin: Plugin, PenEars {
       whole.eraseSkipped = self.eraseSkipped
       whole.eraseShown = self.eraseShown
       whole.lastTurns = self.lastTurns
+      whole.lastCompare = self.lastCompare
       whole.liveKept = self.liveKept
       whole.liveMissed = self.liveMissed
       whole.liveMisses = self.liveMisses

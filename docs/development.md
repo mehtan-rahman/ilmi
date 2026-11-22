@@ -810,6 +810,20 @@ them) or, in a typed note's area, when the canvas's drawing is the area's
 again. On a PDF's page in the dark theme the layer turns its colours as the
 page turns its ink (`invert(0.92) hue-rotate(180deg)`), not as PencilKit
 turns a colour on a dark canvas, which is what the notebook's sheets show.
+Under study (2026-11-24): `LiveInk.pencilKit` has PencilKit draw the pen
+and keep its stroke its own. PencilKit's tool is no thinner than 0.878 pt
+(a pen) in its canvas's drawing, but its drawing of a stroke is as thin as
+the stroke says. So a PDF's page and a notebook's surface draw in a space
+`LiveInk.scale` times the sheet's points (four, or less where the ink's
+widest needs it), the tool that many times as wide, and the stroke is kept
+under a transform of one over it, its random seed marked
+(`ilmi_stroke_seed_drawn`) so that `stroke.m` draws it as PencilKit's own
+picture. `written`'s `"part": "pkside"` puts the two side by side; `pdfink`'s
+live check runs in the mode with `"pk": "1"`; `"part": "pkwidth"` and
+`pencilDev` `pkthin` are the experiments that found where the least lies.
+Each place of ilmi's own stroke is evened along it, centred
+(`LiveInk.along`, 2 screen points), and its force over 15 ms
+(`LiveInk.forceSpan`).
 `LiveInk.ours = false` (one constant at the top of `Live.swift`) gives the
 stroke being written back to PencilKit's canvas and keeps PencilKit's
 stroke, reshaped, as before. The eraser and the lasso were ours already.

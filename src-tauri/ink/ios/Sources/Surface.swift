@@ -481,7 +481,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       three.require(toFail: pinch)
     }
     setTouchTypes()
-    canvas.tool = LiveInk.unseen(plugin.ink)
+    canvas.tool = LiveInk.unseen(plugin.ink, scaled: true)
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
@@ -799,6 +799,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     if scroll.contentInset.left != inset { scroll.contentInset = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: 0) }
   }
 
+  /// The canvas placed again (a dev run's change of who draws the pen).
+  func replace() { placeCanvas() }
+
   /// The canvas that takes the Pencil: over the view, standing still, drawing a point of a sheet as large as the sheets are laid out.
   private func placeCanvas() {
     let v = scroll.bounds.size
@@ -809,7 +812,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     canvas.transform = .identity
     canvas.bounds = CGRect(origin: .zero, size: size)
     canvas.transform = CGAffineTransform(scaleX: v.width / size.width, y: v.height / size.height)
-    let zz = s * k
+    // (PencilKit's own drawing draws in a space `LiveInk.scale` times as large: `LiveInk.pencilKit`)
+    let zz = s * k / LiveInk.drawn(scaled: true)
     if abs(canvas.zoomScale - zz) > 0.00001 {
       canvas.maximumZoomScale = max(canvas.maximumZoomScale, zz)
       canvas.minimumZoomScale = min(canvas.minimumZoomScale, zz)
@@ -1381,7 +1385,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   func toolChanged() {
     if down, let l = active, doing != nil { finish(l); spent = true }
     unpick()
-    canvas.tool = LiveInk.unseen(plugin.ink)
+    canvas.tool = LiveInk.unseen(plugin.ink, scaled: true)
     setTouchTypes()
   }
 
@@ -1470,7 +1474,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   func penDown(_ t: UITouch) {
     // a pen's or a highlighter's stroke: drawn here as it is written, wherever PencilKit takes it (zoomed too, and off
     // the sheets: what PencilKit writes is drawn with no colour, `Live.swift`)
-    if LiveInk.on, isPen(t), plugin.tool.kind == "pen" || plugin.tool.kind == "highlighter" {
+    if LiveInk.ours, isPen(t), plugin.tool.kind == "pen" || plugin.tool.kind == "highlighter" {
+      live.scaled = true
       live.begin(plugin.ink, width: CGFloat(plugin.tool.width), sense: plugin.tool.sense.map { CGFloat($0) })
     }
     guard isPen(t), abs(scroll.zoomScale - 1) < 0.0005 else { return }
@@ -1542,7 +1547,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   }
 
   func penSample(_ t: UITouch, _ event: UIEvent?, ended: Bool) {
-    guard LiveInk.on, live.writing else { return }
+    guard LiveInk.ours, live.writing else { return }
     live.add(t, event, ended: ended)
   }
 
@@ -1640,7 +1645,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
     // (the canvas emptied, in the turn the sheets show what it held: what was drawn of it here goes with it)
-    if LiveInk.on, canvasView.drawing.strokes.isEmpty { live.clearGlass() }
+    if LiveInk.ours, canvasView.drawing.strokes.isEmpty { live.clearGlass() }
     if clearing { return }
     let all = canvasView.drawing.strokes
     if all.count <= taken { taken = all.count; return }

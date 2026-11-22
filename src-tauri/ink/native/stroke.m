@@ -291,6 +291,10 @@ static CGColorRef colorOf(PKStroke *s, BOOL dark, CGFloat alpha) {
   return out;
 }
 
+int ilmi_stroke_seed_drawn(unsigned int seed) { return (seed >> 8) == 0x1DCC5Eu; }
+
+unsigned int ilmi_stroke_seed_mark(unsigned int seed) { return (0x1DCC5Eu << 8) | (seed & 0xFFu); }
+
 void *ilmi_stroke_make(void *stroke, int dark) {
   if (STROKE_AVAILABLE) {
     PKStroke *s = (__bridge PKStroke *)stroke;
@@ -301,7 +305,11 @@ void *ilmi_stroke_make(void *stroke, int dark) {
     BOOL round = [type isEqualToString:PKInkTypePen];
     if (@available(macOS 14.0, iOS 17.0, *)) round = round || [type isEqualToString:PKInkTypeMonoline];
     BOOL marker = [type isEqualToString:PKInkTypeMarker];
-    if (!round && !marker) {
+    // a stroke PencilKit drew and that was kept as it drew it (`LiveInk.pencilKit`, 2026-11-23): its own picture, as
+    // for a fountain pen and a pencil, so nothing of it changes when the Pencil lifts
+    BOOL drewIt = NO;
+    if (@available(macOS 13.0, iOS 16.0, *)) drewIt = ilmi_stroke_seed_drawn(s.randomSeed);
+    if ((!round && !marker) || drewIt) {
       g.theirs = s;
       g.bounds = s.renderBounds;
       return (__bridge_retained void *)g;

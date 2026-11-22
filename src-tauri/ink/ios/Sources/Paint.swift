@@ -19,6 +19,7 @@ import UIKit
 @_silgen_name("ilmi_stroke_tune") func ilmi_stroke_tune(_ step: Double, _ flat: Double, _ even: Double)
 @_silgen_name("ilmi_stroke_places") private func c_stroke_places(_ made: UnsafeMutableRawPointer, _ out: UnsafeMutablePointer<Double>, _ most: Int32) -> Int32
 @_silgen_name("ilmi_stroke_evening") private func c_stroke_evening(_ made: UnsafeMutableRawPointer, _ out: UnsafeMutablePointer<Double>)
+@_silgen_name("ilmi_stroke_seed_mark") func ilmi_stroke_seed_mark(_ seed: UInt32) -> UInt32
 @_silgen_name("ilmi_stroke_outline") private func c_stroke_outline(_ made: UnsafeMutableRawPointer, _ path: UnsafeMutablePointer<UnsafeRawPointer?>, _ rgba: UnsafeMutablePointer<Double>, _ round: UnsafeMutablePointer<Double>, _ alpha: UnsafeMutablePointer<Double>) -> Int32
 
 /// A stroke made ready to be drawn, on any thread, as often as it is asked.

@@ -84,8 +84,12 @@ export const SWATCHES: Record<Inked, readonly Swatch[]> = {
     { name: 'blue', color: '#7cc4ff' },
   ],
 };
-/** The swatch that is the wheel's colour: one past the presets. */
-export const CUSTOM = 4;
+/** The swatch that is the wheel's colour (was 4, one past the four presets, until a tool's colours could be more). */
+export const CUSTOM = -1;
+/** The wheel up for a colour to add as a swatch of its own (2026-11-25). */
+export const ADD = -2;
+/** The most swatches a tool keeps. */
+export const MAX_SWATCHES = 12;
 /** How many colours lately used are remembered for each tool. */
 export const RECENT = 8;
 /** The least of a highlighter's colour that shows. */
@@ -106,7 +110,7 @@ export interface Kept {
   widths: Record<Sized, Three>;
   /** Which swatch each is at: one of the presets, or `CUSTOM`. */
   swatch: Record<Inked, number>;
-  /** Each tool's four swatches, `#rrggbb`: as they start until one is replaced. */
+  /** Each tool's swatches, `#rrggbb`: its four as they start, until one is replaced, added or taken away (one at least). */
   colors: Record<Inked, readonly string[]>;
   /** The colour last chosen from the wheel for each, `#rrggbb`; null until one is. */
   custom: Record<Inked, string | null>;
@@ -173,7 +177,7 @@ export const withWidth = (k: Kept, tool: Sized, width: number): Kept => {
 
 /** The swatch a tool is at; the wheel's only once it has a colour. */
 export const withSwatch = (k: Kept, tool: Inked, swatch: number): Kept => {
-  const ok = swatch === CUSTOM ? k.custom[tool] !== null : Number.isInteger(swatch) && swatch >= 0 && swatch < SWATCHES[tool].length;
+  const ok = swatch === CUSTOM ? k.custom[tool] !== null : Number.isInteger(swatch) && swatch >= 0 && swatch < k.colors[tool].length;
   return !ok || swatch === k.swatch[tool] ? k : { ...k, swatch: { ...k.swatch, [tool]: swatch } };
 };
 
@@ -187,12 +191,28 @@ export const withCustom = (k: Kept, tool: Inked, color: string): Kept => {
   return { ...k, custom: { ...k.custom, [tool]: c }, swatch: { ...k.swatch, [tool]: CUSTOM } };
 };
 
-/** One of a tool's four swatches replaced by `color`, and in use. */
+/** One of a tool's swatches replaced by `color`, and in use. */
 export const withColor = (k: Kept, tool: Inked, swatch: number, color: string): Kept => {
   const c = hex(color);
-  if (!c || !Number.isInteger(swatch) || swatch < 0 || swatch >= SWATCHES[tool].length) return k;
+  if (!c || !Number.isInteger(swatch) || swatch < 0 || swatch >= k.colors[tool].length) return k;
   if (k.colors[tool][swatch] === c && k.swatch[tool] === swatch) return k;
   return { ...k, colors: { ...k.colors, [tool]: k.colors[tool].map((v, i) => (i === swatch ? c : v)) }, swatch: { ...k.swatch, [tool]: swatch } };
+};
+
+/** `color` a swatch of the tool's own after its others, and in use (no more than `MAX_SWATCHES`). */
+export const withAdded = (k: Kept, tool: Inked, color: string): Kept => {
+  const c = hex(color);
+  if (!c || k.colors[tool].length >= MAX_SWATCHES) return k;
+  return { ...k, colors: { ...k.colors, [tool]: [...k.colors[tool], c] }, swatch: { ...k.swatch, [tool]: k.colors[tool].length } };
+};
+
+/** A tool's swatch taken away; it keeps one at least. The one in use, taken away, gives way to the one before it. */
+export const withRemoved = (k: Kept, tool: Inked, swatch: number): Kept => {
+  const list = k.colors[tool];
+  if (list.length <= 1 || !Number.isInteger(swatch) || swatch < 0 || swatch >= list.length) return k;
+  const at = k.swatch[tool];
+  const next = at === CUSTOM ? CUSTOM : at === swatch ? Math.max(0, swatch - 1) : at > swatch ? at - 1 : at;
+  return { ...k, colors: { ...k.colors, [tool]: list.filter((_, i) => i !== swatch) }, swatch: { ...k.swatch, [tool]: next } };
 };
 
 /** A colour the wheel closed on is among the tool's last few. */
@@ -281,13 +301,20 @@ export function parse(raw: string | null | undefined): Kept {
     const custom = (tool: Inked): string | null => hex(t.custom?.[tool]);
     const swatch = (tool: Inked): number => {
       const n = t.swatch?.[tool];
-      if (n === CUSTOM) return custom(tool) ? CUSTOM : DEFAULTS.swatch[tool];
-      return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < SWATCHES[tool].length ? n : DEFAULTS.swatch[tool];
+      // (the wheel's colour was the swatch one past the four, until a tool's colours could be more: kept before 3)
+      const v = typeof (t as { v?: unknown }).v === 'number' ? (t as { v: number }).v : 0;
+      if (n === CUSTOM || (v < 3 && n === 4)) return custom(tool) ? CUSTOM : DEFAULTS.swatch[tool];
+      return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < colors(tool).length ? n : DEFAULTS.swatch[tool];
     };
-    const colors = (tool: Inked): readonly string[] => {
-      const c = t.colors?.[tool];
-      return SWATCHES[tool].map((s, i) => (Array.isArray(c) ? hex(c[i]) : null) ?? s.color);
-    };
+    function colors(tool: Inked): readonly string[] {
+      const c = t!.colors?.[tool];
+      if (!Array.isArray(c)) return DEFAULTS.colors[tool];
+      // what was kept before 3 was the four, each in its place; since, as many as there are (one at least)
+      const v = typeof (t as { v?: unknown }).v === 'number' ? (t as { v: number }).v : 0;
+      if (v < 3) return SWATCHES[tool].map((s, i) => hex(c[i]) ?? s.color);
+      const got = c.map(hex).filter((x): x is string => x !== null).slice(0, MAX_SWATCHES);
+      return got.length ? got : DEFAULTS.colors[tool];
+    }
     const recent = (tool: Inked): readonly string[] => {
       const c = t.recent?.[tool];
       return Array.isArray(c) ? [...new Set(c.map(hex).filter((v): v is string => v !== null))].slice(0, RECENT) : [];
@@ -303,7 +330,7 @@ export function parse(raw: string | null | undefined): Kept {
       custom: { pen: custom('pen'), highlighter: custom('highlighter') },
       recent: { pen: recent('pen'), highlighter: recent('highlighter') },
       // (what was kept before 86 had the soft pen as it started, never chosen: it starts as the even line now)
-      ink: isInk(t.ink) && ((t as { v?: number }).v === KEPT_V || t.ink !== 'pen') ? t.ink : DEFAULTS.ink,
+      ink: isInk(t.ink) && ((typeof (t as { v?: unknown }).v === 'number' && (t as { v: number }).v >= 2) || t.ink !== 'pen') ? t.ink : DEFAULTS.ink,
       sense: typeof t.sense === 'number' && Number.isFinite(t.sense) ? Math.round(clamp(t.sense, 0, SENSE_MAX) * 20) / 20 : DEFAULTS.sense,
       opacity: typeof t.opacity === 'number' && Number.isFinite(t.opacity) ? Math.round(clamp(t.opacity, OPACITY_MIN, 1) * 100) / 100 : DEFAULTS.opacity,
       eraser: t.eraser === 'part' || t.eraser === 'stroke' ? t.eraser : DEFAULTS.eraser,
@@ -319,8 +346,8 @@ export function parse(raw: string | null | undefined): Kept {
 // ── kept per device, and the canvases told ──
 
 export const INK_KEY = 'ilmi.ink';
-/** What is kept says which shape of it this is: 2 since the pen starts as the even line (86). */
-const KEPT_V = 2;
+/** What is kept says which shape of it this is: 2 since the pen starts as the even line (86); 3 since a tool's colours are as many as it has and the wheel's is `CUSTOM` -1 (2026-11-25). */
+const KEPT_V = 3;
 
 function load(): Kept {
   try { return parse(globalThis.localStorage?.getItem(INK_KEY)); } catch { return DEFAULTS; }
@@ -385,6 +412,8 @@ export const setWidth = (tool: Sized, width: number): void => put(withWidth(kept
 export const setSwatch = (tool: Inked, swatch: number): void => put(withSwatch(kept(), tool, swatch));
 /** One of the colours lately used, in use again: the tool's own swatch. */
 export const setRecent = (tool: Inked, color: string): void => put(withCustom(kept(), tool, color));
+/** A tool's swatch taken away (one stays at least). */
+export const removeSwatch = (tool: Inked, swatch: number): void => put(withRemoved(kept(), tool, swatch));
 export const setInk = (ink: PenInk): void => put(withInk(kept(), ink));
 export const setSense = (sense: number): void => put(withSense(kept(), sense));
 export const setOpacity = (opacity: number): void => put(withOpacity(kept(), opacity));
@@ -442,8 +471,8 @@ export async function redo(): Promise<void> {
 export interface At { x: number; y: number; w: number; h: number }
 
 /** The colour a slot shows: one of the four, or the tool's own. */
-const slotColor = (k: Kept, tool: Inked, slot: number): string | null => (slot === CUSTOM ? k.custom[tool] : k.colors[tool][slot] ?? null);
-const withSlot = (k: Kept, tool: Inked, slot: number, color: string): Kept => (slot === CUSTOM ? withCustom(k, tool, color) : withColor(k, tool, slot, color));
+const slotColor = (k: Kept, tool: Inked, slot: number): string | null => (slot === CUSTOM ? k.custom[tool] : slot === ADD ? null : k.colors[tool][slot] ?? null);
+const withSlot = (k: Kept, tool: Inked, slot: number, color: string): Kept => (slot === CUSTOM ? withCustom(k, tool, color) : slot === ADD ? withAdded(k, tool, color) : withColor(k, tool, slot, color));
 
 /**
  * The colour wheel, from `at` (a swatch): the colour it shows is that
@@ -486,5 +515,6 @@ export function toolsHeard(e: { kind: 'history'; undo?: boolean; redo?: boolean 
     return;
   }
   const at = useInkTools.getState().picking;
-  if (at && e.color) put(withSlot(kept(), at.tool, at.slot, e.color));
+  // (the colour as the wheel turns, shown where it goes; a swatch to be added is added once the wheel closes on it)
+  if (at && e.color && at.slot !== ADD) put(withSlot(kept(), at.tool, at.slot, e.color));
 }

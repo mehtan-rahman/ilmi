@@ -263,6 +263,23 @@ function PagesRow() {
 }
 
 /**
+ * `notes button`: a book with no notes shows `create notes` and its `+` on its bar, or not (2026-11-25). Hidden,
+ * ⌘\ and the book's ⋯ still create them, and a book with notes keeps `open notes`. Kept with the other tweaks.
+ */
+function NotesButtonRow() {
+  const on = useApp((s) => s.notesButton);
+  return (
+    <div className="tw-row" data-tw="notes-button">
+      <span className="tw-lbl">notes button</span>
+      <div className="tw-seg">
+        <button type="button" data-active={on ? '1' : '0'} onClick={() => useApp.getState().setNotesButton(true)}>show</button>
+        <button type="button" data-active={on ? '0' : '1'} onClick={() => useApp.getState().setNotesButton(false)}>hide</button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Mirror: a folder kept as the collection is, one way, for other tools to
  * read (`keep.ts`). Off by default; `choose…` asks for a folder and the
  * mirror is a folder of the collection's name inside it.
@@ -348,6 +365,7 @@ export function Tweaks() {
         </div>
       </div>
       {mobile && <PagesRow />}
+      <NotesButtonRow />
       <div className="tw-row">
         <span className="tw-lbl">density <span className="tw-val">{density.toFixed(2)}</span></span>
         <input

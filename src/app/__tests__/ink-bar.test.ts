@@ -384,7 +384,7 @@ describe('kept per device', () => {
     answers.ink_color = () => ({ color: '#0a7f6b' });
     await a.tools.pickColor('highlighter', { x: 0, y: 0, w: 40, h: 44 });
     const was = a.tools.useInkTools.getState().kept;
-    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual({ ...was, v: 2 });
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual({ ...was, v: 3 });
 
     const b = await launch();
     expect(b.tools.useInkTools).not.toBe(a.tools.useInkTools);
@@ -410,7 +410,7 @@ describe('kept per device', () => {
     expect(was).toMatchObject({ tool: 'eraser', last: 'pen', ink: 'pencil', opacity: 0.45, eraser: 'part', snap: false, shown: false, recent: { pen: ['#884422'] } });
     expect(was.widths.pen).toEqual([1.2, 4.4, 3.6]);
     expect(was.colors.pen).toEqual(['#1c1c1e', '#1d4fb8', '#c5281c', '#884422']);
-    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual({ ...was, v: 2 });
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual({ ...was, v: 3 });
 
     const b = await launch();
     expect(b.tools.useInkTools.getState().kept).toEqual(was);
@@ -423,7 +423,7 @@ describe('kept per device', () => {
     // nothing is kept until something is chosen
     expect(localStorage.getItem('ilmi.ink')).toBeNull();
     a.tools.setInk('pen');
-    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toMatchObject({ ink: 'pen', v: 2 });
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toMatchObject({ ink: 'pen', v: 3 });
     const b = await launch();
     expect(b.tools.useInkTools.getState().kept.ink).toBe('pen');
     expect(b.tools.toolOf(b.tools.useInkTools.getState().kept)).toEqual({ ...PEN, ink: 'pen' });
@@ -436,7 +436,7 @@ describe('kept per device', () => {
     // read alone it is not written back; the next thing chosen is
     expect('v' in JSON.parse(localStorage.getItem('ilmi.ink')!)).toBe(false);
     c.tools.setTool('pen');
-    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toMatchObject({ tool: 'pen', ink: 'monoline', v: 2 });
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toMatchObject({ tool: 'pen', ink: 'monoline', v: 3 });
     // and from then on the soft pen can be chosen and stays
     c.tools.setInk('pen');
     const d = await launch();
@@ -834,7 +834,7 @@ describe('what the canvases are told', () => {
     await done;
     expect(a.tools.useInkTools.getState().kept).toEqual(was);
     expect(a.tools.useInkTools.getState().picking).toBeNull();
-    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual({ ...was, v: 2 });
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual({ ...was, v: 3 });
     // and the canvases have the colour that was in use again
     expect(said('ink_tool').at(-1)).toEqual({ tool: { ...PEN, color: '#1e7a46' } });
     // one chosen before stays that tool's own when a later wheel is closed with none
@@ -960,7 +960,7 @@ describe('the row of tools', () => {
     expect(lit('.ib-tools button')).toEqual(['pen']);
     expect(labels('.ib-sizes button')).toEqual(['thin', 'medium', 'thick']);
     expect(lit('.ib-sizes button')).toEqual(['medium']);
-    expect(labels('.ib-swatches button')).toEqual(['black', 'blue', 'red', 'green', 'colours']);
+    expect(labels('.ib-swatches button')).toEqual(['black', 'blue', 'red', 'green', 'add colour', 'colours']);
     expect(lit('.ib-swatches button')).toEqual(['black']);
     expect(labels('.ib-history button')).toEqual(['undo', 'redo']);
     expect(labels('.ib-ends button')).toEqual(['draw with finger', 'hide tools']);
@@ -990,7 +990,7 @@ describe('the row of tools', () => {
     await press('[aria-label="highlighter"]');
     expect(lit('.ib-tools button')).toEqual(['highlighter']);
     expect(labels('.ib-sizes button')).toEqual(['thin', 'medium', 'thick']);
-    expect(labels('.ib-swatches button')).toEqual(['yellow', 'green', 'pink', 'blue', 'colours']);
+    expect(labels('.ib-swatches button')).toEqual(['yellow', 'green', 'pink', 'blue', 'add colour', 'colours']);
     await press('[aria-label="thick"]');
     await press('[aria-label="pink"]');
     expect(lit('.ib-sizes button')).toEqual(['thick']);
@@ -1089,7 +1089,7 @@ describe('the row of tools', () => {
     expect(sw(0).dataset.color).toBe('#884422');
     expect(sw(0).querySelector<HTMLElement>('.ib-dot')!.style.background).toBe('rgb(136, 68, 34)');
     // it is no longer black: it is called by its place, and the rest by their names
-    expect(labels('.ib-swatches button')).toEqual(['colour 1', 'blue', 'red', 'green', 'colours']);
+    expect(labels('.ib-swatches button')).toEqual(['colour 1', 'blue', 'red', 'green', 'add colour', 'colours']);
     expect(lit('.ib-swatches button')).toEqual(['colour 1']);
     expect(sw(0).title).toBe('colour 1');
     // the wheel's own swatch has no colour from it, and the pen's mark on its tool is the new colour
@@ -1099,59 +1099,120 @@ describe('the row of tools', () => {
     expect(a.tools.useInkTools.getState().kept.colors.pen).toEqual(['#884422', '#1d4fb8', '#c5281c', '#1e7a46']);
   });
 
-  it('a swatch held is replaced from the wheel though another is in use, and the press that ends the hold does nothing more', async () => {
+  it('a swatch held has its menu, change colour and remove, and the press that ends the hold does nothing more', async () => {
     const a = await launch();
     await a.scene();
     await show(a);
+    const kept = () => a.tools.useInkTools.getState().kept;
     const red = () => host.querySelector<HTMLElement>('[data-ink-swatch="2"]')!;
+    const menu = () => document.querySelector<HTMLElement>('.ink-sw-menu');
+    const item = (what: string) => menu()!.querySelector<HTMLButtonElement>(`[data-ink-sw-do="${what}"]`)!;
     answers.ink_color = () => ({ color: '#aa00aa' });
     calls.length = 0;
-    // a short press: down, up, the click: chosen, no wheel
+    // a short press: down, up, the click: chosen, no menu, no wheel
     await down(red());
     await act(async () => { red().dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
     await press('[data-ink-swatch="2"]');
     await act(async () => { await wait(460); });
+    expect(menu()).toBeNull();
     expect(said('ink_color')).toEqual([]);
     expect(lit('.ib-swatches button')).toEqual(['red']);
-    // green held: the wheel, for green
+    // green held: its menu, nothing chosen yet
     const green = () => host.querySelector<HTMLElement>('[data-ink-swatch="3"]')!;
     await down(green());
     await act(async () => { await wait(300); });
-    expect(said('ink_color')).toEqual([]);
+    expect(menu()).toBeNull();
     await act(async () => { await wait(180); });
+    expect(menu()?.dataset.inkSwMenu).toBe('3');
+    expect(Array.from(menu()!.querySelectorAll('[role="menuitem"]')).map((b) => [b.textContent, (b as HTMLButtonElement).disabled])).toEqual([['change colour', false], ['remove', false]]);
+    // the finger lifted: the click it makes does nothing more
+    await act(async () => { green().dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
+    await press('[data-ink-swatch="3"]');
+    expect(said('ink_color')).toEqual([]);
+    expect(lit('.ib-swatches button')).toEqual(['red']);
+    // change colour: the wheel, for green, and green replaced and in use
+    await act(async () => { item('change').click(); await wait(); });
+    expect(menu()).toBeNull();
     expect(said('ink_color').map((c) => c.color)).toEqual(['#1e7a46']);
     expect(green().dataset.color).toBe('#aa00aa');
     expect(lit('.ib-swatches button')).toEqual(['colour 4']);
-    // the finger lifted: the click it makes opens no second wheel
-    await act(async () => { green().dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
-    await press('[data-ink-swatch="3"]');
-    expect(said('ink_color').length).toBe(1);
-    // a hold let go early, or slid off, is no hold
+    // red held, removed: three left, the one in use (after it) still in use
     await down(red());
-    await act(async () => { red().dispatchEvent(new PointerEvent('pointercancel', { bubbles: true })); await wait(460); });
-    expect(said('ink_color').length).toBe(1);
+    await act(async () => { await wait(480); });
+    await act(async () => { item('remove').click(); await wait(); });
+    expect(kept().colors.pen).toEqual(['#1c1c1e', '#1d4fb8', '#aa00aa']);
+    expect(kept().swatch.pen).toBe(2);
+    expect(lit('.ib-swatches button')).toEqual(['colour 3']);
+    // down to one: that one cannot go
+    for (let n = 0; n < 2; n++) {
+      await down(host.querySelector<HTMLElement>('[data-ink-swatch="0"]')!);
+      await act(async () => { await wait(480); });
+      await act(async () => { item('remove').click(); await wait(); });
+    }
+    expect(kept().colors.pen).toEqual(['#aa00aa']);
+    await down(host.querySelector<HTMLElement>('[data-ink-swatch="0"]')!);
+    await act(async () => { await wait(480); });
+    expect(item('remove').disabled).toBe(true);
+    // a press anywhere else puts it away
+    await act(async () => { await wait(); });
+    await act(async () => { document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); await wait(); });
+    expect(menu()).toBeNull();
+    // a hold let go early, or slid off, is no hold
+    const only = () => host.querySelector<HTMLElement>('[data-ink-swatch="0"]')!;
+    await down(only());
+    await act(async () => { only().dispatchEvent(new PointerEvent('pointercancel', { bubbles: true })); await wait(480); });
+    expect(menu()).toBeNull();
+  });
+
+  it('+ after the swatches adds a colour from the wheel as a swatch of its own, in use; each tool its own; kept after a launch', async () => {
+    const a = await launch();
+    await a.scene();
+    await show(a);
+    const kept = () => a.tools.useInkTools.getState().kept;
+    answers.ink_color = () => ({ color: '#336699' });
+    calls.length = 0;
+    await press('[data-ink-swatch="add"]');
+    // the wheel shows the colour in use to start from
+    expect(said('ink_color').map((c) => c.color)).toEqual(['#1c1c1e']);
+    expect(kept().colors.pen).toEqual(['#1c1c1e', '#1d4fb8', '#c5281c', '#1e7a46', '#336699']);
+    expect(kept().swatch.pen).toBe(4);
+    expect(labels('.ib-swatches button')).toEqual(['black', 'blue', 'red', 'green', 'colour 5', 'add colour', 'colours']);
+    expect(lit('.ib-swatches button')).toEqual(['colour 5']);
+    expect(said('ink_tool').at(-1)).toMatchObject({ tool: { kind: 'pen', color: '#336699' } });
+    // closed with none chosen: nothing added
+    answers.ink_color = () => ({ color: null });
+    await press('[data-ink-swatch="add"]');
+    expect(kept().colors.pen.length).toBe(5);
+    // the highlighter's are its own
+    await press('[aria-label="highlighter"]');
+    expect(labels('.ib-swatches button')).toEqual(['yellow', 'green', 'pink', 'blue', 'add colour', 'colours']);
+    // and the next launch has them
+    act(() => root!.unmount());
+    host.remove();
+    const b = await launch();
+    expect(b.tools.useInkTools.getState().kept.colors.pen).toEqual(['#1c1c1e', '#1d4fb8', '#c5281c', '#1e7a46', '#336699']);
   });
 
   it('fits the pane it is in and never scrolls: the sizes go first, then the colours but for the one in use', async () => {
-    expect([ROW_FULL, ROW_MID]).toEqual([748, 626]);
-    expect([0, -1, 2000, 748].map((w) => rowFit(w))).toEqual(['full', 'full', 'full', 'full']);
-    expect([747, 700, 626].map((w) => rowFit(w))).toEqual(['mid', 'mid', 'mid']);
-    expect([625, 400, 1].map((w) => rowFit(w))).toEqual(['compact', 'compact', 'compact']);
+    expect([ROW_FULL, ROW_MID]).toEqual([790, 668]);
+    expect([0, -1, 2000, 790].map((w) => rowFit(w))).toEqual(['full', 'full', 'full', 'full']);
+    expect([789, 700, 668].map((w) => rowFit(w))).toEqual(['mid', 'mid', 'mid']);
+    expect([667, 400, 1].map((w) => rowFit(w))).toEqual(['compact', 'compact', 'compact']);
     // a tool with no colours keeps its sizes in the room they would have taken; the lasso has neither to lose
-    expect([748, 534, 533, 300].map((w) => rowFit(w, 'eraser'))).toEqual(['full', 'full', 'mid', 'mid']);
-    expect([748, 300].map((w) => rowFit(w, 'select'))).toEqual(['full', 'full']);
-    expect([747, 625].map((w) => rowFit(w, 'highlighter'))).toEqual(['mid', 'compact']);
+    expect([790, 534, 533, 300].map((w) => rowFit(w, 'eraser'))).toEqual(['full', 'full', 'mid', 'mid']);
+    expect([790, 300].map((w) => rowFit(w, 'select'))).toEqual(['full', 'full']);
+    expect([789, 667].map((w) => rowFit(w, 'highlighter'))).toEqual(['mid', 'compact']);
     const a = await launch();
     barW = 900;
     await show(a);
     expect(fit()).toBe('full');
     expect(labels('.ib-sizes button')).toEqual(['thin', 'medium', 'thick']);
-    expect(labels('.ib-swatches button')).toEqual(['black', 'blue', 'red', 'green', 'colours']);
+    expect(labels('.ib-swatches button')).toEqual(['black', 'blue', 'red', 'green', 'add colour', 'colours']);
     // a note opened beside: narrower
     await resized(700);
     expect(fit()).toBe('mid');
     expect(host.querySelector('.ib-sizes')).toBeNull();
-    expect(labels('.ib-swatches button')).toEqual(['black', 'blue', 'red', 'green', 'colours']);
+    expect(labels('.ib-swatches button')).toEqual(['black', 'blue', 'red', 'green', 'add colour', 'colours']);
     await resized(500);
     expect(fit()).toBe('compact');
     expect(host.querySelector('.ib-sizes')).toBeNull();
@@ -1165,7 +1226,7 @@ describe('the row of tools', () => {
     await press('[data-ink-swatch="current"]');
     expect(pop()!.dataset.inkPop).toBe('pen');
     expect(inPop('[data-ink-size]').map((b) => b.getAttribute('aria-label'))).toEqual(['thin', 'medium', 'thick']);
-    expect(inPop('[data-ink-swatch]').map((b) => b.getAttribute('aria-label'))).toEqual(['black', 'blue', 'red', 'green', 'colours']);
+    expect(inPop('[data-ink-swatch]').map((b) => b.getAttribute('aria-label'))).toEqual(['black', 'blue', 'red', 'green', 'add colour', 'colours']);
     await pressPop('[data-ink-swatch="2"]');
     expect(one.querySelector<HTMLElement>('.ib-dot')!.style.background).toBe('rgb(197, 40, 28)');
     await press('[data-ink-swatch="current"]');
@@ -1280,7 +1341,7 @@ describe('the row of tools', () => {
     // the row shows the same
     expect(lit('.ib-sizes button')).toEqual(['thin']);
     // its colours, as on the row
-    expect(inPop('[data-ink-swatch]').map((b) => b.getAttribute('aria-label'))).toEqual(['black', 'blue', 'red', 'green', 'colours']);
+    expect(inPop('[data-ink-swatch]').map((b) => b.getAttribute('aria-label'))).toEqual(['black', 'blue', 'red', 'green', 'add colour', 'colours']);
     await pressPop('[data-ink-swatch="1"]');
     expect(lit('.ib-swatches button')).toEqual(['blue']);
     // a stroke ended resting becomes a shape, or not
@@ -1350,7 +1411,7 @@ describe('the row of tools', () => {
     await slide('width', 30);
     expect(kept().widths.highlighter).toEqual([10, 30, 24]);
     expect(inPop('[data-ink-preview]')[0]!.dataset).toMatchObject({ inkPreview: 'highlighter', width: '30' });
-    expect(inPop('[data-ink-swatch]').map((b) => b.getAttribute('aria-label'))).toEqual(['yellow', 'green', 'pink', 'blue', 'colours']);
+    expect(inPop('[data-ink-swatch]').map((b) => b.getAttribute('aria-label'))).toEqual(['yellow', 'green', 'pink', 'blue', 'add colour', 'colours']);
     expect(inPop('[data-ink-snap]')[0]!.textContent).toBe('hold for a straight line');
     // the eraser
     await press('[aria-label="eraser"]');

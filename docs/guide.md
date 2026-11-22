@@ -183,8 +183,11 @@ left it once you are on a note again. A bar over the pages has the contents, the
 notes, the zoom between `−` and `+` (a press on the number fits the pages
 to the window again), the page (a press goes to a page) and search. Your
 notes on it are a note attached to it, made when you ask: the bar says
-`create notes` until there is one and `open notes` after. The first time
-you press that (or ask for a card from the pages) you pick a note that is
+`create notes` until there is one and `open notes` after (the book's `⋯`
+says the same, first in it). Set `notes button` to `hide` in the settings
+and a book with no notes has neither `create notes` nor its `+` on its bar;
+⌘\ and the `⋯` still create them, and a book with notes keeps `open notes`.
+The first time you press that (or ask for a card from the pages) you pick a note that is
 there or make a
 new one, named as you like, in a folder of your choosing; the note names the
 file in its `pdf` field and is otherwise blank. It is an ordinary note: a
@@ -1136,11 +1139,15 @@ The tools are a row under the bar over the pages, on an iPad only:
   set, and what you set is that size's from then on. Each tool remembers
   its own three.
 - Its colours: black, blue, red and green for the pen; yellow, green, pink
-  and blue for the highlighter. A press on the colour in use, or a hold on
-  any of them, opens the colour wheel to replace it. The ring after them,
-  `colours`, opens the wheel for a fifth colour of that tool's own; a
-  press on the ring uses that colour again, and a press while it is in
-  use opens the wheel to change it. The eraser and `select` have none.
+  and blue for the highlighter, as they start. A press on the colour in use
+  opens the colour wheel to replace it. `+` after them opens the wheel for
+  a colour to add: it becomes a colour of that tool's own, in use. Hold a
+  colour for its menu: `change colour` (the wheel) or `remove` (a tool keeps
+  one at least). Past four, a tool's colours scroll sideways in their own
+  place; nothing else on the row moves. The ring after `+`, `colours`, is
+  the wheel's own colour; a press on it uses that colour again, and a press
+  while it is in use opens the wheel to change it. Each tool keeps its own,
+  on the device. The eraser and `select` have none.
 - At the right, `undo` and `redo`, grey when there is nothing to take back
   or put back; `draw with finger` (off, the Pencil writes and a finger
   scrolls; on, a finger writes too and two fingers scroll); and `hide

@@ -61,6 +61,17 @@
 
 /* a colour is a round of itself, whatever the theme; the one in use has a ring of the ink round it */
 .inkbar .ib-sw, .ink-pop .ib-sw { width: 40px; }
+/* a tool's swatches: as many as it has, past four scrolling sideways in their own place (its + after them, still) */
+.inkbar .ib-sw-run, .ink-pop .ib-sw-run { display: flex; align-items: center; gap: 2px; max-width: 166px; position: relative; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
+.inkbar .ib-sw-run::-webkit-scrollbar, .ink-pop .ib-sw-run::-webkit-scrollbar { display: none; }
+.inkbar .ib-sw-run > .ib-btn, .ink-pop .ib-sw-run > .ib-btn { flex: 0 0 auto; scroll-snap-align: start; }
+.inkbar .ib-add .ic, .ink-pop .ib-add .ic { width: 18px; height: 18px; color: var(--fg-3); }
+/* a swatch held: its menu */
+.ink-sw-menu { display: flex; flex-direction: column; min-width: 168px; padding: 4px; }
+.ink-sw-menu .ip-item { display: block; width: 100%; min-height: 44px; padding: 0 12px; text-align: left; background: none; border: 0; border-radius: var(--radius); color: var(--fg-1); font: inherit; }
+.ink-sw-menu .ip-item + .ip-item { border-top: 1px solid var(--line-2); border-radius: 0; }
+.ink-sw-menu .ip-item:disabled { color: var(--fg-3); }
+.ink-sw-menu .ip-item:active:not(:disabled) { background: var(--bg-2); }
 .inkbar .ib-dot, .ink-pop .ib-dot {
   display: block; box-sizing: border-box; width: 26px; height: 26px; border-radius: 50%;
   border: 1px solid color-mix(in oklab, var(--fg) 22%, transparent);

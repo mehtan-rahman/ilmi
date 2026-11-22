@@ -6,6 +6,28 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-25 — more colours on the row; `create notes` put away
+
+The user: "add option to add more color presets. i think might be nice to dismiss create notes somewhere as well perhaps".
+
+**A tool's colours, as many as it has** (`InkBar.tsx`, `inkTools.ts`):
+- **Adding:** `+` after the swatches opens the system's colour wheel. The colour it closes on is a swatch of the tool's own, in use. Closed with none, nothing is added.
+- **Holding a swatch:** its menu, `change colour` (the wheel, for it) and `remove` (a tool keeps one at least; the one in use, taken away, gives way to the one before).
+- **Lists:** the pen's and the highlighter's are their own, kept on the device with the other tools, 1 to 12.
+- **The row:** past four, the swatches scroll sideways in their own place (166 px), the one in use kept in sight. The `+` and the wheel's ring stand after them, and nothing else on the row moves. The row's widths before its sizes and colours leave it are a swatch wider (790 and 668 px).
+- **What is kept:** shape 3. The wheel's own swatch is `CUSTOM` -1, was 4, one past the four. What was kept before reads as it was. The lasso's colour menu names the wheel's colour by where it falls after the pen's, however many.
+
+**`notes button`** (the settings, a tweak, `show` as it starts): `hide`, and a book with no notes has neither `create notes` nor its `+` on its bar. A book with notes keeps `open notes` and `hide notes`; ⌘\ still creates them; and the book's `⋯` now has the word first (after a reading's `later` and `dismiss`), whatever the bar shows.
+
+**Checks.** Air simulator, `written`:
+- `"part": "colours"`: `+` and the wheel closed on a colour (a fifth swatch, in use, the canvases write in it); blue held, its menu, `change colour`; red held, `remove`; four more added: eight, the run 166 of 334 px, undo, redo and `hide tools` where they were.
+- `"relaunch": "1"`: all eight kept.
+- `"part": "notesbar"`: a PDF dropped on its own, `create notes` and `+` on its bar; `notes button` set to `hide` from its own button; both gone; its `⋯` has `create notes`, which asks for a note as the word does.
+
+Captures: `gaps/runs/colours-notes-evidence.png`, `gaps/runs/c2-colours*/`, `gaps/runs/c4-notes/`. `ink-bar.test.ts` 55 pass (a hold's menu and its two ways, the last colour kept, `+` and a launch after); `book-notes.test.ts` (the setting hides and shows them); `written-pages.test.ts` (the `⋯` with `create notes` first). `written` whole: done (its swatch counts with the `+`). Typecheck clean; npm test 2675 passed and 2 skipped in 170 files.
+
+---
+
 ## 2026-11-22 — a book's ink drawn into its page's tiles: one copy, no layers
 
 The user, on the iPad (5780663): strokes near one being written "blur then quickly unblur ... as though its

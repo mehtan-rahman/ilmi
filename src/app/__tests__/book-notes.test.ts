@@ -265,6 +265,14 @@ describe('several notes beside the pages', () => {
     expect(plusRow('new-written')?.textContent).toBe('new written notes');
     await fire(window, new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     expect(document.querySelector('.pop-menu')).toBeNull();
+    // the settings' `notes button: hide`: the word and its `+` gone from a book with none (its ⋯ still creates
+    // them, `written-pages.test.ts`), and back with `show`
+    await act(async () => { useApp.getState().setNotesButton(false); });
+    expect(q('.meta .notes-toggle')).toBeNull();
+    expect(plus()).toBeNull();
+    await act(async () => { useApp.getState().setNotesButton(true); });
+    expect(word().textContent).toBe('create notes');
+    expect(plus()).not.toBeNull();
   });
 
   it('`m` clips into the note in front beside the pages; with the notes closed, into the one used last', async () => {

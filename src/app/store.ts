@@ -78,6 +78,8 @@ export interface Tweaks {
   learnNew: boolean;
   /** A tap under the finger for a session's reveal, grades and the like (`haptics.ts`). On by default; shown only where the device can. */
   haptics: boolean;
+  /** A book with no notes shows `create notes` and its `+` on its bar (on by default); off, they are gone from it, and ⌘\ and the book's ⋯ still create them. */
+  notesButton: boolean;
   /** An accent of one's own (`#rrggbb`), over the presets; null, and the preset in `accent` is used. */
   accentHex: string | null;
 }
@@ -87,7 +89,7 @@ export const ZOOM_MIN = 0.7;
 export const ZOOM_MAX = 1.8;
 export const ZOOM_STEP = 0.1;
 const TWEAKS_KEY = 'ilmi.tweaks';
-const DEFAULT_TWEAKS: Tweaks = { accentHex: null, theme: 'light', accent: 'gold', density: 1, zoom: 1, reopen: true, clipImages: true, remoteImages: true, queueTitles: false, backlog: false, focusBudget: false, learnNew: true, haptics: true };
+const DEFAULT_TWEAKS: Tweaks = { accentHex: null, theme: 'light', accent: 'gold', density: 1, zoom: 1, reopen: true, clipImages: true, remoteImages: true, queueTitles: false, backlog: false, focusBudget: false, learnNew: true, haptics: true, notesButton: true };
 
 function loadTweaks(): Tweaks {
   try {
@@ -107,6 +109,7 @@ function loadTweaks(): Tweaks {
       focusBudget: typeof t.focusBudget === 'boolean' ? t.focusBudget : DEFAULT_TWEAKS.focusBudget,
       learnNew: typeof t.learnNew === 'boolean' ? t.learnNew : DEFAULT_TWEAKS.learnNew,
       haptics: typeof t.haptics === 'boolean' ? t.haptics : DEFAULT_TWEAKS.haptics,
+      notesButton: typeof t.notesButton === 'boolean' ? t.notesButton : DEFAULT_TWEAKS.notesButton,
       accentHex: typeof t.accentHex === 'string' && /^#[0-9a-f]{6}$/i.test(t.accentHex) ? t.accentHex.toLowerCase() : null,
     };
   } catch {
@@ -298,6 +301,8 @@ export interface AppState {
   learnNew: boolean;
   /** A tap under the finger for what a session does (`haptics.ts`). A tweak, kept with the others, on by default. */
   haptics: boolean;
+  /** `notes button`: a book with no notes shows `create notes` and its `+` (on by default). A tweak, kept with the others. */
+  notesButton: boolean;
   /** An accent of one's own (`#rrggbb`), over the presets; null, and the preset is used. A tweak, kept with the others. */
   accentHex: string | null;
   /** Whether this device can make one (an iPhone): asked of the native side once at launch. */
@@ -439,6 +444,7 @@ export interface AppState {
   setFocusBudget(on: boolean): void;
   setLearnNew(on: boolean): void;
   setHaptics(on: boolean): void;
+  setNotesButton(on: boolean): void;
   /** Replace the recents list; it is saved as the tweaks are. */
   setRecents(list: Recent[]): void;
   setPanes(next: Panes | ((cur: Panes) => Panes)): void;
@@ -468,6 +474,7 @@ export const useApp = create<AppState>((set, get) => ({
   focusBudget: tweaks.focusBudget,
   learnNew: tweaks.learnNew,
   haptics: tweaks.haptics,
+  notesButton: tweaks.notesButton,
   accentHex: tweaks.accentHex,
   canHaptics: false,
   recents: loadRecents(),
@@ -555,6 +562,7 @@ export const useApp = create<AppState>((set, get) => ({
   setFocusBudget: (focusBudget) => { set({ focusBudget }); persist(get()); },
   setLearnNew: (learnNew) => { set({ learnNew }); persist(get()); },
   setHaptics: (haptics) => { set({ haptics }); persist(get()); },
+  setNotesButton: (notesButton) => { set({ notesButton }); persist(get()); },
   setRecents: (recents) => { set({ recents }); saveRecents(recents); },
   setPanes: (next) => set({ panes: typeof next === 'function' ? next(get().panes) : next }),
 }));
@@ -567,7 +575,7 @@ useApp.subscribe((s) => {
   if (panes !== s.panes) useApp.setState({ panes });
 });
 
-const persist = (s: AppState) => saveTweaks({ accentHex: s.accentHex, theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog, focusBudget: s.focusBudget, learnNew: s.learnNew, haptics: s.haptics });
+const persist = (s: AppState) => saveTweaks({ accentHex: s.accentHex, theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog, focusBudget: s.focusBudget, learnNew: s.learnNew, haptics: s.haptics, notesButton: s.notesButton });
 
 declare global {
   interface Window {

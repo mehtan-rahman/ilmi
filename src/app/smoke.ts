@@ -16857,7 +16857,7 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     const fs = vault.fs as StoreFs;
     // the tools as they start, whatever a run before left chosen on this device (not for a launch that is to find
     // what the one before it kept, `"part": "presets"` again)
-    const keepTools = ((await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '') === 'presets' && !!(await invoke<string | null>('dev_env', { name: 'ILMI_RELAUNCH' }));
+    const keepTools = ['presets', 'colours'].includes((await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '') && !!(await invoke<string | null>('dev_env', { name: 'ILMI_RELAUNCH' }));
     if (!keepTools) {
       try { localStorage.removeItem(tools.INK_KEY); } catch { /* none */ }
       tools.useInkTools.setState({ kept: { ...tools.DEFAULTS, tool: 'eraser' } });
@@ -16866,8 +16866,8 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
     const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
-    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets') {
-      if (part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets') await writtenSmoothErase(log, part);
+    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets' || part === 'colours' || part === 'notesbar') {
+      if (part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets' || part === 'colours' || part === 'notesbar') await writtenSmoothErase(log, part);
       else if (part === 'more') await writtenMore(log, vault.root);
       else if (part === 'tabs') await writtenTabs(log);
       else if (part === 'tall') await writtenTall(log);
@@ -16894,7 +16894,7 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     const tap = (el: Element) => ask('tap', ...mid(el));
     must(!q('.pt-readonly', b) && !q('.meta [data-tool="search"]', b) && !q('.meta [data-tool="contents"]', b), 'nothing says written on an ipad here, and paper has no search and no contents');
     must(qa<HTMLElement>('[data-ink-tool]', bar).map((x) => x.dataset.inkTool).join() === 'pen,highlighter,eraser,select' && pressed('[data-ink-tool="pen"]'), 'pen, highlighter, eraser, select: the pen held');
-    must(qa('[data-ink-size]', bar).length === 3 && pressed('[data-ink-size="1"]') && qa('[data-ink-swatch]', bar).length === 5 && pressed('[data-ink-swatch="0"]') && !!q('[data-ink-swatch="wheel"] .ib-ring', bar), 'three sizes, the middle one; four colours and the wheel\'s, black');
+    must(qa('[data-ink-size]', bar).length === 3 && pressed('[data-ink-size="1"]') && qa('[data-ink-swatch]', bar).length === 6 && pressed('[data-ink-swatch="0"]') && !!q('[data-ink-swatch="wheel"] .ib-ring', bar), 'three sizes, the middle one; four colours, + and the wheel\'s, black');
     must(btn('[data-ink-do="undo"]').disabled && btn('[data-ink-do="redo"]').disabled && !pressed('[data-ink-do="finger"]'), 'undo and redo unlit, draw with finger off');
     rowIs(bar, 'upright');
     {
@@ -16946,7 +16946,7 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     // ── the highlighter ──
     tap(btn('[data-ink-tool="highlighter"]'));
     await told('highlighter', '#ffe03a', 16, 'the highlighter tapped: yellow, its middle width');
-    must(pressed('[data-ink-tool="highlighter"]') && !pressed('[data-ink-tool="pen"]') && qa('[data-ink-swatch]', bar).length === 5 && pressed('[data-ink-swatch="0"]') && pressed('[data-ink-size="1"]'), 'its own sizes and colours in the row, each tool keeping its own');
+    must(pressed('[data-ink-tool="highlighter"]') && !pressed('[data-ink-tool="pen"]') && qa('[data-ink-swatch]', bar).length === 6 && pressed('[data-ink-swatch="0"]') && pressed('[data-ink-size="1"]'), 'its own sizes and colours in the row, each tool keeping its own');
     await stroke(1, 0.55, 0.25, 0.85, 0.25, 'the highlighter');
     await shot('written-tools');
 
@@ -17925,7 +17925,7 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
         await shot('more-row-narrow');
         tap(q('[data-ink-swatch="current"]', bar()!)!);
         const np = await poll(() => q<HTMLElement>('.ink-pop[data-ink-pop="pen"]'), 'the colour in use opens the pen\'s settings', 25000);
-        must(qa('[data-ink-size]', np).length === 3 && qa('[data-ink-swatch]', np).length === 5, 'where the sizes and the colours are');
+        must(qa('[data-ink-size]', np).length === 3 && qa('[data-ink-swatch]', np).length === 6, 'where the sizes and the colours are');
         useApp.getState().setTheme('dark');
         await shot('more-row-narrow-settings-dark');
         useApp.getState().setTheme('light');
@@ -18695,6 +18695,116 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
     await invoke('dev_ink_pen', { on: false });
     tools.setInk('pen');
     await ink.settled();
+    return;
+  }
+
+  if (part === 'colours') {
+    // ── a tool's colours, more of them (`"part": "colours"`, under the rig; `"relaunch": "1"` the launch after it):
+    // `+` after the pen's swatches, the system's wheel closed on a colour, a swatch of its own and in use; a swatch
+    // held, its menu: `change colour` from the wheel, `remove`; more added till they scroll in their own place, the
+    // rest of the row where it was; a launch after keeps them ──
+    const bar = () => q<HTMLElement>('.inkbar');
+    const tapAt = (el: Element) => { const r = el.getBoundingClientRect(); ask('tap', (r.left + r.width / 2) / window.innerWidth, (r.top + r.height / 2) / window.innerHeight); };
+    const holdAt = (el: Element) => { const r = el.getBoundingClientRect(); ask('press', (r.left + r.width / 2) / window.innerWidth, (r.top + r.height / 2) / window.innerHeight, 0.8); };
+    const again = !!(await invoke<string | null>('dev_env', { name: 'ILMI_RELAUNCH' }));
+    await notebook(again ? 'colours again' : 'colours');
+    await poll(() => bar(), 'the row of tools', 15000);
+    if (q<HTMLElement>('[data-ink-tool="pen"]', bar()!)?.getAttribute('aria-pressed') !== 'true') tapAt(q('[data-ink-tool="pen"]', bar()!)!);
+    await poll(() => q('[data-ink-tool="pen"]', bar()!)?.getAttribute('aria-pressed') === 'true', 'the pen', 15000);
+    const kept = () => tools.useInkTools.getState().kept;
+    const swatches = () => qa<HTMLElement>('.ib-swatches .ib-sw-run [data-ink-swatch]', bar()!);
+    const want = ['#1c1c1e', '#d06a1c', '#1e7a46', '#7a3fb0', '#2a9d8f', '#e76f51', '#264653', '#f4a261'];
+    if (!again) {
+      // + : the wheel, closed on a colour: a fifth swatch, in use
+      tapAt(q('[data-ink-swatch="add"]', bar()!)!);
+      await poll(async () => (await state()).wheel === true, '+ tapped: the colour wheel is up', 25000);
+      await sleep(900);
+      await shot('colours-wheel');
+      await invoke('dev_ink_wheel', { color: '#7a3fb0' });
+      await poll(() => kept().colors.pen.length === 5 && kept().swatch.pen === 4, 'a fifth swatch, #7a3fb0, in use', 10000);
+      await poll(async () => (await state()).tool?.color === '#7a3fb0', 'and the canvases write in it', 8000);
+      await sleep(600);
+      await shot('colours-added');
+      // blue held: its menu; change colour: the wheel for it
+      holdAt(swatches()[1]!);
+      const menu = await poll(() => q<HTMLElement>('.ink-sw-menu'), 'blue held: its menu', 10000);
+      must(qa('[role="menuitem"]', menu).map((b) => b.textContent).join(', ') === 'change colour, remove', 'change colour and remove');
+      await sleep(600);
+      await shot('colours-menu');
+      tapAt(q('[data-ink-sw-do="change"]', menu)!);
+      await poll(async () => (await state()).wheel === true, 'change colour: the wheel', 25000);
+      await sleep(700);
+      await invoke('dev_ink_wheel', { color: '#d06a1c' });
+      await poll(() => kept().colors.pen[1] === '#d06a1c' && kept().swatch.pen === 1, 'blue is #d06a1c now, in use', 10000);
+      // red held: remove
+      holdAt(swatches()[2]!);
+      const menu2 = await poll(() => q<HTMLElement>('.ink-sw-menu'), 'red held: its menu', 10000);
+      tapAt(q('[data-ink-sw-do="remove"]', menu2)!);
+      await poll(() => kept().colors.pen.length === 4 && !kept().colors.pen.includes('#c5281c'), 'red removed: four left', 10000);
+      // four more: eight, scrolling in their own place
+      for (const c of want.slice(4)) {
+        tapAt(q('[data-ink-swatch="add"]', bar()!)!);
+        await poll(async () => (await state()).wheel === true, `+ for ${c}`, 25000);
+        await sleep(500);
+        await invoke('dev_ink_wheel', { color: c });
+        await poll(() => kept().colors.pen.at(-1) === c, `${c} added`, 10000);
+        await sleep(300);
+      }
+    }
+    const run = q<HTMLElement>('.ib-swatches .ib-sw-run', bar()!)!;
+    const br = bar()!.getBoundingClientRect();
+    const ends = q<HTMLElement>('[data-ink-do="tuck"]', bar()!)!.getBoundingClientRect();
+    const undoR = q<HTMLElement>('[data-ink-do="undo"]', bar()!)!.getBoundingClientRect();
+    log(`colours: ${again ? 'after a launch' : 'set'}: the pen's ${kept().colors.pen.join(', ')}; in use ${kept().swatch.pen}; the run ${run.clientWidth} of ${run.scrollWidth} px; undo at ${undoR.left.toFixed(0)}, hide tools at ${ends.left.toFixed(0)}–${ends.right.toFixed(0)} of the row's ${br.right.toFixed(0)}`);
+    must(kept().colors.pen.join(' ') === want.join(' '), `the pen's colours: ${want.join(', ')}`);
+    must(run.scrollWidth > run.clientWidth + 10, 'eight: they scroll in their own place');
+    must(ends.right <= br.right + 0.5 && undoR.left > run.getBoundingClientRect().right, 'undo, redo and the rest where they were, on the row');
+    await sleep(500);
+    await shot(again ? 'colours-again' : 'colours-many');
+    await ink.settled();
+    return;
+  }
+
+  if (part === 'notesbar') {
+    // ── `notes button: hide` (`"part": "notesbar"`): a book with no notes, its bar with the word and its +; the
+    // settings' row set to hide, from its own button: gone; the book's ⋯ has `create notes`, and it creates them ──
+    // (shown as it starts, whatever a run before left: the setting is kept with the tweaks)
+    useApp.getState().setNotesButton(true);
+    // (every book of the sample has notes, its chapters: a PDF dropped on its own has none)
+    const { importPdfNode, currentVault: cv } = await import('./vault.js');
+    const bytes = await cv()!.fs.readBytes(cv()!.abs('library/classical-prose-reader.pdf'));
+    const path = await importPdfNode('fleeting', { title: 'a book alone', bytes: bytes!, text: '' });
+    await poll(() => docsNow()[path]?.pdf === path, `${path} in the collection, on its own`, 20000);
+    openNode(path);
+    const book = await poll(() => { const x = bookOf(path); return x && x.getClientRects().length && q('.meta', x) ? x : null; }, `${path} opens`, 60000);
+    await poll(() => q<HTMLElement>('.meta .notes-toggle', book)?.textContent === 'create notes', 'a book with no notes: create notes', 20000);
+    log(`notesbar: ${path}`);
+    await poll(() => q('.meta [data-tool="more"]', book!), 'its pages drawn: its ⋯', 60000);
+    must(q('.meta .notes-toggle', book!) && q('.meta .notes-add', book!), 'create notes and its + on the bar');
+    await shot('notesbar-shown');
+    useApp.setState({ tweaksOpen: true });
+    const row = await poll(() => q<HTMLElement>('[data-tw="notes-button"]'), 'the settings: notes button', 10000);
+    const tapAt = (el: Element) => { const r = el.getBoundingClientRect(); ask('tap', (r.left + r.width / 2) / window.innerWidth, (r.top + r.height / 2) / window.innerHeight); };
+    row.scrollIntoView({ block: 'center' });
+    await sleep(600);
+    tapAt(qa<HTMLElement>('button', row).find((x) => x.textContent === 'hide')!);
+    await poll(() => !useApp.getState().notesButton, 'hide pressed', 10000);
+    await shot('notesbar-setting');
+    useApp.setState({ tweaksOpen: false });
+    await poll(() => !q('.meta .notes-toggle', book!) && !q('.meta .notes-add', book!), 'the word and its + gone from the bar', 10000);
+    await sleep(600);
+    await shot('notesbar-hidden');
+    tapAt(q('.meta [data-tool="more"]', book!)!);
+    const item = await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-notes"]'), 'the book\'s ⋯: create notes', 10000);
+    // (first, after a reading's own `later` and `dismiss`)
+    must(item.textContent === 'create notes' && qa<HTMLElement>('.pop-menu .ci').filter((x) => !['more-later', 'more-dismiss'].includes(x.dataset.act ?? ''))[0] === item, 'first in it, after a reading\'s later and dismiss');
+    await sleep(500);
+    await shot('notesbar-menu');
+    tapAt(item);
+    await sleep(2500);
+    await shot('notesbar-created');
+    log(`notesbar: after create notes: panes ${JSON.stringify(useApp.getState().panes)}; palette ${useApp.getState().paletteOpen}`);
+    useApp.getState().setNotesButton(true);
     return;
   }
 

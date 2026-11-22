@@ -590,7 +590,18 @@ touches its watcher sees, since PencilKit's do nothing through a recogniser
 moved onto the web view. One undo manager is every canvas's (`ink_undo`,
 `ink_redo`, and a `history` event when what can be undone changes);
 `ink_finger` is `draw with finger`; `ink_color` puts up the system's colour
-wheel as a popover from the swatch. A tool's width is its three sizes'
+wheel as a popover from the swatch. A tool's colours are as many as it has
+(2026-11-25, `Kept.colors`, 1 to 12; kept shape 3, where the wheel's own is
+`CUSTOM` -1): `+` after them (`ADD`) opens the wheel for one more, in use
+(`withAdded`); one held has its menu (`SwatchMenu`: `change colour` is the
+wheel for it, `remove` is `withRemoved`, one kept at least). Past four they
+scroll in their own place (`.ib-sw-run`), the one in use kept in sight;
+the `+` and the wheel's ring stand after it. `written`'s `"part":
+"colours"` adds, changes and removes them under the rig and with
+`"relaunch": "1"` finds them after a launch. The settings' `notes button`
+(`notesButton`, a tweak) hides `create notes` and its `+` on a book with no
+notes; the book's `⋯` has the same word first (`more-notes`); `"part":
+"notesbar"` drops a PDF on its own and walks it. A tool's width is its three sizes'
 (2026-11-25): the size in use pressed again sets `sizing` in
 `useInkTools` (`pressSize`), and its width is a slider under it on the row
 (`SizeSet`) or, where the row is narrow and the sizes are in the tool's

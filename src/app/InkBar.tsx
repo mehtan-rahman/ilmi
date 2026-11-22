@@ -20,7 +20,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react';
 import { createPortal } from 'react-dom';
 import { hasCanvas, sceneSoon } from './ink.js';
 import {
-  CUSTOM, OPACITY_MIN, SIZE_NAMES, SWATCHES, TOOLS, colorOf, inksHere, isInked, isSized, pickColor, rangeOf, redo, setEraser, setFinger, setInk, setOpacity, setSense, SENSES, SENSE_MAX,
+  ADD, CUSTOM, MAX_SWATCHES, OPACITY_MIN, SIZE_NAMES, SWATCHES, TOOLS, removeSwatch, colorOf, inksHere, isInked, isSized, pickColor, rangeOf, redo, setEraser, setFinger, setInk, setOpacity, setSense, SENSES, SENSE_MAX,
   WIDTHS, pressSize, setOpen, setRecent, setShown, setSizing, setSnap, setSwatch, setTool, setWidth, swatchName, undo, useInkTools, widthOf,
   type Inked, type Kept, type PenInk, type Sized, type ToolKind,
 } from './inkTools.js';
@@ -31,11 +31,11 @@ import './inkbar.css';
 const TOOL_ICON: Record<ToolKind, InkIconName> = { pen: 'pen', highlighter: 'highlighter', eraser: 'eraser', select: 'lasso' };
 
 /** How wide the row is with everything on it, and with the sizes gone: under the first the sizes go, under the second the colours too. */
-export const ROW_FULL = 748;
-export const ROW_MID = 626;
+export const ROW_FULL = 790;
+export const ROW_MID = 668;
 /** How the row is drawn in `w` px. */
 /** What the colours take of the row: a tool with none (the eraser) keeps its sizes in that much less. */
-export const ROW_COLOURS = 214;
+export const ROW_COLOURS = 256;
 /** How the row is drawn in `w` px, for the tool held: a pen's and a highlighter's unless said. */
 export const rowFit = (w: number, tool: ToolKind = 'pen'): 'full' | 'mid' | 'compact' => {
   const full = isInked(tool) ? ROW_FULL : ROW_FULL - ROW_COLOURS;
@@ -58,13 +58,57 @@ function SizeMark({ tool, width }: { tool: Sized; width: number }) {
 
 const rectOf = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
 
-/** How long a swatch is held for the wheel to replace it, ms. */
+/** How long a swatch is held for its menu, ms. */
 const HOLD = 420;
 
-/** A tool's colours: its four swatches and the wheel's own. One pressed while in use, or held, is replaced from the wheel. */
+/** A swatch held (2026-11-25): its colour changed from the wheel, or it taken away (one stays). */
+function SwatchMenu({ tool, slot, kept, anchor, onClose }: { tool: Inked; slot: number; kept: Kept; anchor: HTMLElement; onClose(): void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const r = anchor.getBoundingClientRect();
+    const w = ref.current?.offsetWidth ?? 180;
+    setAt({ left: Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)), top: r.bottom + 8 });
+  }, [anchor]);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const out = (e: Event) => { const t = e.target as Node | null; if (t && ref.current?.contains(t)) return; close.current(); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current(); };
+    // (the press that held it lifts after it is up: a press from now on)
+    const id = setTimeout(() => document.addEventListener('pointerdown', out, true), 0);
+    document.addEventListener('keydown', key);
+    return () => { clearTimeout(id); document.removeEventListener('pointerdown', out, true); document.removeEventListener('keydown', key); };
+  }, []);
+  useEffect(() => { sceneSoon(); return () => sceneSoon(); }, [at]);
+  const one = kept.colors[tool].length <= 1;
+  return createPortal(
+    <div ref={ref} className="ink-pop ink-sw-menu" role="menu" aria-label={`${swatchName(kept, tool, slot)}`} data-ink-over="" data-ink-sw-menu={slot} style={at ? { left: at.left, top: at.top } : { visibility: 'hidden' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
+      <button type="button" role="menuitem" className="ip-item" data-ink-sw-do="change" onClick={() => { onClose(); void pickColor(tool, rectOf(anchor), slot); }}>change colour</button>
+      <button type="button" role="menuitem" className="ip-item" data-ink-sw-do="remove" disabled={one} onClick={() => { onClose(); removeSwatch(tool, slot); }}>remove</button>
+    </div>,
+    document.body,
+  );
+}
+
+/**
+ * A tool's colours: its swatches (four as it starts, more added with `+` from the wheel), and the wheel's own. One
+ * pressed while in use is replaced from the wheel; one held has its menu, `change colour` and `remove`.
+ */
 function Swatches({ tool, kept, only }: { tool: Inked; kept: Kept; /** The one in use alone: it opens the tool's settings. */ only?: boolean }) {
   const picking = useInkTools((s) => s.picking);
   const hold = useRef<{ timer: ReturnType<typeof setTimeout>; fired: boolean } | null>(null);
+  const [menu, setMenu] = useState<{ slot: number; anchor: HTMLElement } | null>(null);
+  // the one in use is in sight in its run (one just added, at its end)
+  const run = useRef<HTMLDivElement>(null);
+  const count = kept.colors[tool].length;
+  useLayoutEffect(() => {
+    const el = run.current?.querySelector<HTMLElement>(`[data-ink-swatch="${kept.swatch[tool]}"]`);
+    if (!el || !run.current) return;
+    const r = run.current;
+    if (el.offsetLeft < r.scrollLeft) r.scrollLeft = el.offsetLeft;
+    else if (el.offsetLeft + el.offsetWidth > r.scrollLeft + r.clientWidth) r.scrollLeft = el.offsetLeft + el.offsetWidth - r.clientWidth;
+  }, [kept.swatch, tool, count]);
   const custom = kept.custom[tool];
   const at = kept.swatch[tool];
   if (only) {
@@ -84,7 +128,7 @@ function Swatches({ tool, kept, only }: { tool: Inked; kept: Kept; /** The one i
   };
   const down = (el: HTMLElement, i: number) => {
     if (hold.current) clearTimeout(hold.current.timer);
-    const h = { fired: false, timer: setTimeout(() => { h.fired = true; void pickColor(tool, rectOf(el), i); }, HOLD) };
+    const h = { fired: false, timer: setTimeout(() => { h.fired = true; setMenu({ slot: i, anchor: el }); }, HOLD) };
     hold.current = h;
   };
   const up = () => { if (hold.current && !hold.current.fired) { clearTimeout(hold.current.timer); hold.current = null; } };
@@ -95,12 +139,22 @@ function Swatches({ tool, kept, only }: { tool: Inked; kept: Kept; /** The one i
   };
   return (
     <div className="ib-group ib-swatches" role="group" aria-label="colour">
-      {kept.colors[tool].map((color, i) => (
-        <button key={i} type="button" className="ib-btn ib-sw" data-ink-swatch={i} data-color={color} aria-label={swatchName(kept, tool, i)} title={swatchName(kept, tool, i)} aria-pressed={at === i} aria-expanded={picking?.tool === tool && picking.slot === i ? true : undefined}
-          onPointerDown={(e) => down(e.currentTarget, i)} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onClick={(e) => press(e.currentTarget, i)}>
-          <span className="ib-dot" style={{ background: color }} />
+      {/* (as many as it has: past four they scroll sideways in their own place, never pushing the rest of the row) */}
+      <div className="ib-sw-run" ref={run}>
+        {kept.colors[tool].map((color, i) => (
+          <button key={i} type="button" className="ib-btn ib-sw" data-ink-swatch={i} data-color={color} aria-label={swatchName(kept, tool, i)} title={swatchName(kept, tool, i)} aria-pressed={at === i} aria-haspopup="menu" aria-expanded={(picking?.tool === tool && picking.slot === i) || menu?.slot === i ? true : undefined}
+            onPointerDown={(e) => down(e.currentTarget, i)} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onClick={(e) => press(e.currentTarget, i)}>
+            <span className="ib-dot" style={{ background: color }} />
+          </button>
+        ))}
+      </div>
+      {/* (where it always is, after them: however many there are, it does not scroll away) */}
+      {kept.colors[tool].length < MAX_SWATCHES && (
+        <button type="button" className="ib-btn ib-sw ib-add" data-ink-swatch="add" aria-label="add colour" title="add colour" aria-haspopup="dialog" aria-expanded={picking?.tool === tool && picking.slot === ADD ? true : undefined} onClick={(e) => void pickColor(tool, rectOf(e.currentTarget), ADD)}>
+          <Icon name="add" />
         </button>
-      ))}
+      )}
+      {menu && <SwatchMenu tool={tool} slot={menu.slot} kept={kept} anchor={menu.anchor} onClose={() => setMenu(null)} />}
       <button type="button" className="ib-btn ib-sw ib-wheel" data-ink-swatch="wheel" data-color={custom ?? undefined} aria-label="colours" title="colours" aria-haspopup="dialog" aria-expanded={picking?.tool === tool && picking.slot === CUSTOM} aria-pressed={at === CUSTOM} onClick={(e) => wheel(e.currentTarget)}>
         <span className="ib-dot ib-ring"><span className="ib-core" style={custom ? { background: custom } : undefined} /></span>
       </button>

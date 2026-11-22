@@ -22,7 +22,7 @@ import { save as pickSave } from '@tauri-apps/plugin-dialog';
 import type { MarginLine, PaperKind, WrittenMeta } from '../format/index.js';
 import { pageKey, type StoreFs } from '../vault/index.js';
 import { lassoDo, lassoPaste, sceneSoon, useLasso } from './ink.js';
-import { CUSTOM, useInkTools } from './inkTools.js';
+import { useInkTools } from './inkTools.js';
 import { Icon } from './icons.js';
 import { failed, notify } from './land.js';
 import { hapticTick } from './haptics.js';
@@ -94,7 +94,7 @@ export function InkMenu({ host, scroller }: { host: string; scroller: HTMLElemen
       ))}
       {picked && !colours && <button type="button" role="menuitem" className="im-b" data-ink-op="colour" aria-haspopup="true" onClick={() => setColours(true)}>colour</button>}
       {picked && colours && pens.map((c, i) => (
-        <button key={`${c}:${i}`} type="button" role="menuitem" className="im-c" data-ink-colour={c} aria-label={i === CUSTOM ? 'your colour' : `colour ${i + 1}`} onClick={() => { setColours(false); void lassoDo('color', c); }}><span style={{ background: c }} /></button>
+        <button key={`${c}:${i}`} type="button" role="menuitem" className="im-c" data-ink-colour={c} aria-label={i >= kept.colors.pen.length ? 'your colour' : `colour ${i + 1}`} onClick={() => { setColours(false); void lassoDo('color', c); }}><span style={{ background: c }} /></button>
       ))}
       {!picked && rest && <button type="button" role="menuitem" className="im-b" data-ink-op="paste" onClick={() => void lassoPaste()}>paste</button>}
     </div>,

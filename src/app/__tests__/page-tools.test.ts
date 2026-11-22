@@ -75,7 +75,7 @@ vi.mock('../written.js', async (orig) => ({
 const { useApp } = await import('../store.js');
 const ink = await import('../ink.js');
 const { useLasso, lassoDo, lassoPaste, pinchSheets } = ink;
-const { useInkTools, CUSTOM } = await import('../inkTools.js');
+const { useInkTools } = await import('../inkTools.js');
 const { InkMenu, PageGrid, PageSetup, PaperSheet, STOPS, sharePages } = await import('../PageTools.js');
 const { MM, paperOf, turned } = await import('../paper.js');
 const { hapticsAsked, hapticsAskedClear, setHapticSender } = await import('../haptics.js');
@@ -329,7 +329,7 @@ describe('the lasso\'s menu', () => {
     await act(async () => { useInkTools.setState({ kept: { ...was, colors: { ...was.colors, pen: ['#884422', ...was.colors.pen.slice(1)] }, custom: { ...was.custom, pen: '#7a3fd1' } } }); });
     await click(op('colour'));
     expect(colours().map((b) => [b.dataset.inkColour, b.getAttribute('aria-label')])).toEqual([['#884422', 'colour 1'], ['#1d4fb8', 'colour 2'], ['#c5281c', 'colour 3'], ['#1e7a46', 'colour 4'], ['#7a3fd1', 'your colour']]);
-    expect(CUSTOM).toBe(4);
+    // (the wheel's own is after the pen's swatches, however many it has)
     await click(colours()[4]!);
     expect(said('ink_selection').at(-1)).toEqual({ op: 'color', color: '#7a3fd1' });
     // let go with the colours showing, the next thing held starts at the words

@@ -459,11 +459,12 @@ interface Rect { left: number; top: number; width: number; height: number }
 /** Each notebook open as a surface of the system's own has a name of its own (milestone 87). */
 let surfaceSeq = 0;
 /**
- * Whether a book's pages on an iPad are the native page view (`PdfSurface.swift`): a setting until it passes its
- * checks, off unless `ilmi.pdf.native` is `1` in this device's storage (the tweaks' `pages: native`, or a check).
+ * Whether a book's pages on an iPad are the native page view (`PdfSurface.swift`): the default since 2026-11-22
+ * (the user: native feels better), the web reader only where `ilmi.pdf.native` is `0` in this device's storage (the
+ * tweaks' `pages: web`, or a check). The Mac and a phone have the web reader whatever this says.
  */
 export function nativePdfOn(): boolean {
-  try { return localStorage.getItem('ilmi.pdf.native') === '1'; } catch { return false; }
+  try { return localStorage.getItem('ilmi.pdf.native') !== '0'; } catch { return true; }
 }
 /** A book's native surface told what it is and holds (`ink_pdf`), only when that is not what it was last told. */
 const pdfSaid = new Map<string, string>();

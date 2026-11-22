@@ -1300,6 +1300,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
           l.ver += 1
           if !l.fine.isHidden { l.fine.frame = onLeaf(l.fineRegion, l) }
           for q in l.patches { q.layer.frame = onLeaf(q.region, l) }
+          veil(l)
         }
       }
       l.layer.compositingFilter = blend
@@ -1408,6 +1409,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   /// A sheet's pictures are as it is now: the patches drawn over them meanwhile go.
   private func settle(_ l: Leaf) {
+    defer { if guest { veil(l) } }
     let fineOn = !l.fine.isHidden || l.fineAsked != nil
     let v = min(l.restKey?[0] ?? -1, fineOn ? (l.fineKey?[0] ?? -1) : Int.max)
     let gone = l.patches.filter { $0.ver <= v }
@@ -1416,6 +1418,32 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     CATransaction.setDisableActions(true)
     for p in gone { p.layer.removeFromSuperlayer() }
     l.patches.removeAll { $0.ver <= v }
+    CATransaction.commit()
+  }
+
+  /// (a book's page) Its pictures are clear where nothing is written, so one over another does not hide it: the
+  /// whole picture, coarse at a zoom, showed round the edge of the sharp one over it, and an erased stroke through a
+  /// patch, a blur round the ink (2026-11-22, "the ink blurs after i write with it"). Each is cut away under what
+  /// lies over it: the whole picture under the part drawn at the zoom and under the patches, that part under the patches.
+  private func veil(_ l: Leaf) {
+    func mask(_ layer: CALayer, _ holes: [CGRect]) {
+      let hs = holes.map { $0.offsetBy(dx: -layer.frame.minX, dy: -layer.frame.minY).intersection(layer.bounds) }.filter { !$0.isNull && $0.width > 0 && $0.height > 0 }
+      if hs.isEmpty { layer.mask = nil; return }
+      let path = UIBezierPath(rect: layer.bounds)
+      for h in hs { path.append(UIBezierPath(rect: h)) }
+      let m = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
+      m.actions = ["path": NSNull(), "bounds": NSNull(), "position": NSNull()]
+      m.fillRule = .evenOdd
+      m.frame = layer.bounds
+      m.path = path.cgPath
+      layer.mask = m
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    let patches = l.patches.map { $0.layer.frame }
+    let fineOn = !l.fine.isHidden && l.fine.contents != nil
+    mask(l.rest, patches + (fineOn ? [l.fine.frame] : []))
+    if fineOn { mask(l.fine, patches) } else { l.fine.mask = nil }
     CATransaction.commit()
   }
 
@@ -1449,6 +1477,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     l.layer.addSublayer(layer)
     CATransaction.commit()
     l.patches.append((layer, region, l.ver))
+    if guest { veil(l) }
   }
 
   /// Each of a sheet's strokes made ready to draw; one it had is the one it has.

@@ -241,13 +241,13 @@ function StorageRows() {
 }
 
 /**
- * A book's pages on a device: the web view's (as before), or the native page view (the system's scroll and zoom,
- * `PdfSurface.swift`). A setting kept on this device until the native one has passed its checks.
+ * A book's pages on an iPad: the native page view (the system's scroll and zoom, `PdfSurface.swift`), the default,
+ * or the web view's (as before). Kept on this device.
  */
 function PagesRow() {
-  const [on, setOn] = useState(() => { try { return localStorage.getItem('ilmi.pdf.native') === '1'; } catch { return false; } });
+  const [on, setOn] = useState(() => { try { return localStorage.getItem('ilmi.pdf.native') !== '0'; } catch { return true; } });
   const pick = (v: boolean) => {
-    try { if (v) localStorage.setItem('ilmi.pdf.native', '1'); else localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+    try { localStorage.setItem('ilmi.pdf.native', v ? '1' : '0'); } catch { /* none */ }
     setOn(v);
     window.dispatchEvent(new Event('ilmi-pdf-native'));
   };

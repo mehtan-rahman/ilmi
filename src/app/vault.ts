@@ -1072,6 +1072,9 @@ export function openInitialVault(): Promise<void> {
       const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
       // a smoke reads the page the moment it changes: nothing is in motion under one (`motion.css`)
       if (mode) document.documentElement.dataset.still = '1';
+      // a smoke's books open in the web reader, as the checks were written for it, unless one says otherwise (the
+      // native page view is the default on an iPad since 2026-11-22: `nativePdfOn`, `ILMI_PAGES=native`)
+      if (mode) { const pages = await invoke<string | null>('dev_env', { name: 'ILMI_PAGES' }); try { localStorage.setItem('ilmi.pdf.native', pages === 'native' ? '1' : '0'); } catch { /* none */ } }
       // `ILMI_THEME=dark` (or `light`, `eink`): the run in that theme, for looking at it
       const theme = await invoke<string | null>('dev_env', { name: 'ILMI_THEME' });
       if (theme === 'light' || theme === 'dark' || theme === 'eink') useApp.getState().setTheme(theme);

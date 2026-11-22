@@ -160,6 +160,12 @@ The surface answers with events on the `onSurface` channel. Commands go by `ink_
   fitted size and, zoomed in, the part in view drawn at the zoom (a pixel to a pixel), where there is ink in view;
   while a zoom goes on they are stretched. They are bare and laid on the page as ink is (multiplied; screened on a
   dark page).
+- A page's pictures are clear where nothing is written, so one does not hide another under it: the whole picture
+  (coarse at a zoom) is cut away under the part drawn at the zoom and under the patches, and that part under the
+  patches (`veil`). Without it the coarse picture showed round the sharp one, a blur round the ink at every zoom
+  (on the iPad at 7.5 screen points to the page's), and an erased stroke showed through its patch for a moment.
+- Since 2026-11-22 the native page view is the default on an iPad; `pages: web` in the tweaks (stored `0`) brings
+  the web reader back. A smoke opens books in the web reader unless `ILMI_PAGES=native` (each native part says so).
 - The book's own gestures are a finger's: its tap and held finger (`PdfText`) take no Pencil, and none where a
   finger writes. The Pencil no longer scrolls the book; fingers do.
 - The specs the page tells the surface are numbered; one older than the last taken is not taken (two `ink_pdf`

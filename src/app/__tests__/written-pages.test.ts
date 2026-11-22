@@ -2020,13 +2020,28 @@ describe('a PDF\'s pages', () => {
     expect(q('.pt-readonly')).toBeNull();
   });
 
-  it('on an iPad are this page\'s still: no surface is asked for', async () => {
+  it('on an iPad with book pages: web are this page\'s still: no surface is asked for', async () => {
+    localStorage.setItem('ilmi.pdf.native', '0');
+    try {
+      await mount(PDF, [1, 2, 3], 'ruled', true);
+      await wait(40);
+      expect(told).toEqual([]);
+      expect(q('.note-surface')).toBeNull();
+      expect([q<HTMLElement>('.pdf-view')!.dataset.surface, q('.reader-wrap')!.getAttribute('data-native')]).toEqual([undefined, null]);
+      expect(qa('.pdf-pages > .pdf-page').length).toBe(2);
+      expect(asks.filter((a) => a.cmd === 'ink_surface_do')).toEqual([]);
+    } finally {
+      localStorage.removeItem('ilmi.pdf.native');
+    }
+  });
+
+  it('on an iPad with nothing said are the native page view (the default since 2026-11-22), not a notebook\'s surface', async () => {
+    localStorage.removeItem('ilmi.pdf.native');
     await mount(PDF, [1, 2, 3], 'ruled', true);
     await wait(40);
     expect(told).toEqual([]);
-    expect(q('.note-surface')).toBeNull();
-    expect([q<HTMLElement>('.pdf-view')!.dataset.surface, q('.reader-wrap')!.getAttribute('data-native')]).toEqual([undefined, null]);
-    expect(qa('.pdf-pages > .pdf-page').length).toBe(2);
+    expect(q('.pdf-surface')).not.toBeNull();
+    expect([q<HTMLElement>('.pdf-view')!.dataset.surface, q('.reader-wrap')!.getAttribute('data-native')]).toEqual([undefined, '1']);
     expect(asks.filter((a) => a.cmd === 'ink_surface_do')).toEqual([]);
   });
 });

@@ -114,6 +114,8 @@ beforeAll(async () => {
   useApp.setState({ vault: ROOT, tree: vault.tree, files: vault.documents(), docs, inlineBoxes: {}, bookFocus: null, reveal: null });
 });
 beforeEach(async () => {
+  // (the web reader's canvases: on an iPad the native page view is the default since 2026-11-22)
+  localStorage.setItem('ilmi.pdf.native', '0');
   scenes.length = 0;
   filled.length = 0;
   rested.length = 0;

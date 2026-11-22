@@ -20717,7 +20717,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
     useApp.getState().setReopen(false);
     useApp.getState().setTheme('light');
     // (the native page view is the `surface` part's alone: a run that fell left it set)
-    try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+    try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
     await openVault(await devCollection(path));
     try { localStorage.removeItem(tools.INK_KEY); } catch { /* none */ }
     tools.useInkTools.setState({ kept: { ...tools.DEFAULTS, snap: false } });
@@ -21332,6 +21332,79 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       log('done');
       return;
     }
+    if (part.split(',').includes('inksharp')) {
+      // ── the kept stroke as sharp as the live one (`"part": "inksharp"`; 2026-11-22, "the ink blurs after i write
+      // with it"): at 100%, 250% and 400% (the screen's points to a point of the page about 1.9, 4.7, 7.6: the iPad's
+      // was 7.5), a slow stroke read off the glass down a line across it while it is written and once it is kept;
+      // then the one written at 100% read again at 250% and 400% and at 100% after them. A pixel part ink and part
+      // page is one of the edge's; a blur is many. Hard: the kept stroke's edge no softer than the live one's and two
+      // pixels at most past it. `inksharp:` lines ──
+      // (a device that never said: the native page view, the default on an iPad)
+      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      window.dispatchEvent(new Event('ilmi-pdf-native'));
+      const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-surface', x) ? x : null; }, 'with nothing said, the chapter is the native page view', 60000);
+      const sid = q<HTMLElement>('.pdf-surface', b)!.dataset.surface!;
+      const S = (a: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...a } });
+      await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'its pages shown', 30000);
+      await poll(async () => (await state()).tool?.kind === 'pen', 'the pen held', 8000);
+      await invoke('dev_ink_pen', { on: true });
+      const on = async (x: number, y: number) => { const g = await S({ op: 'where', page: PAGEINK_PAGE, x, y }); return [fx(Number(g.gx)), fy(Number(g.gy))] as [number, number]; };
+      /** Down a line of the page through a stroke: how many pixels are wholly ink and how many part ink (its edge). */
+      const edge = async (x: number, y: number, h: number) => {
+        const st = await S({ op: 'column', page: PAGEINK_PAGE, x, y: y - h, y2: y + h });
+        const px = (st.column as number[][]) ?? [];
+        // (ink against the page by its colour: the pen's is red here, the print black or grey)
+        const ink = px.map(([r, g, bb]) => Math.max(0, Math.min(r! - g!, r! - bb!)));
+        const top = Math.max(60, ...ink);
+        const core = ink.filter((v) => v >= top * 0.9).length;
+        const soft = ink.filter((v) => v > top * 0.06 && v < top * 0.9).length;
+        return { core, soft, top, n: px.length };
+      };
+      type Edge = Awaited<ReturnType<typeof edge>>;
+      const say = (e: Edge) => `${e.core} px ink, ${e.soft} px of edge (of ${e.n})`;
+      const written: { z: number; x: number; y: number }[] = [];
+      for (const z of [1, 2.5, 4]) {
+        await S({ op: 'zoom', zoom: z, animated: false });
+        await S({ op: 'go', page: PAGEINK_PAGE, y: 0.12, x: 0.5 });
+        await sleep(1500);
+        const n = (await there())!.strokes;
+        const st = await S({ op: 'state' });
+        const yy = Number(st.y ?? 0.12) + 0.3 / z;
+        const x = 0.5 - 0.08 / z, h = 0.012 / z;
+        // the stroke runs from x1 to x2, falling 0.02/z: at x it is this far down
+        const x1 = 0.5 - 0.15 / z, x2 = 0.5 + 0.15 / z, at = yy + (0.02 / z) * ((x - x1) / (x2 - x1));
+        ask('drag', ...(await on(x1, yy)), ...(await on(x2, yy + 0.02 / z)), 4.0);
+        // (read while the Pencil is still down, past the column: the rig's drag takes its time to begin)
+        const live = await poll(async () => { const e = await edge(x, at, h); return e.core > 0 ? e : null; }, `at ${z * 100}%: the live stroke on the glass`, 4000).catch(() => null);
+        await shot(`inksharp-live-${Math.round(z * 10)}`);
+        await poll(async () => (await there())?.strokes === n + 1, `the stroke at ${z * 100}% kept`, 20000);
+        await sleep(2500);
+        const kept = await edge(x, at, h);
+        await shot(`inksharp-kept-${Math.round(z * 10)}`);
+        log(`inksharp: at ${z * 100}%: live ${live ? say(live) : 'not read'}; kept ${say(kept)}`);
+        must(kept.core > 0, `at ${z * 100}%: the kept stroke is read off the glass`);
+        // (a vector's edge: a pixel or so each side, as the live stroke's)
+        must(kept.soft <= Math.max(live?.soft ?? 2, 2) + 1, `at ${z * 100}%: kept, its edge as sharp as while written (${kept.soft} px of edge, ${live ? live.soft : '-'} live)`);
+        written.push({ z, x, y: at });
+      }
+      // the one written at 100%, read again at the others (the ink there all along, the zoom changed under it)
+      const w0 = written[0]!;
+      for (const z of [2.5, 4, 1]) {
+        await S({ op: 'zoom', zoom: z, animated: true });
+        await sleep(900);
+        await S({ op: 'go', page: PAGEINK_PAGE, y: Math.max(0, w0.y - 0.25 / z), x: w0.x });
+        await sleep(2500);
+        const e = await edge(w0.x, w0.y, 0.012);
+        log(`inksharp: the stroke written at 100%, now at ${z * 100}%: ${say(e)}`);
+        must(e.core > 0 && e.soft <= 4, `the stroke written at 100%, zoomed to ${z * 100}%: sharp (${e.soft} px of edge)`);
+      }
+      await invoke('dev_ink_pen', { on: false });
+      try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('surfaceink')) {
       // ── ink on the native surface (`Surface.swift` as a guest of `PdfSurface.swift`; `"part": "surfaceink"`, taps
       // and drags under the rig, a finger standing in for the Pencil): the cross the web reader's canvas just kept on
@@ -21416,7 +21489,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       must(kept.strokes === c0 + 1, `the sheet holds the cross and the stroke at fit (${kept.strokes})`);
       await S({ op: 'zoom', zoom: 1, animated: false });
       // the web reader shows what the surface wrote
-      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
       window.dispatchEvent(new Event('ilmi-pdf-native'));
       await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && !q('.pdf-surface', x) ? x : null; }, 'the web reader again', 30000);
       await poll(async () => { const c = await there(); return c && c.strokes === kept.strokes ? c : null; }, `the web reader's canvas holds the same ${kept.strokes} strokes`, 40000);
@@ -21492,7 +21565,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       ask('tap', fx(Number(bare.gx)), fy(Number(bare.gy)));
       await poll(() => !q('.pdf-surface .pend', b), 'a tap elsewhere lets the box go', 20000);
       // a box again, and its bar's `passage` pressed through the surface (a hole in it): a passage made of it, drawn
-      const told0 = Number((await S({ op: 'state' })).marksTold);
+      const told0 = Number((await S({ op: 'state' })).boxesTold);
       await S({ op: 'box', page: PAGEINK_PAGE, x: 0.1, y: 0.4, x2: 0.6, y2: 0.5 });
       const pe = await poll(() => q<HTMLElement>('.pdf-surface .pend [data-k="e"]', b), 'the bar again', 10000);
       await sleep(800);
@@ -21500,10 +21573,11 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       const pr = pe.getBoundingClientRect();
       ask('tap', fx(pr.left + pr.width / 2), fy(pr.top + pr.height / 2));
       await poll(() => !q('.pdf-surface .pend', b), 'passage, pressed on its bar over the surface, takes the box', 20000);
-      const made = await poll(async () => { const t = Number((await S({ op: 'state' })).marksTold); return t > told0 ? t : null; }, 'and the surface draws the passage made', 20000);
-      log(`surfacemarks: the bar pressed through the surface (the surface heard ${view.dataset.tapped ?? 'no tap'}); marks told ${told0} → ${made}`);
+      // (its passage's boxes, the box drawn now one of them)
+      const made = await poll(async () => { const t = Number((await S({ op: 'state' })).boxesTold); return t > told0 ? t : null; }, 'and the surface draws the passage made', 20000);
+      log(`surfacemarks: the bar pressed through the surface (the surface heard ${view.dataset.tapped ?? 'no tap'}); passages' boxes told ${told0} → ${made}`);
       await shot('surfacemarks-passage-made');
-      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
       phase('done');
       finished = true;
       log('done');
@@ -21590,7 +21664,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         log(`surfacetext: followed to p. ${went.page}; the way back ${a.view.dataset.back}`);
         await shot('surfacetext-link');
       }
-      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
       phase('done');
       finished = true;
       log('done');
@@ -21751,7 +21825,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       await sleep(800);
       if (fails.length) log(`surface: ${fails.length} fell short: ${fails.join('; ')}`);
       if (!measureOnly) must(fails.length === 0, 'no part of a page in view two levels coarser than its zoom asks for over 100 ms, and the place kept');
-      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
       phase('done');
       finished = true;
       log('done');

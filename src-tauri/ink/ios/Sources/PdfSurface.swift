@@ -966,6 +966,33 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     case "clear":
       text?.clear()
       return state()
+    case "column":
+      // (the checks) what the glass shows down a line of a page, from `y` to `y2` at `x` (fractions of it): each
+      // pixel of the screen as its red, green and blue, as drawn now (ink, page, all)
+      var st = state()
+      let n = max(first, min(first + frames.count - 1, a.page ?? first))
+      let f = frames[n - first]
+      let p0 = content.convert(CGPoint(x: f.minX + f.width * CGFloat(a.x ?? 0.5), y: f.minY + f.height * CGFloat(a.y ?? 0.4)), to: view)
+      let p1 = content.convert(CGPoint(x: f.minX + f.width * CGFloat(a.x ?? 0.5), y: f.minY + f.height * CGFloat(a.y2 ?? 0.5)), to: view)
+      let sc = screen
+      let fmt = UIGraphicsImageRendererFormat(); fmt.scale = sc; fmt.opaque = true; fmt.preferredRange = .standard
+      let img = UIGraphicsImageRenderer(size: view.bounds.size, format: fmt).image { _ in view.drawHierarchy(in: view.bounds, afterScreenUpdates: true) }
+      if let cg = img.cgImage, let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) {
+        let bpr = cg.bytesPerRow, bpp = cg.bitsPerPixel / 8
+        let x = Int((p0.x * sc).rounded()), y0 = max(0, Int((min(p0.y, p1.y) * sc).rounded())), y1 = min(cg.height - 1, Int((max(p0.y, p1.y) * sc).rounded()))
+        var out: [[Int]] = []
+        if x >= 0, x < cg.width, y1 > y0 {
+          let bgr = cg.bitmapInfo.contains(.byteOrder32Little)
+          for y in y0...y1 {
+            let o = y * bpr + x * bpp
+            let first = cg.alphaInfo == .premultipliedFirst || cg.alphaInfo == .first || cg.alphaInfo == .noneSkipFirst
+            if bgr { out.append([Int(bytes[o + 2]), Int(bytes[o + 1]), Int(bytes[o])]) } else if first { out.append([Int(bytes[o + 1]), Int(bytes[o + 2]), Int(bytes[o + 3])]) } else { out.append([Int(bytes[o]), Int(bytes[o + 1]), Int(bytes[o + 2])]) }
+          }
+        }
+        st["column"] = out
+        st["from"] = [Double(p0.x), Double(p0.y), Double(p1.y)]
+      }
+      return st
     case "where":
       // (the checks) where a point of a page (fractions of it) lies on the web view's glass
       var st = state()
@@ -1013,7 +1040,7 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
     let (worst, share) = coarse()
     return ["page": n, "y": Double(y), "x": x.map { Double($0) } as Any, "zoom": Double(scroll.zoomScale), "pages": count, "views": views.count, "worst": worst, "coarse": share,
             "drawn": painter.drawn, "drawMs": painter.drawMs, "workers": painter.workers, "memory": PageMemory.shared.bytes, "budget": PageMemory.shared.budget, "level": wantLevel,
-            "seen": seenPages(), "marks": marksShown(), "marksTold": marksByPage.values.reduce(0) { $0 + $1.count },
+            "seen": seenPages(), "marks": marksShown(), "marksTold": marksByPage.values.reduce(0) { $0 + $1.count }, "boxesTold": marksByPage.values.reduce(0) { $0 + $1.filter { $0.k == "box" }.count },
             "opened": openedAt, "laid": laidOut.suffix(6).joined(separator: " "),
             "hits": text?.hitCount ?? 0, "current": text?.current.map { [$0.0, $0.1] } as Any, "selected": text?.selection?.string ?? "",
             "offset": [Double(scroll.contentOffset.x), Double(scroll.contentOffset.y)], "content": [Double(scroll.contentSize.width), Double(scroll.contentSize.height)], "dark": dark, "holes": view.holes.count]

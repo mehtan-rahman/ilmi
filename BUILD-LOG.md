@@ -105,6 +105,33 @@ The live check (ilmi, every ink, the dark theme) still passes, at most 26 of 255
 
 ---
 
+## 2026-11-22 — the kept ink as sharp as the live stroke on a book's pages; the native page view the default on an iPad
+
+The user, on the iPad with phase 4: "native feels better; however, the ink blurs after i write with it." The live
+stroke was sharp, the kept one not (written at 7.5 screen points to the page's).
+
+**The cause.** Not the resolution: the part of a page in view is drawn at the zoom, a pixel to a pixel (`drawn` 1
+at 100%, 250%, 400%). A book's page's pictures are clear where nothing is written (a notebook's are paper, opaque),
+so the whole picture under that part, made at the fitted size and stretched by the zoom, showed round the edge of
+the sharp ink: a halo of soft red some 5 pixels deep at 400% (screen captures: 8, 23, 39, 54, 86 over the edge
+where the live stroke had none). An erased stroke likewise showed through its patch until the pictures were made
+again. **The fix** (`veil`, `Surface.swift`): each picture is cut away (a mask) under what lies over it; nothing is
+drawn again, nothing per frame.
+
+**Verified (Air 11 simulator, `pdfink` `"part": "inksharp"`, hard):** a slow stroke written at 100%, 250% and
+400% (1.9, 4.7, 7.6 screen points to the page's), read off the glass down a line across it: before, 4 pixels of
+soft edge kept at 250%; after, 1, 1 and 2 (a vector's edge; the live stroke on screen captures 2.2 pixels a column,
+the kept 2.5). The stroke written at 100% read again at 250%, 400% and back at 100%: 3, 3, 1. `surfaceink`,
+`surfacetext`, `surfacemarks` pass, and the zoom hard check (`surface`).
+
+**The default.** The native page view is the default on an iPad: a device that never set it gets native,
+`pages: web` in the tweaks brings the web reader back (stored `0`), the Mac and a phone unchanged. Every smoke opens
+books in the web reader, as its checks were written, unless `ILMI_PAGES=native`; `inksharp` checks that with
+nothing stored a book opens native. `surfacemarks` counts its passages' boxes for the passage made (it had counted
+every mark, which a box drawn and then made into a passage leaves the same).
+
+---
+
 ## 2026-11-22 — the native page view, phase 4: ink on the book's pages, the notebook's engine shared
 
 On branch `native-reader-ink`. A `NoteSurface` made over a `PdfSurface` writes on the book's pages: the same

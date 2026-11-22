@@ -1196,12 +1196,17 @@ describe('the row of tools', () => {
   it('fits the pane it is in and never scrolls: the sizes go first, then the colours but for the one in use', async () => {
     expect([ROW_FULL, ROW_MID]).toEqual([790, 668]);
     expect([0, -1, 2000, 790].map((w) => rowFit(w))).toEqual(['full', 'full', 'full', 'full']);
-    expect([789, 700, 668].map((w) => rowFit(w))).toEqual(['mid', 'mid', 'mid']);
-    expect([667, 400, 1].map((w) => rowFit(w))).toEqual(['compact', 'compact', 'compact']);
+    expect([789, 700, 668, 584].map((w) => rowFit(w))).toEqual(['mid', 'mid', 'mid', 'mid']);
+    expect([583, 400, 1].map((w) => rowFit(w))).toEqual(['compact', 'compact', 'compact']);
     // a tool with no colours keeps its sizes in the room they would have taken; the lasso has neither to lose
     expect([790, 534, 533, 300].map((w) => rowFit(w, 'eraser'))).toEqual(['full', 'full', 'mid', 'mid']);
     expect([790, 300].map((w) => rowFit(w, 'select'))).toEqual(['full', 'full']);
-    expect([789, 667].map((w) => rowFit(w, 'highlighter'))).toEqual(['mid', 'compact']);
+    expect([789, 585, 583].map((w) => rowFit(w, 'highlighter'))).toEqual(['mid', 'mid', 'compact']);
+    // more colours than four need no more of the row (they scroll once it is full: to four beside the sizes, two
+    // without); fewer need less, by theirs
+    expect([790, 789, 584, 583].map((w) => rowFit(w, 'pen', 12))).toEqual(['full', 'mid', 'mid', 'compact']);
+    expect([706, 705, 584, 583].map((w) => rowFit(w, 'pen', 2))).toEqual(['full', 'mid', 'mid', 'compact']);
+    expect([664, 663, 542, 541].map((w) => rowFit(w, 'pen', 1))).toEqual(['full', 'mid', 'mid', 'compact']);
     const a = await launch();
     barW = 900;
     await show(a);

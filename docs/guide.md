@@ -1143,8 +1143,11 @@ The tools are a row under the bar over the pages, on an iPad only:
   opens the colour wheel to replace it. `+` after them opens the wheel for
   a colour to add: it becomes a colour of that tool's own, in use. Hold a
   colour for its menu: `change colour` (the wheel) or `remove` (a tool keeps
-  one at least). Past four, a tool's colours scroll sideways in their own
-  place; nothing else on the row moves. The ring after `+`, `colours`, is
+  one at least). Each colour added widens the group, `+` and the wheel
+  moving along the row, while the row has room; once it is full they
+  scroll sideways in their own place, the one in use kept in sight (at
+  least four show beside the sizes, two in a pane narrow enough to lose
+  them, as a book's with its notes beside). The ring after `+`, `colours`, is
   the wheel's own colour; a press on it uses that colour again, and a press
   while it is in use opens the wheel to change it. Each tool keeps its own,
   on the device. The eraser and `select` have none.

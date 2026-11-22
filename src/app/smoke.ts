@@ -16637,7 +16637,9 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     /** The row of tools as it is drawn: whole, in the window, a finger's size, no key named. */
     const rowIs = (bar: HTMLElement, what: string) => {
       const br = bar.getBoundingClientRect();
-      const btns = qa<HTMLElement>('.ib-btn', bar);
+      // (a swatch scrolled out of sight in its run, wholly or in part, is not on the row: the run clips it)
+      const shown = (b: HTMLElement) => { const run = b.closest<HTMLElement>('.ib-sw-run'); if (!run) return true; const rr = run.getBoundingClientRect(), r = b.getBoundingClientRect(); return r.left >= rr.left - 0.5 && r.right <= rr.right + 0.5; };
+      const btns = qa<HTMLElement>('.ib-btn', bar).filter(shown);
       const rects = btns.map((b) => b.getBoundingClientRect());
       const inRow = rects.every((r) => r.left >= br.left - 0.5 && r.right <= br.right + 0.5 && r.top >= br.top - 0.5 && r.bottom <= br.bottom + 0.5);
       const apart = rects.every((r, i) => i === 0 || r.left >= rects[i - 1]!.right - 0.5);
@@ -16866,8 +16868,8 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
     const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
-    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets' || part === 'colours' || part === 'notesbar') {
-      if (part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets' || part === 'colours' || part === 'notesbar') await writtenSmoothErase(log, part);
+    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets' || part === 'colours' || part === 'notesbar' || part === 'colourgrow' || part === 'colourremove') {
+      if (part === 'smooth' || part === 'erase' || part === 'compare' || part === 'pkwidth' || part === 'pkside' || part === 'replay' || part === 'presets' || part === 'colours' || part === 'notesbar' || part === 'colourgrow' || part === 'colourremove') await writtenSmoothErase(log, part);
       else if (part === 'more') await writtenMore(log, vault.root);
       else if (part === 'tabs') await writtenTabs(log);
       else if (part === 'tall') await writtenTall(log);
@@ -17311,7 +17313,7 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
   // ── the row: whole, a finger's size, never scrolling; tucked away and back ──
   {
     const row = bar()!;
-    const btns = qa<HTMLElement>('.ib-btn', row).map((x) => x.getBoundingClientRect());
+    const btns = qa<HTMLElement>('.ib-btn', row).filter(((b: HTMLElement) => { const run = b.closest<HTMLElement>('.ib-sw-run'); if (!run) return true; const rr = run.getBoundingClientRect(), r = b.getBoundingClientRect(); return r.left >= rr.left - 0.5 && r.right <= rr.right + 0.5; })).map((x) => x.getBoundingClientRect());
     must(row.dataset.fit === 'full' && row.scrollWidth <= row.clientWidth + 1 && btns.every((r) => r.height >= 44 && r.width >= 40), `the row is whole upright: every button a finger's size, nothing to scroll (${Math.round(row.clientWidth)} px, ${btns.length} buttons)`);
     must(!!q('[data-ink-tool="pen"] .ib-ink', row) && getComputedStyle(q<HTMLElement>('[data-ink-tool="pen"] .ib-ink', row)!).backgroundColor === 'rgb(28, 28, 30)', 'the pen carries the colour it writes in');
     // (a new page comes in over a quarter of a second: it is where it stays after that)
@@ -17903,7 +17905,7 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
     const fits: string[] = [];
     const look = (what: string) => {
       const row = bar()!;
-      const btns = qa<HTMLElement>('.ib-btn', row).map((x) => x.getBoundingClientRect());
+      const btns = qa<HTMLElement>('.ib-btn', row).filter(((b: HTMLElement) => { const run = b.closest<HTMLElement>('.ib-sw-run'); if (!run) return true; const rr = run.getBoundingClientRect(), r = b.getBoundingClientRect(); return r.left >= rr.left - 0.5 && r.right <= rr.right + 0.5; })).map((x) => x.getBoundingClientRect());
       const rr = row.getBoundingClientRect();
       fits.push(`${what} ${Math.round(rr.width)} px ${row.dataset.fit}`);
       must(row.scrollWidth <= row.clientWidth + 1 && btns.every((r) => r.left >= rr.left - 0.5 && r.right <= rr.right + 0.5 && r.height >= 44 && r.width >= 40) && btns.every((r, i) => i === 0 || r.left >= btns[i - 1]!.right - 0.5), `${what}: the row whole in ${Math.round(rr.width)} px (${row.dataset.fit}), nothing to scroll`);
@@ -18698,6 +18700,166 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
     return;
   }
 
+  if (part === 'colourremove') {
+    // ── a tool's colours removed by a finger (`"part": "colourremove"`, under the rig): six on the pen, the second held
+    // and `remove` tapped until one is left, in a notebook upright (the row full, the colours scrolling) and on its side
+    // (room), and in a book on its side with its notes beside (the narrowest) and upright; each time one fewer, the group
+    // narrower, + and the wheel pulled back; at one, remove is not offered ──
+    const bar = () => qa<HTMLElement>('.inkbar').find((r) => r.getBoundingClientRect().width > 0) ?? null;
+    const shape = () => (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
+    const tapAt = (el: Element) => { const r = el.getBoundingClientRect(); ask('tap', (r.left + r.width / 2) / window.innerWidth, (r.top + r.height / 2) / window.innerHeight); };
+    const holdAt = (el: Element) => { const r = el.getBoundingClientRect(); ask('press', (r.left + r.width / 2) / window.innerWidth, (r.top + r.height / 2) / window.innerHeight, 0.8); };
+    const kept = () => tools.useInkTools.getState().kept;
+    const base = tools.DEFAULTS.colors.pen;
+    const six = [...base, '#7a3fb0', '#2a9d8f', '#e76f51', '#264653', '#f4a261', '#e9c46a'].slice(0, 6);
+    const BOOK = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+    let misses = 0;
+    const turn = async (orient: 'portrait' | 'landscape') => { if (shape() !== orient) { ask(`turn ${orient}`); await poll(() => shape() === orient, orient, 20000); await sleep(1500); } };
+    /** A finger held on `el` until its menu is up: once more if the first is missed (counted). */
+    const held = async (el: () => HTMLElement, what: string) => {
+      for (let i = 0; i < 2; i++) {
+        holdAt(el());
+        const m = await poll(() => q<HTMLElement>('.ink-sw-menu'), what, 6000).catch(() => null);
+        if (m) return m;
+        misses++;
+        log(`colourremove: ${what}: the hold missed`);
+        await sleep(800);
+      }
+      throw new Error(`${what}: held twice, no menu`);
+    };
+    const scene = async (what: string) => {
+      await poll(() => bar(), `${what}: the row of tools`, 15000);
+      tools.setTool('pen');
+      const k = kept();
+      tools.useInkTools.setState({ kept: { ...k, colors: { ...k.colors, pen: six }, swatch: { ...k.swatch, pen: 0 } } });
+      await sleep(700);
+      const geo = () => {
+        const row = bar()!;
+        const run = q<HTMLElement>('.ib-sw-run', row)!;
+        const wheel = q<HTMLElement>('[data-ink-swatch="wheel"]', row)!.getBoundingClientRect();
+        const add = q<HTMLElement>('[data-ink-swatch="add"]', row)?.getBoundingClientRect();
+        return { fit: row.dataset.fit, n: kept().colors.pen.length, run: run.clientWidth, all: run.scrollWidth, add: add ? Math.round(add.left) : -1, wheel: Math.round(wheel.left), free: Math.round(q<HTMLElement>('.ib-grow', row)!.getBoundingClientRect().width) };
+      };
+      const steps: string[] = [];
+      let g = geo();
+      steps.push(`${g.n}: ${g.run} of ${g.all}, + ${g.add}, wheel ${g.wheel}`);
+      await shot(`colourremove-${what.replace(/[^a-z0-9]+/g, '-')}-6`, 4000);
+      while (kept().colors.pen.length > 1) {
+        const n = kept().colors.pen.length;
+        const sw = () => q<HTMLElement>('.ib-sw-run [data-ink-swatch="1"]', bar()!)!;
+        const menu = await held(sw, `${what}, ${n}: the second held`);
+        await sleep(400);
+        tapAt(q('[data-ink-sw-do="remove"]', menu)!);
+        await poll(() => kept().colors.pen.length === n - 1 && !q('.ink-sw-menu'), `${what}: ${n - 1} left`, 10000);
+        await sleep(600);
+        const was = g;
+        g = geo();
+        steps.push(`${g.n}: ${g.run} of ${g.all}, + ${g.add}, wheel ${g.wheel}`);
+        // one fewer: the group no wider, + and the wheel no further on; all shown once they fit, and then pulled back by one
+        must(g.wheel <= was.wheel + 0.5 && g.add <= was.add + 0.5 && g.run <= was.run + 0.5, `${what}, ${g.n}: the group no wider, + and the wheel pulled back`);
+        if (was.all <= was.run + 1) must(Math.abs(was.wheel - g.wheel - 42) <= 1.5, `${what}, ${g.n}: + and the wheel back by one swatch`);
+        must(g.all <= g.run + 1 || g.free <= 9, `${what}, ${g.n}: all shown while there is room`);
+      }
+      await shot(`colourremove-${what.replace(/[^a-z0-9]+/g, '-')}-1`, 4000);
+      // the last: held, its menu has remove, not offered
+      const last = await held(() => q<HTMLElement>('.ib-sw-run [data-ink-swatch="0"]', bar()!)!, `${what}, 1: the last held`);
+      must(q<HTMLButtonElement>('[data-ink-sw-do="remove"]', last)!.disabled, `${what}: the last colour cannot be removed`);
+      await shot(`colourremove-${what.replace(/[^a-z0-9]+/g, '-')}-last`, 4000);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await poll(() => !q('.ink-sw-menu'), `${what}: its menu put away`, 5000);
+      must(kept().colors.pen.length === 1, `${what}: one left`);
+      log(`colourremove: ${what}: ${g.fit}; ${steps.join(' → ')}`);
+    };
+    await turn('portrait');
+    await notebook('colours removed');
+    await scene('a notebook upright');
+    await turn('landscape');
+    await notebook('colours removed again');
+    await scene('a notebook on its side');
+    openNode(BOOK);
+    await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the book', 20000);
+    await sleep(1500);
+    const toggle = () => q<HTMLElement>('.notes-toggle');
+    if ((await poll(toggle, 'its notes button', 15000)).dataset.on !== '1') toggle()!.click();
+    await poll(() => toggle()?.dataset.on === '1' && qa('.pane').length > 1, 'its notes beside', 10000);
+    await sleep(1500);
+    await scene('a book on its side, notes beside');
+    toggle()?.click();
+    await poll(() => toggle()?.dataset.on !== '1', 'its notes put away', 10000);
+    await turn('portrait');
+    await scene('a book upright');
+    log(`colourremove: holds missed ${misses}`);
+    const k = kept();
+    tools.useInkTools.setState({ kept: { ...k, colors: { ...k.colors, pen: base }, swatch: { ...k.swatch, pen: 0 } } });
+    await ink.settled();
+    return;
+  }
+
+  if (part === 'colourgrow') {
+    // ── a tool's colours take what the row has free (`"part": "colourgrow"`, under the rig): the pen with 4, 6, 8 and
+    // 12 colours, upright and on its side, in a notebook and in a book with its notes beside the pages (the narrowest);
+    // each: how wide its colours are against all of them, where + and undo are, what is left free ──
+    // (the one in sight: a book's in its header)
+    const bar = () => qa<HTMLElement>('.inkbar').find((r) => r.getBoundingClientRect().width > 0) ?? null;
+    const shape = () => (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
+    const base = tools.DEFAULTS.colors.pen;
+    const extra = ['#7a3fb0', '#2a9d8f', '#e76f51', '#264653', '#f4a261', '#e9c46a', '#8ab17d', '#b56576'];
+    const lines: string[] = [];
+    const look = async (what: string, n: number) => {
+      const k = tools.useInkTools.getState().kept;
+      const list = [...base, ...extra].slice(0, n);
+      tools.useInkTools.setState({ kept: { ...k, colors: { ...k.colors, pen: list }, swatch: { ...k.swatch, pen: n - 1 } } });
+      await sleep(500);
+      const row = bar()!;
+      const run = q<HTMLElement>('.ib-sw-run', row);
+      const add = q<HTMLElement>('[data-ink-swatch="add"]', row)?.getBoundingClientRect();
+      const undo = q<HTMLElement>('[data-ink-do="undo"]', row)!.getBoundingClientRect();
+      const grow = q<HTMLElement>('.ib-grow', row)!.getBoundingClientRect();
+      const rr = row.getBoundingClientRect();
+      const sel = q<HTMLElement>(`.ib-sw-run [data-ink-swatch="${n - 1}"]`, row)?.getBoundingClientRect();
+      const line = `${what}, ${n} colours: row ${Math.round(rr.width)} px ${row.dataset.fit}; colours ${run ? `${run.clientWidth} of ${run.scrollWidth}` : 'the one in use'}; + at ${add ? Math.round(add.left) : '-'}, undo at ${Math.round(undo.left)}, free ${Math.round(grow.width)} px`;
+      lines.push(line);
+      log(`colourgrow: ${line}`);
+      must(row.scrollWidth <= row.clientWidth + 1 && undo.right <= rr.right + 0.5, `${what}, ${n}: the row whole, undo on it`);
+      if (run) {
+        // while there is room, all of them and nothing scrolls; when there is none, the row is full (only the spacer's least left)
+        must(run.scrollWidth <= run.clientWidth + 1 || grow.width <= 9, `${what}, ${n}: all shown while there is room, else the row full`);
+        must(!sel || (sel.left >= run.getBoundingClientRect().left - 0.5 && sel.right <= run.getBoundingClientRect().right + 0.5), `${what}, ${n}: the one in use in sight`);
+      }
+      await shot(`colourgrow-${what.replace(/[^a-z0-9]+/g, '-')}-${n}`, 4000);
+    };
+    const BOOK = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+    for (const orient of ['portrait', 'landscape'] as const) {
+      const say = orient === 'portrait' ? 'upright' : 'on its side';
+      if (shape() !== orient) { ask(`turn ${orient}`); await poll(() => shape() === orient, orient, 20000); await sleep(1500); }
+      await notebook(`colours growing ${say}`);
+      await poll(() => bar(), 'the row of tools', 15000);
+      tools.setTool('pen');
+      for (const n of [4, 6, 8, 12]) await look(say, n);
+      // the book, its notes beside its pages: its row as narrow as it is
+      openNode(BOOK);
+      const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the book', 20000);
+      const pane = book.closest<HTMLElement>('.pane')!;
+      await sleep(1500);
+      const toggle = () => q<HTMLElement>('.notes-toggle', pane) ?? q<HTMLElement>('.notes-toggle');
+      if ((await poll(toggle, 'its notes button', 15000)).dataset.on !== '1') toggle()!.click();
+      // (beside the pages on its side; upright, under them)
+      await poll(() => toggle()?.dataset.on === '1' && qa('.pane').length > 1, 'its notes open', 10000);
+      await sleep(1500);
+      await poll(() => bar(), 'the book\'s row of tools', 15000);
+      tools.setTool('pen');
+      for (const n of [4, 6, 8, 12]) await look(`${say}, a book with its notes ${orient === 'portrait' ? 'under' : 'beside'}`, n);
+      toggle()?.click();
+      await poll(() => toggle()?.dataset.on !== '1', 'its notes put away', 10000);
+    }
+    ask('turn portrait');
+    await poll(() => shape() === 'portrait', 'upright again', 20000);
+    const k = tools.useInkTools.getState().kept;
+    tools.useInkTools.setState({ kept: { ...k, colors: { ...k.colors, pen: base }, swatch: { ...k.swatch, pen: 0 } } });
+    await ink.settled();
+    return;
+  }
+
   if (part === 'colours') {
     // ── a tool's colours, more of them (`"part": "colours"`, under the rig; `"relaunch": "1"` the launch after it):
     // `+` after the pen's swatches, the system's wheel closed on a colour, a swatch of its own and in use; a swatch
@@ -18757,7 +18919,9 @@ async function writtenSmoothErase(log: (s: string) => void, part: string): Promi
     const undoR = q<HTMLElement>('[data-ink-do="undo"]', bar()!)!.getBoundingClientRect();
     log(`colours: ${again ? 'after a launch' : 'set'}: the pen's ${kept().colors.pen.join(', ')}; in use ${kept().swatch.pen}; the run ${run.clientWidth} of ${run.scrollWidth} px; undo at ${undoR.left.toFixed(0)}, hide tools at ${ends.left.toFixed(0)}–${ends.right.toFixed(0)} of the row's ${br.right.toFixed(0)}`);
     must(kept().colors.pen.join(' ') === want.join(' '), `the pen's colours: ${want.join(', ')}`);
-    must(run.scrollWidth > run.clientWidth + 10, 'eight: they scroll in their own place');
+    // eight take what the row has free: all of them while it has room (upright it has not: then they scroll in their place)
+    const free = q<HTMLElement>('.ib-grow', bar()!)!.getBoundingClientRect().width;
+    must(run.scrollWidth <= run.clientWidth + 1 || free <= 9, 'eight: all on the row while it has room, else it full and they scroll');
     must(ends.right <= br.right + 0.5 && undoR.left > run.getBoundingClientRect().right, 'undo, redo and the rest where they were, on the row');
     await sleep(500);
     await shot(again ? 'colours-again' : 'colours-many');

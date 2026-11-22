@@ -594,9 +594,17 @@ wheel as a popover from the swatch. A tool's colours are as many as it has
 (2026-11-25, `Kept.colors`, 1 to 12; kept shape 3, where the wheel's own is
 `CUSTOM` -1): `+` after them (`ADD`) opens the wheel for one more, in use
 (`withAdded`); one held has its menu (`SwatchMenu`: `change colour` is the
-wheel for it, `remove` is `withRemoved`, one kept at least). Past four they
-scroll in their own place (`.ib-sw-run`), the one in use kept in sight;
-the `+` and the wheel's ring stand after it. `written`'s `"part":
+wheel for it, `remove` is `withRemoved`, one kept at least). The run
+(`.ib-sw-run`) is as wide as its swatches while the row has room, the
+spacer before undo giving way first, `+` and the wheel's ring after it;
+once the row is full it shrinks, to `SWATCHES_SHOWN` (4) with the sizes on
+the row and `SWATCHES_MID` (2) without, and scrolls, the one in use kept in
+sight (2026-11-22). `rowFit(w, tool, swatches)` counts those least widths
+(`ROW_FULL` and `ROW_MID` are the row with four; a tool with fewer needs
+less), so more colours never need more of the row. `"part": "colourgrow"`
+logs and captures the row with 4, 6, 8 and 12 colours upright and on its
+side, in a notebook and a book with its notes open; `"part":
+"colourremove"` removes them by a finger's hold, down to one, in both. `written`'s `"part":
 "colours"` adds, changes and removes them under the rig and with
 `"relaunch": "1"` finds them after a launch. The settings' `notes button`
 (`notesButton`, a tweak) hides `create notes` and its `+` on a book with no

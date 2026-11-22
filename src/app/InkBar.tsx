@@ -36,10 +36,24 @@ export const ROW_MID = 668;
 /** How the row is drawn in `w` px. */
 /** What the colours take of the row: a tool with none (the eraser) keeps its sizes in that much less. */
 export const ROW_COLOURS = 256;
-/** How the row is drawn in `w` px, for the tool held: a pen's and a highlighter's unless said. */
-export const rowFit = (w: number, tool: ToolKind = 'pen'): 'full' | 'mid' | 'compact' => {
-  const full = isInked(tool) ? ROW_FULL : ROW_FULL - ROW_COLOURS;
-  return w <= 0 || w >= full || tool === 'select' ? 'full' : w >= ROW_MID || !isInked(tool) ? 'mid' : 'compact';
+/** What a swatch takes of the row: its 40 px and the gap after it. */
+export const SWATCH_W = 42;
+/** The least of a tool's swatches the row shows before they scroll: four beside the sizes (fewer where it has fewer). */
+export const SWATCHES_SHOWN = 4;
+/** And two once the sizes have gone into the settings, + and the wheel kept on the row (a book with its notes beside). */
+export const SWATCHES_MID = 2;
+/**
+ * How the row is drawn in `w` px, for the tool held (a pen's and a highlighter's unless said) with `swatches` colours.
+ * ROW_FULL and ROW_MID are the row with four swatches: past their least (four with the sizes, two without) a tool's
+ * colours take what the row has free and scroll only once it has none, so more colours need no more of the row; a
+ * tool with fewer needs less, by theirs (2026-11-22).
+ */
+export const rowFit = (w: number, tool: ToolKind = 'pen', swatches = SWATCHES_SHOWN): 'full' | 'mid' | 'compact' => {
+  if (!isInked(tool)) return w <= 0 || w >= ROW_FULL - ROW_COLOURS || tool === 'select' ? 'full' : 'mid';
+  const n = Math.max(swatches, 1);
+  const full = ROW_FULL - (SWATCHES_SHOWN - Math.min(n, SWATCHES_SHOWN)) * SWATCH_W;
+  const mid = ROW_MID - (SWATCHES_SHOWN - Math.min(n, SWATCHES_MID)) * SWATCH_W;
+  return w <= 0 || w >= full ? 'full' : w >= mid ? 'mid' : 'compact';
 };
 
 /** A size as it is drawn: a pen's line, a highlighter's band, an eraser's round, as heavy as the size is among what the tool can be. */
@@ -95,19 +109,29 @@ function SwatchMenu({ tool, slot, kept, anchor, onClose }: { tool: Inked; slot: 
  * A tool's colours: its swatches (four as it starts, more added with `+` from the wheel), and the wheel's own. One
  * pressed while in use is replaced from the wheel; one held has its menu, `change colour` and `remove`.
  */
-function Swatches({ tool, kept, only }: { tool: Inked; kept: Kept; /** The one in use alone: it opens the tool's settings. */ only?: boolean }) {
+function Swatches({ tool, kept, only, least = SWATCHES_SHOWN }: { tool: Inked; kept: Kept; /** The one in use alone: it opens the tool's settings. */ only?: boolean; /** The fewest the run gives way to before it scrolls. */ least?: number }) {
   const picking = useInkTools((s) => s.picking);
   const hold = useRef<{ timer: ReturnType<typeof setTimeout>; fired: boolean } | null>(null);
   const [menu, setMenu] = useState<{ slot: number; anchor: HTMLElement } | null>(null);
   // the one in use is in sight in its run (one just added, at its end)
   const run = useRef<HTMLDivElement>(null);
   const count = kept.colors[tool].length;
+  const runMin = Math.min(count, least) * SWATCH_W - 2;
+  // (and as the run narrows with the row, turned or a pane opened beside)
   useLayoutEffect(() => {
-    const el = run.current?.querySelector<HTMLElement>(`[data-ink-swatch="${kept.swatch[tool]}"]`);
-    if (!el || !run.current) return;
     const r = run.current;
-    if (el.offsetLeft < r.scrollLeft) r.scrollLeft = el.offsetLeft;
-    else if (el.offsetLeft + el.offsetWidth > r.scrollLeft + r.clientWidth) r.scrollLeft = el.offsetLeft + el.offsetWidth - r.clientWidth;
+    if (!r) return;
+    const keep = () => {
+      const el = r.querySelector<HTMLElement>(`[data-ink-swatch="${kept.swatch[tool]}"]`);
+      if (!el) return;
+      if (el.offsetLeft < r.scrollLeft) r.scrollLeft = el.offsetLeft;
+      else if (el.offsetLeft + el.offsetWidth > r.scrollLeft + r.clientWidth) r.scrollLeft = el.offsetLeft + el.offsetWidth - r.clientWidth;
+    };
+    keep();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(keep);
+    ro.observe(r);
+    return () => ro.disconnect();
   }, [kept.swatch, tool, count]);
   const custom = kept.custom[tool];
   const at = kept.swatch[tool];
@@ -138,9 +162,10 @@ function Swatches({ tool, kept, only }: { tool: Inked; kept: Kept; /** The one i
     void pickColor(tool, rectOf(el));
   };
   return (
-    <div className="ib-group ib-swatches" role="group" aria-label="colour">
-      {/* (as many as it has: past four they scroll sideways in their own place, never pushing the rest of the row) */}
-      <div className="ib-sw-run" ref={run}>
+    // on the row as wide as they are while it has room, pushing + and the wheel along; past that no fewer than `least`
+    // and scrolling (the least the group gives way to: those, + and the wheel, each 44 px and a gap)
+    <div className="ib-group ib-swatches" role="group" aria-label="colour" style={{ minWidth: runMin + (count < MAX_SWATCHES ? 46 : 0) + 46 }}>
+      <div className="ib-sw-run" ref={run} style={{ minWidth: runMin }}>
         {kept.colors[tool].map((color, i) => (
           <button key={i} type="button" className="ib-btn ib-sw" data-ink-swatch={i} data-color={color} aria-label={swatchName(kept, tool, i)} title={swatchName(kept, tool, i)} aria-pressed={at === i} aria-haspopup="menu" aria-expanded={(picking?.tool === tool && picking.slot === i) || menu?.slot === i ? true : undefined}
             onPointerDown={(e) => down(e.currentTarget, i)} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onClick={(e) => press(e.currentTarget, i)}>
@@ -361,13 +386,13 @@ export function InkBar({ id, fixed = false }: { id: string; /** Always there, wi
   useLayoutEffect(() => {
     const el = bar.current;
     if (!el) return;
-    const measure = () => setFit(rowFit(el.clientWidth, useInkTools.getState().kept.tool));
+    const measure = () => { const k = useInkTools.getState().kept; setFit(rowFit(el.clientWidth, k.tool, isInked(k.tool) ? k.colors[k.tool].length : SWATCHES_SHOWN)); };
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [show, kept.tool]);
+  }, [show, kept.tool, isInked(kept.tool) ? kept.colors[kept.tool].length : 0]);
   const tool = kept.tool;
   // the settings hang from the tool's own button on this row: several rows may stand (a pane beside), one has them
   useLayoutEffect(() => {
@@ -404,7 +429,7 @@ export function InkBar({ id, fixed = false }: { id: string; /** Always there, wi
         ))}
       </div>
       {isSized(tool) && fit === 'full' && <Sizes tool={tool} kept={kept} />}
-      {isInked(tool) && <Swatches tool={tool} kept={kept} only={fit === 'compact'} />}
+      {isInked(tool) && <Swatches tool={tool} kept={kept} only={fit === 'compact'} least={fit === 'mid' ? SWATCHES_MID : SWATCHES_SHOWN} />}
       <span className="ib-grow" />
       <div className="ib-group ib-history">
         <button type="button" className="ib-btn" data-ink-do="undo" aria-label="undo" title="undo" disabled={!canUndo} onClick={() => void undo()}><Icon name="undo" /></button>

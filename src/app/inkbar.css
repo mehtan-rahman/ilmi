@@ -61,8 +61,15 @@
 
 /* a colour is a round of itself, whatever the theme; the one in use has a ring of the ink round it */
 .inkbar .ib-sw, .ink-pop .ib-sw { width: 40px; }
-/* a tool's swatches: as many as it has, past four scrolling sideways in their own place (its + after them, still) */
-.inkbar .ib-sw-run, .ink-pop .ib-sw-run { display: flex; align-items: center; gap: 2px; max-width: 166px; position: relative; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
+/* a tool's swatches: as many as it has (its + after them, still) */
+.inkbar .ib-sw-run, .ink-pop .ib-sw-run { display: flex; align-items: center; gap: 2px; position: relative; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
+/* on the row: as wide as they are while the row has room (the space before undo given up first), pushing + and the
+   wheel along; only once the row is full do they give way, to four (two once the sizes have gone), and scroll
+   (2026-11-22) */
+.inkbar .ib-swatches { flex: 0 1 auto; }
+.inkbar .ib-sw-run { flex: 0 1 auto; }
+/* in a tool's settings, a box of its own width: four, and scrolling */
+.ink-pop .ib-sw-run { max-width: 166px; }
 .inkbar .ib-sw-run::-webkit-scrollbar, .ink-pop .ib-sw-run::-webkit-scrollbar { display: none; }
 .inkbar .ib-sw-run > .ib-btn, .ink-pop .ib-sw-run > .ib-btn { flex: 0 0 auto; scroll-snap-align: start; }
 .inkbar .ib-add .ic, .ink-pop .ib-add .ic { width: 18px; height: 18px; color: var(--fg-3); }

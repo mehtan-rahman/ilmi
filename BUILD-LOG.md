@@ -6,6 +6,30 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-22 — a tool's colours take the row's free room; removing them by a hold, checked
+
+The user: "When i add an extra color and there's room, i'd like for the + and color wheel to be moved down instead of having to scroll", then "make sure i can remove colors as well".
+
+**The swatches grow** (`InkBar.tsx`, `inkbar.css`): the run is no longer a 166 px scroller. It is as wide as its swatches while the row has room (the spacer before undo gives way first), pushing `+` and the wheel along. Once the row is full it shrinks and scrolls, the one in use kept in sight: to four with the sizes on the row (`SWATCHES_SHOWN`), to two once they have gone into the settings (`SWATCHES_MID`). The group's least width is set on it (the run's least, `+` and the wheel), so in compact it never shrinks under the one swatch.
+
+**The thresholds** (`rowFit(w, tool, swatches)`): `ROW_FULL` 790 and `ROW_MID` 668 are the row with four swatches. Mid now needs only two (584 px), and a tool with fewer colours needs less by theirs. A book with its notes beside on an Air (590 px) was compact (the colour in use alone) with 150 px free; it is mid now, two showing and scrolling, `+` and the wheel on the row.
+
+**Removing**: unchanged (hold, `remove`, one kept at least). Checked with a finger.
+
+**Checks.** Air simulator, `written`:
+- `"part": "colourgrow"`: the pen with 4, 6, 8 and 12 colours. A notebook on its side: the run 166, 250, 334 and 502 px, all shown, `+` at 518, 602, 686 (none at 12), undo fixed at 973. Upright (the row full at four, 13 px free): 166 of 166, then about 173 of 250, 174 of 334, 217 of 502, the one in use in sight. A book with its notes under (upright): the same as the notebook. Beside (on its side, 590 px): mid, 84–128 px shown, `+` at 295, undo at 383.
+- `"part": "colourremove"`: six colours, the second held by the rig's finger and `remove` tapped down to one, in a notebook upright and on its side and a book on its side with its notes beside and upright. Every removal: the group narrower, `+` and the wheel back by 42 px once all fit (on its side 644 → 434). At one, `remove` is greyed. 24 holds, none missed.
+- `"part": "colours"`: passes. The eight-colour check now asks that all show while there is room, else the row is full. One run missed a hold (red, after blue's colour was changed); the rerun passed.
+- `tsc`, `npm test`.
+
+### Not verified
+- The physical iPad (not to be touched in this session).
+
+### Handoff prompt
+Continue from `BUILD-LOG.md`'s newest entry. The ink bar's colours grow into the row's free room and scroll only when it is full. `written` parts `colourgrow` and `colourremove` check it under the rig.
+
+---
+
 ## 2026-11-25 — more colours on the row; `create notes` put away
 
 The user: "add option to add more color presets. i think might be nice to dismiss create notes somewhere as well perhaps".

@@ -241,7 +241,19 @@ final class PagePainter {
     ctx.concatenate(page.getDrawingTransform(.cropBox, rect: CGRect(origin: .zero, size: size), rotate: 0, preserveAspectRatio: true))
     ctx.drawPDFPage(page)
     ctx.restoreGState()
-    if !ink.isEmpty {
+    let region = CGRect(x: rect.minX / k, y: rect.minY / k, width: rect.width / k, height: rect.height / k)
+    let sk = Paint.superK(px: k, pw: w, ph: h)
+    if !ink.isEmpty, sk > 1 {
+      // (few pixels to the point: the ink drawn at twice them and brought down, `Paint.superK`)
+      let mine = ink.filter { $0.box.intersects(region) }
+      for marks in [true, false] {
+        let gs = mine.filter { $0.marker == marks }
+        if gs.isEmpty { continue }
+        Paint.superPass(ctx, pw: w, ph: h, region: region, k: sk, box: Paint.bounds(gs), mode: marks ? .multiply : .normal) { o, px in
+          for g in gs { g.draw(o); if !marks { Paint.edge(g, o, px / CGFloat(sk)) } }
+        }
+      }
+    } else if !ink.isEmpty {
       // the ink, in the page's points from its top left (Core Graphics counts from the foot)
       ctx.saveGState()
       ctx.translateBy(x: 0, y: CGFloat(h))
@@ -436,20 +448,21 @@ enum Glass {
 
   /// Lines read off the glass at every frame for `ms` (as it is on the screen, nothing laid out for it): each frame
   /// its time (the system's uptime) and its lines.
-  static func film(_ view: UIView, _ lines: [(CGPoint, CGPoint)], ms: Double, done: @escaping ([[String: Any]]) -> Void) {
+  static func film(_ view: UIView, _ lines: @escaping () -> [(CGPoint, CGPoint)], ms: Double, done: @escaping ([[String: Any]]) -> Void) {
     let f = Film(view: view, lines: lines, until: CACurrentMediaTime() + ms / 1000, done: done)
     f.start()
   }
 
   private final class Film: NSObject {
     let view: UIView
-    let lines: [(CGPoint, CGPoint)]
+    /// (placed anew at every frame: on the page, they follow it through a zoom)
+    let lines: () -> [(CGPoint, CGPoint)]
     let until: CFTimeInterval
     let done: ([[String: Any]]) -> Void
     var frames: [[String: Any]] = []
     var link: CADisplayLink?
     var me: Film?
-    init(view: UIView, lines: [(CGPoint, CGPoint)], until: CFTimeInterval, done: @escaping ([[String: Any]]) -> Void) {
+    init(view: UIView, lines: @escaping () -> [(CGPoint, CGPoint)], until: CFTimeInterval, done: @escaping ([[String: Any]]) -> Void) {
       self.view = view; self.lines = lines; self.until = until; self.done = done
     }
     func start() {
@@ -460,7 +473,7 @@ enum Glass {
     }
     @objc func tick(_ l: CADisplayLink) {
       let t = CACurrentMediaTime()
-      frames.append(["t": t, "c": Glass.columns(view, lines, after: true)])
+      frames.append(["t": t, "c": Glass.columns(view, lines(), after: true)])
       if t >= until {
         l.invalidate()
         link = nil
@@ -728,8 +741,12 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
   func film(_ a: PdfSurfaceDoArgs, done: @escaping ([String: Any]) -> Void) {
     let n = max(first, min(first + frames.count - 1, a.page ?? first))
     let f = frames[n - first]
-    func at(_ x: Double, _ y: Double) -> CGPoint { content.convert(CGPoint(x: f.minX + f.width * CGFloat(x), y: f.minY + f.height * CGFloat(y)), to: view) }
-    let lines = (a.lines ?? []).filter { $0.count >= 3 }.map { (at($0[0], $0[1]), at($0[0], $0[2])) }
+    let spec = (a.lines ?? []).filter { $0.count >= 3 }
+    let lines: () -> [(CGPoint, CGPoint)] = { [weak self] in
+      guard let self = self else { return [] }
+      func at(_ x: Double, _ y: Double) -> CGPoint { self.content.convert(CGPoint(x: f.minX + f.width * CGFloat(x), y: f.minY + f.height * CGFloat(y)), to: self.view) }
+      return spec.map { (at($0[0], $0[1]), at($0[0], $0[2])) }
+    }
     Glass.film(view, lines, ms: a.ms ?? 1000) { [weak self] frames in
       var t = self?.ink?.times() ?? [:]
       t["shown"] = self?.inkShows ?? []
@@ -1298,6 +1315,26 @@ final class PdfSurface: NSObject, UIScrollViewDelegate {
       st["column"] = Glass.column(view, from: p0, to: p1)
       st["from"] = [Double(p0.x), Double(p0.y), Double(p1.y)]
       return st
+    case "keyboard":
+      // (the checks) the system's word that an on-screen keyboard came up (`y` its height; none: it went), as a
+      // simulator with a hardware keyboard never says it: the web view takes it as it takes a real one's
+      let screenB = UIScreen.main.bounds
+      let h = CGFloat(a.y ?? 0)
+      let end = h > 0 ? CGRect(x: 0, y: screenB.height - h, width: screenB.width, height: h) : CGRect(x: 0, y: screenB.height, width: screenB.width, height: 0)
+      let info: [AnyHashable: Any] = [UIResponder.keyboardFrameBeginUserInfoKey: NSValue(cgRect: CGRect(x: 0, y: screenB.height, width: screenB.width, height: 0)), UIResponder.keyboardFrameEndUserInfoKey: NSValue(cgRect: end), UIResponder.keyboardAnimationDurationUserInfoKey: 0.25, UIResponder.keyboardAnimationCurveUserInfoKey: 7, UIResponder.keyboardIsLocalUserInfoKey: true]
+      let nc = NotificationCenter.default
+      if h > 0 {
+        nc.post(name: UIResponder.keyboardWillShowNotification, object: nil, userInfo: info)
+        nc.post(name: UIResponder.keyboardWillChangeFrameNotification, object: nil, userInfo: info)
+        nc.post(name: UIResponder.keyboardDidShowNotification, object: nil, userInfo: info)
+        nc.post(name: UIResponder.keyboardDidChangeFrameNotification, object: nil, userInfo: info)
+      } else {
+        nc.post(name: UIResponder.keyboardWillHideNotification, object: nil, userInfo: info)
+        nc.post(name: UIResponder.keyboardWillChangeFrameNotification, object: nil, userInfo: info)
+        nc.post(name: UIResponder.keyboardDidHideNotification, object: nil, userInfo: info)
+        nc.post(name: UIResponder.keyboardDidChangeFrameNotification, object: nil, userInfo: info)
+      }
+      return state()
     case "picture":
       // the surface as it is shown now, a JPEG: what the page shows in its place while it stands aside
       var st: [String: Any] = [:]

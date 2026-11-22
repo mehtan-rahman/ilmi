@@ -21705,6 +21705,58 @@ export async function smokePdfInk(path: string | null): Promise<void> {
       log('done');
       return;
     }
+    if (part.split(',').includes('keyboard')) {
+      // ── a shade over a book with the on-screen keyboard up (`"part": "keyboard"`; 2026-11-22, the iPad: "looks weird
+      // like this now ... only when the keyboard pops up"): the contents palette, open or run and tweaks opened over
+      // a book, then the system says a keyboard came up (a simulator with a hardware keyboard never shows one, so it
+      // is told as the system tells it, and the web view shortens what shows as it does for a real one), then that it
+      // went. Hard: the pages under the shade are the surface's picture at the size they were (not squeezed into what
+      // the keyboard leaves), at no point over the overlay does the surface draw, and gone, the pages are shown again.
+      // `keyboard:` lines ──
+      if ((await invoke<string | null>('dev_env', { name: 'ILMI_INKTHEME' })) === 'dark') { useApp.getState().setTheme('dark'); await sleep(1500); }
+      try { localStorage.removeItem('ilmi.pdf.native'); } catch { /* none */ }
+      window.dispatchEvent(new Event('ilmi-pdf-native'));
+      const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q('.pdf-surface', x) ? x : null; }, 'the chapter as the native page view', 60000);
+      const surf = q<HTMLElement>('.pdf-surface', b)!;
+      const sid = surf.dataset.surface!;
+      const S = (a: Record<string, unknown>) => invoke<Record<string, unknown>>('ink_pdf_do', { ask: { id: sid, ...a } });
+      await poll(async () => Number((await S({ op: 'state' }).catch(() => ({ views: 0 }))).views) > 0, 'its pages shown', 30000);
+      const fails: string[] = [];
+      const one = async (name: string, open: () => void, close: () => void, sel: string) => {
+        const before = surf.getBoundingClientRect();
+        open();
+        await poll(() => q(sel), `${name}: open`, 10000);
+        await sleep(1200);
+        await S({ op: 'keyboard', y: 400 });
+        await sleep(1500);
+        const st = await S({ op: 'state' });
+        const now = surf.getBoundingClientRect();
+        const size = surf.style.backgroundSize;
+        const want = `${before.width}px ${before.height}px`;
+        const over = q<HTMLElement>(sel)!.getBoundingClientRect();
+        const pts = [[over.left + over.width / 2, over.top + 60], [over.left + 30, over.top + 30]];
+        const cov = ((await S({ op: 'covers', lines: pts })).covers as boolean[]) ?? [];
+        log(`keyboard: ${name}: the pages ${Math.round(before.height)} high, ${Math.round(now.height)} with the keyboard up; the surface ${st.veiled ? 'standing aside' : 'shown'}, its picture ${surf.style.backgroundImage ? size : 'none'}; drawn over the overlay at ${cov.filter(Boolean).length} of ${cov.length}`);
+        await shot(`keyboard-${name.replace(/[^a-z0-9]+/g, '-')}`);
+        if (st.veiled && (!surf.style.backgroundImage || size !== want)) fails.push(`${name}: the picture under the shade ${size || 'none'}, not as the pages were (${want})`);
+        if (cov.some(Boolean)) fails.push(`${name}: the pages drawn over it with the keyboard up`);
+        await S({ op: 'keyboard', y: 0 });
+        await sleep(800);
+        close();
+        await poll(async () => !(await S({ op: 'state' })).veiled, `${name}: closed, the pages shown again`, 6000).catch(() => fails.push(`${name}: the surface still standing aside after it closed`));
+        await sleep(600);
+      };
+      await one('the contents palette', () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true })), () => useApp.setState({ paletteOpen: false }), '.palette-panel');
+      await one('open or run', () => useApp.setState({ paletteOpen: true }), () => useApp.setState({ paletteOpen: false }), '.palette-panel');
+      await one('tweaks', () => useApp.setState({ tweaksOpen: true }), () => useApp.setState({ tweaksOpen: false }), '.tweaks');
+      try { localStorage.setItem('ilmi.pdf.native', '0'); } catch { /* none */ }
+      if (fails.length) throw new Error(`keyboard: ${fails.length} off: ${fails.join('; ')}`);
+      log('ok: under a shade with the keyboard up the pages are their picture as they were, and come back after');
+      phase('done');
+      finished = true;
+      log('done');
+      return;
+    }
     if (part.split(',').includes('overlays')) {
       // ── what the page lays over a book's native pages shows, never the pages (`"part": "overlays"`; 2026-11-22, the
       // iPad: the contents palette's list hidden under the pages, its search field alone showing): each overlay that
@@ -22069,6 +22121,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         glass(x: number, y: number): Promise<[number, number]>;
         column(x: number, y0: number, y1: number): Promise<number[][]>;
         columns(lines: number[][]): Promise<number[][][]>;
+        film?(lines: number[][], ms: number): Promise<{ frames: { t: number; c: number[][][] }[] }>;
         y0: number;
       }
       const strokes = async (o: On) => {
@@ -22122,6 +22175,64 @@ export async function smokePdfInk(path: string | null): Promise<void> {
             if (!(e.core > 0) || e.soft > 4) fails.push(`${o.name}: the first stroke at ${z * 100}%: ${say(e)}`);
           }
         }
+        // small writing at 400%, then zoomed out (2026-11-22, the iPad: "whenever i write something small and then zoom
+        // out, it looks a little bit jaggedy"): a shallow slant of a half-point pen, across the pixels' rows where
+        // steps show, read down nine lines along it during the zoom out and at rest, against the same written at the
+        // zoom it is seen at. How even it is along itself: the spread of its ink from line to line, over its mean.
+        {
+          const wy = 0.66, xs = Array.from({ length: 9 }, (_, k) => 0.44 + k * 0.015);
+          const slant = (x: number, y0: number) => y0 + 0.012 * ((x - 0.42) / 0.16);
+          const lines = (y0: number) => xs.map((x) => [x, slant(x, y0) - 0.006, slant(x, y0) + 0.006]);
+          // (red against the page: a notebook's ruling is blue or grey, and is none of it)
+          const red = (px: number[][]) => { const ink = px.map(([r, g, b]) => Math.max(0, r! - Math.max(g!, b!))); const peak = Math.max(0, ...ink); return { ...read(px), peak, sum: ink.reduce((a, v) => a + v, 0) / 255, core: ink.filter((v) => v >= Math.max(60, peak) * 0.9).length }; };
+          const even = (rs: Read[]) => {
+            const ok = rs.filter((r) => r.core > 0 || r.peak > 30);
+            if (ok.length < 5) return NaN;
+            // (the ink a line holds, not its darkest pixel: a line thinner than a pixel is darker where it falls on one
+            // and paler where it falls between two, drawn however well; what it holds is the same if it is drawn well)
+            const sums = ok.map((r) => r.sum);
+            const m = sums.reduce((a, v) => a + v, 0) / sums.length;
+            return (Math.max(...sums) - Math.min(...sums)) / m;
+          };
+          await pen(0.5);
+          await o.zoomTo(4, true);
+          await sleep(900);
+          await o.top(wy - 0.05, 0.5);
+          await sleep(1500);
+          let n = await o.count();
+          ask('drag', ...(await o.glass(0.42, wy)), ...(await o.glass(0.58, wy + 0.012)), 2.0);
+          await poll(async () => (await o.count()) === n + 1, `${o.name}: small writing at 400%`, 20000);
+          await sleep(2000);
+          // zoomed out to 100%, read at every frame on the way, then at rest
+          const during = o.film ? o.film(lines(wy), 2500) : null;
+          await sleep(150);
+          await o.zoomTo(1, true);
+          const frames = during ? (await during).frames : [];
+          const evens = frames.map((f) => even(f.c.map(red))).filter((v) => Number.isFinite(v));
+          const worstDuring = Math.max(0, ...evens);
+          await o.top(wy - 0.3, 0.5);
+          await sleep(2500);
+          const s1 = even((await o.columns(lines(wy))).map(red));
+          // the same, written at 100%
+          n = await o.count();
+          ask('drag', ...(await o.glass(0.42, wy + 0.04)), ...(await o.glass(0.58, wy + 0.052)), 2.0);
+          await poll(async () => (await o.count()) === n + 1, `${o.name}: the same written at 100%`, 20000);
+          await sleep(2500);
+          const r1 = even((await o.columns(lines(wy + 0.04))).map(red));
+          await shot(`inksharp-${o.name}-small-out`);
+          // and at 50%
+          await o.zoomTo(0.5, true);
+          await sleep(900);
+          await o.top(Math.max(0, wy - 0.4), 0.5);
+          await sleep(2500);
+          const s5 = even((await o.columns(lines(wy))).map(red)), r5 = even((await o.columns(lines(wy + 0.04))).map(red));
+          log(`inksharp: ${o.name}: small writing from 400%: along itself at 100% ${s1.toFixed(2)} (written there ${r1.toFixed(2)}), at 50% ${s5.toFixed(2)} (${r5.toFixed(2)}); during the zoom out ${worstDuring.toFixed(2)} at worst over ${evens.length} of ${frames.length} frames`);
+          const tol = (r: number) => Math.max(r * 1.3, r + 0.12);
+          if (!(s1 <= tol(r1))) fails.push(`${o.name}: small writing zoomed out to 100% less even (${s1.toFixed(2)}) than written there (${r1.toFixed(2)})`);
+          if (!(s5 <= tol(r5))) fails.push(`${o.name}: small writing zoomed out to 50% less even (${s5.toFixed(2)}) than written at 100% and seen there (${r5.toFixed(2)})`);
+          if (frames.length && worstDuring > Math.max(tol(r1), tol(r5)) + 0.2) fails.push(`${o.name}: small writing jagged during the zoom out (${worstDuring.toFixed(2)})`);
+          await o.zoomTo(1, true);
+        }
       };
       await poll(async () => (await state()).tool?.kind === 'pen', 'the pen held', 8000);
       // (`ILMI_INKTHEME=dark`: in the dark theme)
@@ -22144,6 +22255,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
           glass: async (x, y) => { const g = await S({ op: 'where', page: PAGEINK_PAGE, x, y }); return [fx(Number(g.gx)), fy(Number(g.gy))]; },
           column: async (x, y0, y1) => ((await S({ op: 'column', page: PAGEINK_PAGE, x, y: y0, y2: y1 })).column as number[][]) ?? [],
           columns: async (lines) => ((await S({ op: 'columns', page: PAGEINK_PAGE, lines })).columns as number[][][]) ?? [],
+          film: async (lines, ms) => (await S({ op: 'film', page: PAGEINK_PAGE, lines, ms })) as unknown as { frames: { t: number; c: number[][][] }[] },
         });
       }
       // a notebook's sheet
@@ -22164,6 +22276,7 @@ export async function smokePdfInk(path: string | null): Promise<void> {
           glass: async (x, y) => { const g = await D({ op: 'where', page: 1, x, y }); return [fx(Number(g.gx)), fy(Number(g.gy))]; },
           column: async (x, y0, y1) => ((await D({ op: 'column', page: 1, x, y: y0, y2: y1 })).column as number[][]) ?? [],
           columns: async (lines) => ((await D({ op: 'columns', page: 1, lines })).columns as number[][][]) ?? [],
+          film: async (lines, ms) => (await D({ op: 'film', page: 1, lines, ms })) as unknown as { frames: { t: number; c: number[][][] }[] },
         });
       }
       await invoke('dev_ink_pen', { on: false });

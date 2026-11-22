@@ -6,6 +6,30 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-22 — the pages under a shade with the keyboard up; small writing smooth zoomed out
+
+**The keyboard (the iPad, 1dcdea6):** "looks weird like this now ... only when the keyboard pops up": the contents
+palette over a book with the keyboard up. With the keyboard up the web view shortens the pages' place (984 points
+high to 584 on the simulator), and the picture of the surface shown under the shade, laid as all of that place, was
+squeezed into what was left. It is now laid at the size the pages were when it was made, from their top, and cut
+where the keyboard comes, as the pages are (books and notebooks). A simulator with a hardware keyboard shows none,
+so the check tells the web view a keyboard came up as the system does (`keyboard`): `pdfink` `"part": "keyboard"`
+(hard), light and dark, for the contents palette, open or run and tweaks: the picture 820 × 984 points with the
+keyboard up, the surface drawn at no point over the overlay, the pages back once it closes.
+
+**Small writing zoomed out:** "whenever i write something small and then zoom out, it looks a little bit
+jaggedy." A notebook's tiles were brought down linearly while a pinch shrank them, and its stretched tiles of the
+size before after it, so a thin line stepped until the new ones came; they are now brought down through a mipmap
+(trilinear; a book's tiles stay linear, as trilinear blurred them at a fit). And a tile with fewer than one and a
+half pixels to the point (zoomed out past a fit) draws its ink at twice them and brings it down (`Paint.superK`,
+`superPass`, only over the strokes' bounds; tiles only, never a whole page's picture). About a fit it is not used:
+there it drew a 1 pt pen heavier, and a 0.3 pt one paler, than the screen draws them written. In `inksharp`, a
+half-point slant written at 400%, read along nine lines: how much its ink varies from line to line, over its mean,
+against the same written at the zoom it is seen at. Notebook during the zoom out at worst 0.17 (0.42 before), at
+100% 0.17 (written there 0.14), at 50% 0.19 (0.20; before 0.35 against 0.27). Book: 0.03 during, 0.03 at 100%
+(0.01), 0.06 at 50% (0.05), as before. The book's 1 pt pen at 100% reads 2.73 px of ink kept against 2.35 to
+2.46 live in every run since the tiles (7202cb1), at the check's 12.5% edge; it passes or not as the live
+reading falls.
 ## 2026-11-22 — `no notes for this book`, the book's own
 
 The user, on the `notes button` setting of 2026-11-25: "you misunderstood the open notes thing. i meant that some pdfs are my notes themselves or that i'm not interested in writing up notes for some pdfs". So it is per book.

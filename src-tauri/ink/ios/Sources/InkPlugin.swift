@@ -3631,9 +3631,14 @@ class InkPlugin: Plugin, PenEars {
         let w = f.whereOn(page: args.page ?? 1, x: args.x ?? 0.5, y: args.y ?? 0.5)
         invoke.resolve(["gx": Double(w?.glass.x ?? 0), "gy": Double(w?.glass.y ?? 0), "zoom": Double(f.base) * Double(f.scroll.zoomScale)])
       case "film":
-        let ls = (args.lines ?? []).filter { $0.count >= 3 }.compactMap { l -> (CGPoint, CGPoint)? in
-          guard let a0 = f.whereOn(page: args.page ?? 1, x: l[0], y: l[1]), let a1 = f.whereOn(page: args.page ?? 1, x: l[0], y: l[2]) else { return nil }
-          return (a0.view, a1.view)
+        let spec = (args.lines ?? []).filter { $0.count >= 3 }
+        let page = args.page ?? 1
+        let ls: () -> [(CGPoint, CGPoint)] = { [weak f] in
+          guard let f = f else { return [] }
+          return spec.compactMap { l -> (CGPoint, CGPoint)? in
+            guard let a0 = f.whereOn(page: page, x: l[0], y: l[1]), let a1 = f.whereOn(page: page, x: l[0], y: l[2]) else { return nil }
+            return (a0.view, a1.view)
+          }
         }
         Glass.film(f.view, ls, ms: args.ms ?? 1000) { frames in invoke.resolve(["frames": frames, "ink": f.times()]) }
       case "columns":

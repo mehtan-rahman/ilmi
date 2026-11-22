@@ -3731,16 +3731,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     const veil = surfaceVeil.current;
     if (wanted && veil.state === 'off') {
       veil.state = 'asking';
+      const was = el.getBoundingClientRect();
       void surfacePicture(surfaceId).then((url) => {
         if (surfaceVeil.current.state !== 'asking') return;
-        if (url) el.style.backgroundImage = `url(${url})`;
+        if (url) { el.style.backgroundImage = `url(${url})`; el.style.backgroundSize = `${was.width}px ${was.height}px`; }
         surfaceVeil.current.state = 'on';
         sendRef.current();
       });
     } else if (!wanted && veil.state !== 'off') {
       veil.state = 'off';
       // (the surface is shown again first, then the picture under it goes)
-      setTimeout(() => { if (surfaceVeil.current.state === 'off') el.style.backgroundImage = ''; }, 250);
+      setTimeout(() => { if (surfaceVeil.current.state === 'off') { el.style.backgroundImage = ''; el.style.backgroundSize = ''; } }, 250);
     }
     surfaceLive.current = true;
     sendSurface({
@@ -3845,16 +3846,19 @@ function Pages({ id, active, session, readOn, onLast, notesOpen, head }: Omit<Re
     const veil = pdfVeil.current;
     if (wanted && veil.state === 'off') {
       veil.state = 'asking';
+      // (the picture as large as the pages were when it was made, from their top: the keyboard coming up shortens what
+      // shows of them, and the picture is cut there as they are, not squeezed into what is left)
+      const was = el.getBoundingClientRect();
       void pdfPicture(pdfSurfId).then((url) => {
         if (pdfVeil.current.state !== 'asking') return;
-        if (url) el.style.backgroundImage = `url(${url})`;
+        if (url) { el.style.backgroundImage = `url(${url})`; el.style.backgroundSize = `${was.width}px ${was.height}px`; }
         pdfVeil.current.state = 'on';
         pdfSend.current();
       });
     } else if (!wanted && veil.state !== 'off') {
       veil.state = 'off';
       // (the surface is shown again first, then the picture under it goes)
-      setTimeout(() => { if (pdfVeil.current.state === 'off') el.style.backgroundImage = ''; }, 250);
+      setTimeout(() => { if (pdfVeil.current.state === 'off') { el.style.backgroundImage = ''; el.style.backgroundSize = ''; } }, 250);
     }
     sendPdfSurface({
       id: pdfSurfId, x: r.left, y: r.top, w: r.width, h: r.height,

@@ -260,6 +260,47 @@ enum Paint {
     c.restoreGState()
   }
 
+  /// How many times its pixels a picture's ink is drawn at, to be brought down to them: where a picture has few pixels
+  /// to a point of the sheet (zoomed out, or at a small sheet's fit) a line comes out thinner than a pixel or two,
+  /// and drawn at the picture's own pixels its edge steps (2026-11-22, the iPad: "whenever i write something small
+  /// and then zoom out, it looks a little bit jaggedy"); drawn at twice them and brought down, it is as smooth as a
+  /// book's ink seen from its finer tiles. Only for a picture of four million pixels or fewer (a tile; never a whole
+  /// page's picture, which would want four times its memory).
+  /// Only below one and a half pixels to the point (zoomed out past a page's fit): about a fit (a page of a book is
+  /// near two at it) a stroke drawn so came out heavier or paler than the screen draws it written (`inksharp`, a
+  /// 1 pt pen 2.7 px of ink kept, 2.35 live), and does not step.
+  static func superK(px: CGFloat, pw: Int, ph: Int) -> Int { px < 1.5 && pw * ph <= 4_000_000 ? 2 : 1 }
+
+  /// The strokes `draw` draws (in a context mapping the sheet's points, and its pixels to one), drawn at `k` times the
+  /// picture's pixels into a clear picture of their own and laid on `c` (its own pixels, from its foot) with `mode`.
+  /// Only the part `box` (the strokes' bounds, the sheet's points) covers is drawn so: the rest has no ink.
+  static func superPass(_ c: CGContext, pw: Int, ph: Int, region: CGRect, k: Int, box: CGRect, mode: CGBlendMode, draw: (CGContext, CGFloat) -> Void) {
+    let ppx = CGFloat(pw) / region.width, ppy = CGFloat(ph) / region.height
+    // the box in the picture's pixels from its top left, on whole pixels, a pixel about it
+    let b = box.intersection(region)
+    if b.isNull || b.isEmpty { return }
+    let x0 = max(0, ((b.minX - region.minX) * ppx).rounded(.down) - 1), y0 = max(0, ((b.minY - region.minY) * ppy).rounded(.down) - 1)
+    let x1 = min(CGFloat(pw), ((b.maxX - region.minX) * ppx).rounded(.up) + 1), y1 = min(CGFloat(ph), ((b.maxY - region.minY) * ppy).rounded(.up) + 1)
+    if x1 <= x0 || y1 <= y0 { return }
+    let W = Int(x1 - x0) * k, H = Int(y1 - y0) * k
+    let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+    guard let o = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return }
+    let sx = ppx * CGFloat(k), sy = ppy * CGFloat(k)
+    o.translateBy(x: 0, y: CGFloat(H))
+    o.scaleBy(x: sx, y: -sy)
+    o.translateBy(x: -(region.minX + x0 / ppx), y: -(region.minY + y0 / ppy))
+    draw(o, sx)
+    guard let img = o.makeImage() else { return }
+    c.saveGState()
+    c.setBlendMode(mode)
+    c.interpolationQuality = .high
+    c.draw(img, in: CGRect(x: x0, y: CGFloat(ph) - y1, width: x1 - x0, height: y1 - y0))
+    c.restoreGState()
+  }
+
+  /// The bounds of some strokes, the sheet's points.
+  static func bounds(_ gs: [Geom]) -> CGRect { gs.reduce(CGRect.null) { $0.union($1.box) } }
+
   /// A pen's stroke widened by `edgeGrow` pixels, as the screen draws it while written.
   static func edge(_ g: Geom, _ c: CGContext, _ px: CGFloat) {
     guard edgeGrow > 0, g.ours, !g.marker, px > 0, let o = g.outline(), o.round == 0 else { return }
@@ -314,6 +355,24 @@ enum Paint {
         c.setFillColor(cg(j.look.margin, .lightGray))
         for m in l.margins { let at = col(m); if at > -wide, at < CGFloat(j.pw) { c.fill(CGRect(x: at, y: 0, width: wide, height: CGFloat(j.ph))) } }
       }
+    }
+    // (few pixels to the point: the ink drawn at twice them and brought down, `superK`)
+    let k = superK(px: sx, pw: j.pw, ph: j.ph)
+    if k > 1 {
+      let mine = j.strokes.filter { $0.box.intersects(j.region) }
+      let above = j.above.filter { $0.g.box.intersects(j.region.offsetBy(dx: 0, dy: $0.up)) }
+      for pass in 0..<2 {
+        let gs = mine.filter { $0.marker == (pass == 0) }
+        let us = above.filter { $0.g.marker == (pass == 0) }
+        if gs.isEmpty && us.isEmpty { continue }
+        let mode: CGBlendMode = j.bare ? .normal : j.look.dark ? .screen : (pass == 0 ? .multiply : .normal)
+        let box = us.reduce(bounds(gs)) { $0.union($1.g.box.offsetBy(dx: 0, dy: -$1.up)) }
+        superPass(c, pw: j.pw, ph: j.ph, region: j.region, k: k, box: box, mode: mode) { o, px in
+          for a in us { o.saveGState(); o.translateBy(x: 0, y: -a.up); a.g.draw(o); o.restoreGState() }
+          for g in gs { g.draw(o); if pass == 1 { Paint.edge(g, o, px / CGFloat(k)) } }
+        }
+      }
+      return c.makeImage()
     }
     // the ink, in the sheet's points from its top left: it lies on the paper as ink does, a highlighter leaving what is under it dark
     c.translateBy(x: 0, y: CGFloat(j.ph))

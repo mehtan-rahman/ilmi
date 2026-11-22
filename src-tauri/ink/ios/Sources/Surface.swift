@@ -269,6 +269,7 @@ final class Leaf: UIView {
     clipsToBounds = true
     rest.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "frame": NSNull(), "hidden": NSNull()]
     rest.contentsGravity = .resize
+    rest.minificationFilter = .trilinear
     rest.isOpaque = true
     layer.addSublayer(rest)
     tileBox.actions = ["sublayers": NSNull(), "transform": NSNull(), "bounds": NSNull(), "position": NSNull()]
@@ -1385,6 +1386,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       t.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
       t.isOpaque = true
       t.contentsGravity = .resize
+      // (brought down while a pinch shrinks it, or stretched to a smaller layout after it, averaged over a mipmap)
+      t.minificationFilter = .trilinear
       t.frame = CGRect(x: b.minX / screen, y: b.minY / screen, width: b.width / screen, height: b.height / screen)
       t.contents = img
       l.tileBox.addSublayer(t)

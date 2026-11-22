@@ -21576,6 +21576,9 @@ export async function smokePdfInk(path: string | null): Promise<void> {
         if (pen) { ask('tap', ...mid(pen)); await sleep(400); if (!q('.ink-pop')) ask('tap', ...mid(pen)); await look('the pen\'s settings', '.ink-pop'); await close(); }
         const size = q<HTMLElement>('[data-ink-size][aria-pressed="true"]', bar) ?? q<HTMLElement>('[data-ink-size]', bar);
         if (size) { ask('tap', ...mid(size)); await sleep(400); if (!q('.ink-size-pop')) ask('tap', ...mid(size)); await look('a size\'s popover', '.ink-size-pop'); await close(); }
+        // a colour held: its menu drops over the pages
+        const sw = q<HTMLElement>('[data-ink-swatch="1"]', bar);
+        if (sw) { ask('press', ...mid(sw), 0.9); await look('a colour\'s hold menu', '.ink-sw-menu'); await close(); } else fails.push('no colour on the row');
       } else fails.push('no ink bar');
       // the lasso's menu: a stroke written and held
       if (bar) {

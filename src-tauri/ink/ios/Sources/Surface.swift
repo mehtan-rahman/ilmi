@@ -1192,10 +1192,16 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     if d.isNull || d.width <= 0 || d.height <= 0 { return }
     let x0 = (d.minX * s * screen).rounded(.down), y0 = (d.minY * s * screen).rounded(.down)
     let x1 = (d.maxX * s * screen).rounded(.up), y1 = (d.maxY * s * screen).rounded(.up)
-    // (a large part is left to the pictures: a moment later, off the main thread)
-    if (x1 - x0) * (y1 - y0) > 4_000_000 { return }
+    // (a large part is drawn at once with fewer pixels, four million at most, and sharp a moment later with the
+    // sheet's pictures, off the main thread: what the eraser took is off the glass in this turn whatever its size;
+    // until 2026-11-22 a part that large was left to the pictures alone)
+    let area = (x1 - x0) * (y1 - y0)
+    let fewer = area > 4_000_000 ? sqrt(4_000_000 / area) : 1
+    if fewer < 1 { plugin.eraseSkipped += 1 }
+    let t0 = ProcessInfo.processInfo.systemUptime
+    defer { plugin.erasePatch.append((ProcessInfo.processInfo.systemUptime - t0) * 1000); plugin.erasePatchPx.append(Int(area * fewer * fewer)) }
     let region = CGRect(x: x0 / screen / s, y: y0 / screen / s, width: (x1 - x0) / screen / s, height: (y1 - y0) / screen / s)
-    guard let img = Paint.make(job(l, region: region, pw: Int(x1 - x0), ph: Int(y1 - y0))) else { return }
+    guard let img = Paint.make(job(l, region: region, pw: max(1, Int(((x1 - x0) * fewer).rounded())), ph: max(1, Int(((y1 - y0) * fewer).rounded())))) else { return }
     let layer = CALayer()
     layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
     layer.isOpaque = true
@@ -1713,6 +1719,8 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
 
   /// The eraser passed over a sheet from `a` to `b`, in its points.
   private func rub(_ l: Leaf, from a: CGPoint, to b: CGPoint) {
+    let t0 = ProcessInfo.processInfo.systemUptime
+    defer { plugin.eraseNote(hit: (ProcessInfo.processInfo.systemUptime - t0) * 1000) }
     let r = CGFloat(max(plugin.tool.width, 1)) / s
     let reach = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y)).insetBy(dx: -r, dy: -r)
     var left: [PKStroke] = []
@@ -1737,7 +1745,9 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       all[l.sheet] = l.model
       doing = .erase(before: all, last: last)
     }
+    let t1 = ProcessInfo.processInfo.systemUptime
     put(l, left, dirty: d)
+    plugin.erasePut.append((ProcessInfo.processInfo.systemUptime - t1) * 1000)
   }
 
   private func ringEraser(at q: CGPoint) {

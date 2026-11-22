@@ -829,6 +829,52 @@ number and when it is to be on the glass, and every touch, are written to
 `live-clock.txt` in the app's temporary folder), for reading against the
 screen's recording frame by frame (BUILD-LOG, 2026-11-21).
 
+A stroke is smooth at any zoom (2026-11-22). A touch's place is taken
+precise (`preciseLocation`): UIKit's `location` is rounded to the screen's
+points, and a stroke made of places rounded so and divided by the zoom it
+was written at is a run of short straight steps meeting at corners, which
+is what strokes written before looked like at 250%. The outline walks the
+stroke's curve a fifth of a point at a time (was a half: at 400% a curve
+showed as straight pieces) and keeps a place unless the outline without it
+is within 0.004 points. A stroke whose points were rounded (every move from
+one point to the next a whole number of one step, nine in ten of them:
+`roundedTo` in `stroke.m`) has the middle of its outline evened along the
+path, a Gaussian whose sigma is twice that step; its radii are left as they
+are, so no stroke is drawn wider, and it moves less than the rounding it
+takes out. A stroke taken precise is not evened, so the stroke being
+written and the one kept are still one. The rule for smooth is the turn
+between neighbouring two-pixel pieces of the outline's middle as the glass
+shows it (`ilmi_stroke_turns`, `lastTurns` in `dev_ink_state`). The Mac
+harness in BUILD-LOG (2026-11-22) measured it against the true curve, and
+against a port of perfect-freehand's outline (MIT, Stephen Ruiz:
+streamline, outline, quadratic midpoints), which did not take the rounding
+out and was not taken. `written`'s `"part": "smooth"` (iPad, under the rig)
+writes a word at 100%, 250% and 400% and puts a stroke rounded as before
+under it, with the outline as it was (`pencilDev` `smooth-old`) and as it is
+(`smooth-new`); `smoothgeo:` lines say where each is in its capture.
+
+On a PDF's page the eraser is on the glass at once (2026-11-22). The page
+draws its ink in the web view's process; told of what an eraser left, it
+drew it 40 to 55 ms later, and a telling each move (each with every name
+the page holds) came faster than it drew them, so a stroke went up to
+190 ms after the eraser touched it. While the eraser is down the sheet's
+strokes are drawn natively in a layer inside its canvas (`EraseGlass` in
+`Live.swift`, the same drawing as the stroke being written:
+`LiveInk.paint`), by name, and the page is told to hold all of them unseen;
+what the eraser takes goes from that layer in the turn it is taken, what it
+leaves of a stroke cut comes into it, and a telling waits while the page
+has yet to draw the one before (`tellLater`; a quarter of a second at
+most). When it lifts the page shows its own again and the layer goes when
+the page says it has drawn that (`shown`), or after a second. On a
+notebook the eraser draws the place again at once, as before; a place
+over four million pixels is now drawn at once with fewer pixels (sharp a
+moment later with the sheet's pictures) where it was left to the pictures.
+`written`'s `"part": "erase"` (`"where"` `notebook` or `pdf`, `"emode"`
+`stroke` or `part`) puts 300 strokes and six red ones on a page and draws
+the eraser across the red ones under the frame clock; `erasegeo:` says
+where they are, and `dev_ink_state` what each move cost (`eraseHit`,
+`erasePut`, `erasePatch`, `eraseShown`).
+
 A stroke is on the glass once at the hand-over, by construction. Told by
 a message that the page has drawn a telling, the canvas was emptied some
 frames after the page's path was on the glass (both for those frames: ink

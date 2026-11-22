@@ -451,6 +451,19 @@ struct State: Encodable {
   var lastPoints: String = ""
   /// A dev run's: from each touch to the frame the stroke being written was drawn with it, the last few (ms).
   var lastLags: [Double] = []
+  /// A dev run's: how far UIKit's rounded place of a touch was from its precise one, at most, in the last stroke kept.
+  var lastRounding: Double = 0
+  /// A dev run's: each eraser move's hit test and its handing of the strokes left (ms); a notebook's picture of the
+  /// place drawn again at once (ms, pixels; and how many were too large and left to the pictures); a PDF page's time
+  /// from the strokes left until the page said it had drawn them (ms).
+  var eraseHit: [Double] = []
+  var erasePut: [Double] = []
+  var erasePatch: [Double] = []
+  var erasePatchPx: [Int] = []
+  var eraseSkipped: Int = 0
+  var eraseShown: [Double] = []
+  /// A dev run's: the turn between neighbouring two-pixel pieces of the last stroke kept, as drawn on the glass now (degrees: largest, 99th).
+  var lastTurns: [Double] = []
   /// A dev run's: strokes kept as they were drawn while written (`Live.swift`), and those kept as PencilKit's.
   var liveKept: Int = 0
   var liveMissed: Int = 0
@@ -504,6 +517,10 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
   let canvas = InkCanvas()
   /// The stroke being written on it, drawn by ilmi (`Live.swift`).
   lazy var live = LiveInk(canvas: canvas)
+  /// While the eraser is down on it (a sheet the page draws): its strokes drawn on the glass (`EraseGlass`).
+  var eraseGlass: EraseGlass?
+  /// A telling held back while the page has yet to draw the one before (the eraser's moves come faster than it draws).
+  var tellLater = false
   weak var host: Host?
   var hit = CGRect.zero
   var zoom: CGFloat = 1
@@ -716,6 +733,7 @@ final class PenWatch: UIGestureRecognizer, UIGestureRecognizerDelegate {
     touch = t
     stillAt = t.location(in: view)
     stillSince = t.timestamp
+    LiveClock.shared.touch(t, event)
     ears?.penDown(t)
     ears?.penSample(t, event, ended: false)
   }
@@ -1564,6 +1582,7 @@ class InkPlugin: Plugin, PenEars {
         tell(s)
       }
     }
+    if s.vector, tool.kind == "eraser" { beginGlass(s) }
     carried = nil
     touched = Touched(armed: (armedAt - t.timestamp) * 1000, seen: (now - t.timestamp) * 1000, ink: inkedAt >= t.timestamp ? (inkedAt - t.timestamp) * 1000 : nil)
     touchedAt = t.timestamp
@@ -1730,6 +1749,7 @@ class InkPlugin: Plugin, PenEars {
     case let .erase(before, _):
       let after = s.drawing
       if after != before { step(s, from: before, to: after) }
+      liftGlass(s)
     case let .resize(before, base, at, _, _, moved):
       land(s, base, at, moved)
       let after = s.drawing
@@ -1754,6 +1774,7 @@ class InkPlugin: Plugin, PenEars {
   /// A sheet's drawing set from here, and told as PencilKit's own change is.
   private func put(_ s: Sheet, _ d: PKDrawing) {
     s.drawing = d
+    if let g = s.eraseGlass { g.sync(s.model.strokes, names: names(of: s.model)) }
     if s.vector {
       // (what the sheet holds changed otherwise than by a stroke written: the page shows it as it is, and what
       // PencilKit still shows of it goes once the page has)
@@ -1792,6 +1813,8 @@ class InkPlugin: Plugin, PenEars {
 
   /// Every stroke the eraser came upon between `a` and `b` goes, whole.
   private func erase(_ s: Sheet, from a: CGPoint, to b: CGPoint) {
+    let t0 = ProcessInfo.processInfo.systemUptime
+    defer { eraseNote(hit: (ProcessInfo.processInfo.systemUptime - t0) * 1000) }
     let r = CGFloat(max(tool.width, 1)) / max(s.zoom, 0.01)
     let reach = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y)).insetBy(dx: -r, dy: -r)
     var left: [PKStroke] = []
@@ -1811,8 +1834,60 @@ class InkPlugin: Plugin, PenEars {
       }
       if hit { gone = true } else { left.append(k) }
     }
-    if gone { put(s, PKDrawing(strokes: left)) }
+    if gone {
+      let t1 = ProcessInfo.processInfo.systemUptime
+      put(s, PKDrawing(strokes: left))
+      erasePut.append((ProcessInfo.processInfo.systemUptime - t1) * 1000)
+      if erasedAt == 0 { erasedAt = t1; erasedSaid = s.said; erasedSheet = s.id }
+    }
   }
+
+  // a dev run's: what an eraser's move costs, and how long until what it took is off the glass (ms)
+  private(set) var eraseHit: [Double] = []
+  var erasePut: [Double] = []
+  var erasePatch: [Double] = []
+  var erasePatchPx: [Int] = []
+  var eraseSkipped = 0
+  private(set) var eraseShown: [Double] = []
+  private var erasedAt: TimeInterval = 0
+  private var erasedSaid = 0
+  private var erasedSheet = ""
+  func eraseNote(hit: Double) { eraseHit.append(hit) }
+
+  /// The eraser down on a sheet the page draws: its strokes on the glass, the page holding them unseen.
+  private func beginGlass(_ s: Sheet) {
+    if let g = s.eraseGlass {
+      // (down again before the page had shown its own: the glass is still up, and stays)
+      g.ending = false
+    } else {
+      let g = EraseGlass(canvas: s.canvas, blend: s.blend)
+      g.sync(s.model.strokes, names: names(of: s.model))
+      s.eraseGlass = g
+    }
+    s.canvas.isHidden = false
+    tell(s)
+  }
+
+  /// The eraser lifted: the page shows its own again; the glass goes when it has drawn it (or in a second at most).
+  private func liftGlass(_ s: Sheet) {
+    guard let g = s.eraseGlass, !g.ending else { return }
+    g.ending = true
+    s.tellLater = false
+    tell(s)
+    g.until = s.said
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak s, weak g] in
+      guard let self = self, let s = s, let g = g, g.ending, s.eraseGlass === g else { return }
+      self.endGlass(s)
+    }
+  }
+
+  private func endGlass(_ s: Sheet) {
+    s.eraseGlass?.remove()
+    s.eraseGlass = nil
+    if s.canvas.drawing.strokes.isEmpty, s.glass.isEmpty, !(down && active === s) { s.canvas.isHidden = true }
+    settle(s)
+  }
+  func eraseReset() { eraseHit = []; erasePut = []; erasePatch = []; erasePatchPx = []; eraseSkipped = 0; eraseShown = []; erasedAt = 0 }
 
   /// The eraser's reach, a ring under the Pencil while it erases.
   private func ringEraser(at q: CGPoint, in h: Host) {
@@ -1990,6 +2065,21 @@ class InkPlugin: Plugin, PenEars {
   /// The page is told what a sheet holds now: every stroke's name, in order, and the outline of each it has not been told of.
   private func tell(_ s: Sheet) {
     guard s.vector else { return }
+    let erasing = s.eraseGlass.map { !$0.ending } ?? false
+    if erasing, s.said > s.seen {
+      // (the page has yet to draw the last telling: this one waits for it, and says what is then so; the glass shows it now)
+      if !s.tellLater {
+        s.tellLater = true
+        // (and if the page says nothing of the last, it is told a quarter of a second on all the same)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self, weak s] in
+          guard let self = self, let s = s, s.tellLater else { return }
+          s.tellLater = false
+          self.tell(s)
+        }
+      }
+      return
+    }
+    s.tellLater = false
     s.said += 1
     let all = names(of: s.model)
     var fresh: [Int] = []
@@ -1998,7 +2088,7 @@ class InkPlugin: Plugin, PenEars {
       fresh.append(i)
     }
     s.mark("told \(s.said)\(s.hidden && !s.glass.isEmpty ? " unseen" : "")")
-    var said: [String: Any] = ["kind": "ink", "sheet": s.id, "seq": s.said, "names": all, "add": outlines(of: s.model, at: fresh), "hide": s.hidden ? s.glass : []]
+    var said: [String: Any] = ["kind": "ink", "sheet": s.id, "seq": s.said, "names": all, "add": outlines(of: s.model, at: fresh), "hide": erasing ? all : s.hidden ? s.glass : []]
     if !s.hidden, !s.glass.isEmpty {
       // (the canvas still shows some of it: the page says with its own commit when this telling is on the glass)
       stamp += 1
@@ -2071,7 +2161,11 @@ class InkPlugin: Plugin, PenEars {
   /// or where there is none (`LiveInk.ours` off), PencilKit's own as the pen has it (`sensed`).
   func keep(_ theirs: PKStroke, live: LiveInk) -> PKStroke {
     // (a stroke with a colour was not taken from the Pencil under the ink with none: a dev run's stroke put on the canvas)
-    guard LiveInk.on, theirs.ink.color.cgColor.alpha < 0.001 else { return sensed(theirs) }
+    guard LiveInk.on, theirs.ink.color.cgColor.alpha < 0.001 else {
+      let k = sensed(theirs)
+      lastTurns = turns(k, live)
+      return k
+    }
     guard let ours = live.take(theirs) else {
       // (none drawn for it here, or not where PencilKit's is: PencilKit's own is kept, and a dev run says so)
       liveMissed += 1
@@ -2079,6 +2173,7 @@ class InkPlugin: Plugin, PenEars {
       // (its ink is the one PencilKit was given to draw with no colour: kept in the pen's own)
       var k = sensed(theirs)
       k.ink = PKInk(k.ink.inkType, color: k.ink.color.withAlphaComponent(ink.color.cgColor.alpha))
+      lastTurns = turns(k, live)
       return k
     }
     liveKept += 1
@@ -2089,10 +2184,19 @@ class InkPlugin: Plugin, PenEars {
     let pick = pts.isEmpty ? [] : [0, pts.count / 4, pts.count / 2, 3 * pts.count / 4, pts.count - 1].map { pts[$0] }
     lastPoints = "\(ours.ink.inkType.rawValue) asked \(String(format: "%.3f", tool.width)) n \(pts.count): " + pick.map { String(format: "%.3f×%.3f f%.3f a%.3f z%.3f o%.3f", $0.size.width, $0.size.height, $0.force, $0.altitude, $0.azimuth, $0.opacity) }.joined(separator: " | ")
     lastLags = live.lags
+    lastRounding = live.rounding
+    lastTurns = turns(ours, live)
     return ours
   }
   private func keep(_ theirs: PKStroke, on s: Sheet) -> PKStroke { keep(theirs, live: s.live) }
   private(set) var lastLags: [Double] = []
+  private(set) var lastRounding: Double = 0
+  private(set) var lastTurns: [Double] = []
+  /// A dev run's: how smooth a stroke's outline is as its canvas shows it now (pixels to the point: the canvas's zoom and the screen's).
+  private func turns(_ k: PKStroke, _ live: LiveInk) -> [Double] {
+    guard let c = live.canvas, let g = Geom(k, dark: false) else { return [] }
+    return g.turns(at: Double(c.zoomScale * (c.window?.screen.scale ?? UIScreen.main.scale)))
+  }
   /// A dev run's: the strokes kept as drawn while written, and those that were PencilKit's (none drawn for them).
   private(set) var liveKept = 0
   private(set) var liveMissed = 0
@@ -2162,7 +2266,7 @@ class InkPlugin: Plugin, PenEars {
   /// loses the stroke being written). Once the writing has paused the page is told to show what it holds; when it
   /// says it has (`shown`), the canvas is emptied and hidden. Never a frame with neither.
   private func settle(_ s: Sheet, force: Bool = false) {
-    guard s.vector, !s.clearing else { return }
+    guard s.vector, !s.clearing, s.eraseGlass == nil else { return }
     let now = ProcessInfo.processInfo.systemUptime
     let writing = down && active === s && own == nil && !ours
     let on = s.canvas.drawing.strokes.count
@@ -2279,6 +2383,16 @@ class InkPlugin: Plugin, PenEars {
       if let s = self.sheets[args.sheet] {
         s.seen = max(s.seen, args.seq)
         s.mark("drawn \(args.seq)")
+        if let g = s.eraseGlass, g.ending, args.seq >= g.until {
+          // (the page shows its own again: the eraser's glass goes)
+          self.endGlass(s)
+        }
+        if s.tellLater, s.eraseGlass != nil { s.tellLater = false; self.tell(s) }
+        if self.erasedAt > 0, s.id == self.erasedSheet, args.seq >= self.erasedSaid {
+          // (the page has drawn what an eraser left: its stroke is off the glass about now)
+          self.eraseShown.append((ProcessInfo.processInfo.systemUptime - self.erasedAt) * 1000)
+          self.erasedAt = 0
+        }
         self.bindSignal()
         self.settle(s)
       }
@@ -3083,7 +3197,14 @@ class InkPlugin: Plugin, PenEars {
   @objc public func pencilDev(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(PencilArgs.self)
     DispatchQueue.main.async {
-      if args.what == "live-kit" || args.what == "live-ours" {
+      if args.what == "smooth-old" || args.what == "smooth-new" {
+        // (a dev run's: the outline as it was before 2026-11-22, a half-point walk, places as UIKit rounds them, nothing evened; or as now)
+        let old = args.what == "smooth-old"
+        LiveInk.roughForDev = old
+        if old { ilmi_stroke_tune(0.5, 0.012, 0) } else { ilmi_stroke_tune(0.2, 0.004, -1) }
+      } else if args.what == "erase-reset" {
+        self.eraseReset()
+      } else if args.what == "live-kit" || args.what == "live-ours" {
         // (a dev run's: the stroke being written drawn by PencilKit, as before, or by ilmi, to measure one against the other)
         LiveInk.kitForDev = args.what == "live-kit"
         for s in self.sheets.values { s.canvas.tool = LiveInk.unseen(self.ink) }
@@ -3271,6 +3392,14 @@ class InkPlugin: Plugin, PenEars {
       whole.lastWidths = self.lastWidths
       whole.lastPoints = self.lastPoints
       whole.lastLags = self.lastLags
+      whole.lastRounding = self.lastRounding
+      whole.eraseHit = self.eraseHit
+      whole.erasePut = self.erasePut
+      whole.erasePatch = self.erasePatch
+      whole.erasePatchPx = self.erasePatchPx
+      whole.eraseSkipped = self.eraseSkipped
+      whole.eraseShown = self.eraseShown
+      whole.lastTurns = self.lastTurns
       whole.liveKept = self.liveKept
       whole.liveMissed = self.liveMissed
       whole.liveMisses = self.liveMisses

@@ -22,6 +22,16 @@ int ilmi_stroke_ours(void *made);
 int ilmi_stroke_marker(void *made);
 /// How many corners its outline has: for the notes.
 int ilmi_stroke_weight(void *made);
+/// A pen's or the even line's places, the middle of the outline (`x, y, radius` three doubles each, in the drawing's
+/// points), up to `most`; the count there are. 0 for other inks.
+int ilmi_stroke_places(void *made, double *out, int most);
+/// How smooth a pen's or the even line's outline is on the glass at `k` pixels to the point: its middle walked two
+/// pixels at a time, the turn between neighbouring pieces in degrees, the largest (`out[0]`) and the 99th of a hundred
+/// (`out[1]`). The count of turns; 0 for other inks.
+int ilmi_stroke_turns(void *made, double k, double *out);
+/// The checks' tuning of the outline: the walk's step and flatness (points), and how much it is evened (a sigma in
+/// points; negative: by the step its points were rounded to, as ilmi draws).
+void ilmi_stroke_tune(double step, double flat, double even);
 /// Its outline as `ilmi_stroke_draw` fills it, for a layer that shows it (the stroke being written, 2026-11-21): the
 /// path (retained: the caller releases it) in the drawing's points, its colour (`rgba`, alpha included), and for a
 /// highlighter `round` its half thickness (the path is then also stroked `2 × round` wide, round joins and caps, and

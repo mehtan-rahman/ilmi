@@ -45,6 +45,67 @@ At the simulator's own speed (`r6`, no hold) every case passes the hard checks t
 **Checks.** `zoomfeel`'s are hard checks: no frame with a blank point, none that lost detail, the writing on p. 40 there and on its page in every frame, nothing under the eye moved more than 2 px in one frame after the zoom is laid out (`r5`, `r6`, `r8` done). `feel` (`f1`): fling, jump and scroll as before (no bare frame in a fling of either file). `sharp` `"part": "pdf"` (`s1`) done. `book-zoom.test.ts`'s zoom test now holds the middle of the view, not the top line. Typecheck clean; npm test 2672 passed and 2 skipped in 170 files (the zoom test failed before it was changed, as it should); cargo test 80 passed.
 
 **Not seen.** A real iPad, its 120 Hz and its WebKit; pdf.js on an iPad's processor (the `slow` hold only stands in for it, in proportion to pixels); a PDF with real type and pictures at 300 MB; GoodNotes side by side. The screen recordings of this headless simulator hold a few frames a second, so the measure is the page's own frames, not the glass: a blink that WebKit's compositor alone made would not show. The bar's zoom is a step, not an animation.
+## 2026-11-22 — a stroke smooth at any zoom; the eraser on a PDF's page on the glass at once
+
+The user, with a Pencil on the iPad, after d7345c6: the pen is a lot better, but writing is "a little bit jaggedy" (a notebook at 250%: crisp edges, angular shapes, curves as short straight pieces meeting at corners), and the eraser lags.
+
+**Why strokes were angular (checked, not guessed).** Three candidates:
+- **Live:** the stroke being written is a `PKStroke` of its touches drawn by `stroke.m`, the same as the one kept. The live layer adds no straight lines of its own.
+- **Kept:** the outline walks PencilKit's B-spline every 0.5 pt and keeps places within 0.012 pt (0.06 px at 250%), so it follows the curve it is given.
+- **Raster:** the kept stroke is not a picture scaled up. The notebook's sheets are painted at the screen's pixels times the zoom, which is why the edges are crisp.
+
+So the curve itself was angular, and the cause is `Live.swift` taking a touch's place from `UITouch.location`, which UIKit rounds to the screen's points, and not `preciseLocation`. Divided by the zoom (2.5), a stroke's places sit on a 0.4 pt grid, and a cubic B-spline over 240 Hz points that close together keeps the steps. A Mac harness (`gaps/smooth/harness2.m`) runs `stroke.m` itself on a looped line as a Pencil samples it, and measures the turn between neighbouring 2-pixel pieces of the outline's middle (the true curve turns 8.9° per piece). 99th-percentile turns, rounded to points / rounded to pixels / precise:
+- 100%: 62° / 28° / 8.9°
+- 250%: 53° / 24° / 10°
+- 400%: 32° / 18° / 16°
+
+A second, smaller cause showed at 400% even with precise places: the half-point walk is visible as straight pieces.
+
+**Fix.**
+- **Touch places:** `preciseLocation` for every coalesced and predicted touch.
+- **Finer walk:** the outline walks every 0.2 pt and keeps places within 0.004 pt.
+- **Strokes already saved:** a stroke whose points were rounded (detected per stroke: nine in ten moves are whole numbers of one step) has its outline's middle evened along the path by a Gaussian whose sigma is twice that step. Radii are untouched, so nothing is drawn wider. It moves by about half the rounding step, less than the rounding error it takes out. Precise strokes are not evened, so live and kept stay the same stroke.
+
+After, harness 99th-percentile turns, rounded to points / pixels / precise:
+- 100%: 10.2° / 10.8° / 9.2°
+- 250%: 10.1° / 10.8° / 8.9°
+- 400%: 10.3° / 10.8° / 9.5°
+
+Moved: up to 0.9 px for points (written at 100%; today's strays 0.87 px from the true curve), 0.4 px for pixels.
+
+**perfect-freehand compared** (MIT, Stephen Ruiz; streamline, outline and quadratic midpoints ported into the harness, not into the app): on rounded points it stays at 53–54° (points) and 25° (pixels), and strays and moves more. Its streamline is too weak to take a rounding step out, and its quadratic edges only smooth below a pixel. Not taken; no GPL code looked at.
+
+**On the Air simulator** (`written` `"part": "smooth"`; the rig's input itself turns 12° at each of its points, and the simulator does not round touches, `lastRounding` 0). 99th-percentile turn on the glass, old outline / new:
+
+| | written | a stroke from before (rounded) |
+|---|---|---|
+| 100% | 43.7° / 26.1° | 80.1° / 32.2° |
+| 250% | 36.9° / 30.4° | 65.4° / 32.3° |
+| 400% | 81.1° / 31.2° | 68.1° / 29.6° |
+
+Captures: `gaps/runs/s6-smooth/crops-{1,2-5,4}.png`. The live check (every ink, the dark theme) still passes with the same widths and at most 25/255 between live and kept.
+
+**The eraser.** Measured (`written` `"part": "erase"`: 300 strokes and six red ones on a page, the eraser drawn across under the frame clock, the recording scanned for each red stroke leaving the glass), touch to off the glass:
+- **Notebook:** within a frame already, by stroke −12 to 5 ms, by part −2 to 15. Hit test ≤ 1 ms, repaint 0.1 ms.
+- **PDF page:** the lag.
+
+| PDF page | before (ms, each red stroke) | after (ms) |
+|---|---|---|
+| by stroke | 36, 52, 119, 119, 169, 186 | −6, −6, 11, 11, 27, 27 |
+| by part | 52, 52, 52, 69, 102, 186 | −1, 16, 16, 16, 33, 83 |
+
+The page draws its ink in WebKit. Told of each eraser move (every name it holds each time), it drew it 37–56 ms later, and the tellings queued faster than it drew them. Now:
+- **The glass:** while the eraser is down, the sheet's strokes are drawn natively in a layer inside its canvas (`EraseGlass`, by name, with `LiveInk.paint`), and the page holds them unseen. What the eraser takes goes from that layer in the same turn.
+- **Tellings:** one at a time (`tellLater`).
+- **The lift:** the page shows its own again, and the layer goes when it says it has.
+
+The page's ink, counted every frame through both erases, including the hand-off at the touch and at the lift, stays within 2% of its median: no blank frame, no jump. On a notebook, a repaint over four million pixels is now painted at once with fewer pixels; before, it was left to the pictures. Not exercised: my strokes were small.
+
+**Found on the way.** `ink`'s eraser check ("takes it out whole") failed now and then since before this (v1, v2, r7): the eraser's mode is kept on the device, and a run that had tried the part eraser left it cutting, so the stroke was cut in two and its count did not drop. The `erase` part now leaves it as it starts, and `ink` sets it before its check.
+
+**Checks.** Air simulator: `pdfink` live (every ink, the dark theme) and `pdfink` whole with books; `written`, twice; `sharp`; `pageink` with the Mac; `ink` (after the mode fix above); all done. The phone, twice, and its `written`: done. The Mac's `touch`, `ink`, `written`, `book`, `sioyek`: done. The Air's `touch` failed at "a row held and dragged moves", a sidebar drag with no ink in it, as in earlier rounds. Typecheck clean; npm test 2672 passed and 2 skipped; cargo test 79 of 80 whole, the one left (`devcloud`'s large file to drive, which reads counters other tests move at the same time) passed alone.
+
+**Not seen.** No real Pencil or iPad. Whether a device's `location` is rounded to points or pixels is inferred from UIKit's documentation and the user's capture, not measured: `lastRounding` in `dev_ink_state` says it on a device. The eraser's lag on the user's notebook, which was within a frame here: a device's CPU or much larger strokes may differ. The large-repaint path on a notebook. Pressure with the new places.
 
 ---
 

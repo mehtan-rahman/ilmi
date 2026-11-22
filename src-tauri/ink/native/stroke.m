@@ -18,8 +18,11 @@
 // - a fountain pen and a pencil: a nib and a grain of PencilKit's own. Those are not imitated: a picture of the
 //   stroke, by PencilKit, at twice the pixels it is shown with, is drawn in its place.
 //
-// The outline. The path is PencilKit's own curve (a B-spline through its control points), walked half a point
-// at a time; a run of places that is straight, its width changing evenly, is kept as its two ends. Each place
+// The outline. The path is PencilKit's own curve (a B-spline through its control points), walked a fifth of a
+// point at a time (2026-11-22; half a point showed as straight pieces at 400%); a stroke whose points were rounded
+// as they were taken (UIKit's rounded `location`, before 2026-11-22) has the middle of its places evened along the
+// path by twice the step it was rounded to, its radii as they are; a run of places that is straight, its width
+// changing evenly, is kept as its two ends. Each place
 // has a radius. From each place to the next the nib sweeps a band, and a disc at every place rounds the ends, the
 // corners and the inner side of a tight curve. All of it is one path filled once by the nonzero rule, every piece
 // wound the same way: one stroke is one flat shape, with no seam and no hole where its pieces overlap.
@@ -36,12 +39,71 @@
 
 #define STROKE_AVAILABLE @available(macOS 11.0, iOS 14.0, *)
 
-/// How far apart the places of a path are, in the stroke's points.
-static const CGFloat STEP = 0.5;
+/// How far apart the places of a path are, in the stroke's points (a fifth of a point: at four times its size a
+/// curve is still not seen as straight pieces; 2026-11-22, was half a point).
+static CGFloat STEP = 0.2;
 /// A place may be left out when the outline without it is nowhere further than this from the outline with it.
-static const CGFloat FLAT = 0.012;
-
+static CGFloat FLAT = 0.004;
 typedef struct { CGFloat x, y, r; } Place;
+
+/// How far along the path the places are evened, as many times the step its points were rounded to (a Gaussian's
+/// sigma); a negative `EVEN_FIXED` is unset, else that sigma in points for every stroke (the checks' tuning).
+static CGFloat EVEN_BY = 2;
+static CGFloat EVEN_FIXED = -1;
+
+void ilmi_stroke_tune(double step, double flat, double even) { STEP = step; FLAT = flat; EVEN_FIXED = even; }
+
+/// The step a stroke's points were rounded to, in its own points, or 0 when they were not: UIKit gives a touch's
+/// place rounded to the screen's points (or pixels) unless asked for the precise one, which ilmi did not ask for until
+/// 2026-11-22. Rounded on the glass and divided by the zoom it was written at, every move from one point to the next
+/// is a whole number of one step. Found as the least move, and kept when nine in ten moves are whole numbers of it.
+API_AVAILABLE(macos(11.0), ios(14.0))
+static CGFloat roundedTo(PKStrokePath *path) {
+  NSUInteger n = path.count;
+  if (n < 12) return 0;
+  CGFloat *d = malloc(2 * n * sizeof(CGFloat));
+  size_t m = 0;
+  CGPoint was = [path objectAtIndexedSubscript:0].location;
+  for (NSUInteger i = 1; i < n; i++) {
+    CGPoint p = [path objectAtIndexedSubscript:i].location;
+    CGFloat dx = fabs(p.x - was.x), dy = fabs(p.y - was.y);
+    if (dx > 1e-4) d[m++] = dx;
+    if (dy > 1e-4) d[m++] = dy;
+    was = p;
+  }
+  CGFloat q = 0;
+  if (m >= 16) {
+    CGFloat least = INFINITY;
+    for (size_t i = 0; i < m; i++) least = MIN(least, d[i]);
+    if (least > 0.02 && least < 1.5) {
+      size_t whole = 0;
+      for (size_t i = 0; i < m; i++) { CGFloat k = d[i] / least; if (fabs(k - round(k)) < 0.03) whole++; }
+      if (whole * 10 >= m * 9) q = least;
+    }
+  }
+  free(d);
+  return q;
+}
+
+/// The places' middle evened along the path (they are `STEP` apart): each the mean of those within three sigmas
+/// either side, weighted as a Gaussian, the window as wide on both sides (so an end stays where it is). The radii
+/// are left as they are: evening never makes a stroke wider.
+static void evened(Place *at, size_t n, CGFloat even) {
+  if (even <= 0 || n < 3) return;
+  long w = (long)ceil(3 * even / STEP);
+  if (w < 1) return;
+  CGFloat *wt = malloc((w + 1) * sizeof(CGFloat));
+  for (long k = 0; k <= w; k++) wt[k] = exp(-0.5 * pow(k * STEP / even, 2));
+  CGFloat *x = malloc(n * sizeof(CGFloat)), *y = malloc(n * sizeof(CGFloat));
+  for (size_t i = 0; i < n; i++) {
+    long reach = MIN(w, MIN((long)i, (long)(n - 1 - i)));
+    CGFloat sx = 0, sy = 0, sw = 0;
+    for (long k = -reach; k <= reach; k++) { CGFloat q = wt[labs(k)]; sx += q * at[i + k].x; sy += q * at[i + k].y; sw += q; }
+    x[i] = sx / sw; y[i] = sy / sw;
+  }
+  for (size_t i = 0; i < n; i++) { at[i].x = x[i]; at[i].y = y[i]; }
+  free(x); free(y); free(wt);
+}
 
 API_AVAILABLE(macos(11.0), ios(14.0))
 @interface IlmiStroke : NSObject
@@ -55,6 +117,8 @@ API_AVAILABLE(macos(11.0), ios(14.0))
 /// A highlighter's: the path is what its nib's middle line sweeps, each piece wound alike, and `round` half the nib's thickness, laid round all of it.
 @property (nonatomic) CGFloat round;
 @property (nonatomic) CGFloat alpha;
+/// A pen's and the even line's places (x, y, radius, in the drawing's points), as the outline is made from them.
+@property (nonatomic, strong) NSData *places;
 /// A stroke PencilKit draws: the stroke, and the picture of it last made, with the pixels to the point it was made at.
 @property (nonatomic, strong) PKStroke *theirs;
 @property (nonatomic) BOOL dark;
@@ -220,6 +284,8 @@ void *ilmi_stroke_make(void *stroke, int dark) {
     CGAffineTransform m = s.transform;
     // how much the stroke's own transform makes of a length
     CGFloat grow = sqrt(fabs(m.a * m.d - m.b * m.c));
+    // points rounded as they were taken: the steps evened out (twice the step, a Gaussian along the path)
+    CGFloat even = EVEN_FIXED >= 0 ? EVEN_FIXED * grow : EVEN_BY * roundedTo(path) * grow;
     NSUInteger count = path.count;
     if (marker) {
       // the nib's middle line at each place, and what it sweeps from each place to the next
@@ -284,7 +350,9 @@ void *ilmi_stroke_make(void *stroke, int dark) {
       PKStrokePoint *last = [path interpolatedPointAt:count - 1];
       if (n == 0 || hypot(at[n - 1].x - CGPointApplyAffineTransform(last.location, m).x, at[n - 1].y - CGPointApplyAffineTransform(last.location, m).y) > 0.01) add(last);
     }
+    evened(at, n, even);
     n = thinned(at, n);
+    g.places = [NSData dataWithBytes:at length:n * sizeof(Place)];
     int corners = 0;
     g.path = nibOutline(at, n, &corners);
     g.d = nibSvg(at, n);
@@ -329,6 +397,53 @@ int ilmi_stroke_ours(void *made) {
 
 int ilmi_stroke_marker(void *made) {
   if (STROKE_AVAILABLE) { return made && ((__bridge IlmiStroke *)made).round > 0; }
+  return 0;
+}
+
+int ilmi_stroke_places(void *made, double *out, int most) {
+  if (STROKE_AVAILABLE) {
+    if (!made) return 0;
+    NSData *d = ((__bridge IlmiStroke *)made).places;
+    int n = (int)(d.length / sizeof(Place));
+    const Place *at = d.bytes;
+    for (int i = 0; i < n && i < most; i++) { out[3 * i] = at[i].x; out[3 * i + 1] = at[i].y; out[3 * i + 2] = at[i].r; }
+    return n;
+  }
+  return 0;
+}
+
+int ilmi_stroke_turns(void *made, double k, double *out) {
+  if (STROKE_AVAILABLE) {
+    out[0] = out[1] = 0;
+    if (!made) return 0;
+    NSData *d = ((__bridge IlmiStroke *)made).places;
+    size_t n = d.length / sizeof(Place);
+    const Place *at = d.bytes;
+    if (n < 3) return 0;
+    // the middle walked two pixels at a time, at k pixels to the point
+    size_t cap = 4096, m = 0;
+    CGFloat *rx = malloc(cap * sizeof(CGFloat)), *ry = malloc(cap * sizeof(CGFloat));
+    rx[m] = at[0].x * k; ry[m++] = at[0].y * k;
+    CGFloat carry = 0, step = 2;
+    for (size_t i = 1; i < n; i++) {
+      CGFloat ax = at[i - 1].x * k, ay = at[i - 1].y * k, bx = at[i].x * k, by = at[i].y * k, len = hypot(bx - ax, by - ay), t = step - carry;
+      while (t <= len) {
+        if (m == cap) { cap *= 2; rx = realloc(rx, cap * sizeof(CGFloat)); ry = realloc(ry, cap * sizeof(CGFloat)); }
+        rx[m] = ax + (bx - ax) * t / len; ry[m++] = ay + (by - ay) * t / len; t += step;
+      }
+      carry = len - (t - step);
+    }
+    size_t q = 0;
+    CGFloat *turn = malloc(MAX(m, 1) * sizeof(CGFloat));
+    for (size_t i = 2; i < m; i++) {
+      CGFloat a1 = atan2(ry[i - 1] - ry[i - 2], rx[i - 1] - rx[i - 2]), a2 = atan2(ry[i] - ry[i - 1], rx[i] - rx[i - 1]);
+      turn[q++] = fabs(remainder(a2 - a1, 2 * M_PI)) * 180 / M_PI;
+    }
+    for (size_t i = 1; i < q; i++) { CGFloat v = turn[i]; long j = (long)i - 1; while (j >= 0 && turn[j] > v) { turn[j + 1] = turn[j]; j--; } turn[j + 1] = v; }
+    if (q) { out[0] = turn[q - 1]; out[1] = turn[(size_t)(q * 0.99)]; }
+    free(rx); free(ry); free(turn);
+    return (int)q;
+  }
   return 0;
 }
 

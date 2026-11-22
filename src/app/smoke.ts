@@ -12756,6 +12756,8 @@ export async function smokeInk(): Promise<void> {
     log(`page: ${k1.strokes} strokes; as rows ${k1.rows} bytes (${Math.round(k1.rows / k1.strokes)} a stroke); as one drawing ${k1.drawing} bytes; as a PNG ${pic1.length} bytes (${pngSize(pic1).w}×${pngSize(pic1).h})`);
 
     // ── the eraser, by the row: a stroke it crosses goes whole; undo and redo ──
+    // (its mode is kept on the device: a run before may have left it cutting strokes, `part`)
+    tools.setEraser('stroke');
     const tap = (el: Element) => ask('tap', ...mid(el));
     tap(btn('[data-ink-tool="eraser"]'));
     await poll(async () => (await state()).tool?.kind === 'eraser' && btn('[data-ink-tool="eraser"]').getAttribute('aria-pressed') === 'true', 'a tap on the eraser: the canvases hold it', 25000);
@@ -16860,8 +16862,9 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
     const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
-    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure') {
-      if (part === 'more') await writtenMore(log, vault.root);
+    if (part === 'more' || part === 'long' || part === 'grow' || part === 'tabs' || part === 'tall' || part === 'pressure' || part === 'smooth' || part === 'erase') {
+      if (part === 'smooth' || part === 'erase') await writtenSmoothErase(log, part);
+      else if (part === 'more') await writtenMore(log, vault.root);
       else if (part === 'tabs') await writtenTabs(log);
       else if (part === 'tall') await writtenTall(log);
       else if (part === 'pressure') await writtenPressure(log);
@@ -18500,6 +18503,228 @@ async function writtenTall(log: (s: string) => void): Promise<void> {
  * as much, and thinner than PencilKit's thinnest. What each place keeps is read back from the store and its
  * outline's nib (the radii of the discs `ink_shapes` says) compared: the three are one stroke.
  */
+/**
+ * How smooth a stroke is, and how soon the eraser takes one off the glass (2026-11-22; parts of `ILMI_SMOKE=written`
+ * on an iPad, under the touch rig, alone with `ILMI_PART=smooth` or `erase`).
+ *
+ * `smooth`: a notebook of blank paper at 100%, 250% and 400%; at each a cursive word written by the rig's finger at a
+ * hand's size on the glass (captured while the finger rests and after it lifts), and a stroke put on the sheet as one
+ * written before 2026-11-22 was kept (its points rounded to the glass's points at that zoom). For each, the turn
+ * between neighbouring two-pixel pieces of its middle as the glass shows it (`lastTurns`), with the outline as it was
+ * (`smooth-old`: a half-point walk, places as UIKit rounds them, nothing evened) and as it is (`smooth-new`).
+ *
+ * `erase` (`ILMI_WHERE` `notebook` or `pdf`, `ILMI_EMODE` `stroke` or `part`): a page of 300 strokes and six red ones
+ * standing across a line, the eraser drawn along that line under the frame clock (`LiveClock`); `erasegeo:` says
+ * where the red ones are in the screen's pixels, for reading the recording frame by frame; the canvases say what
+ * each move cost (`eraseHit`, `erasePut`, `erasePatch`, `eraseShown`).
+ */
+async function writtenSmoothErase(log: (s: string) => void, part: string): Promise<void> {
+  const q = <T extends Element>(sel: string, at: ParentNode = document) => at.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, at: ParentNode = document) => Array.from(at.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
+  const { createWritten, setSetup } = await import('./written.js');
+  const { setBookZoom } = await import('./vault.js');
+  const tools = await import('./inkTools.js');
+  const ink = await import('./ink.js');
+  type Dev = InkState & { lastTurns?: number[]; lastRounding?: number; eraseHit?: number[]; erasePut?: number[]; erasePatch?: number[]; erasePatchPx?: number[]; eraseSkipped?: number; eraseShown?: number[]; surfaces?: SurfaceNow[] };
+  const state = () => invoke<Dev>('dev_ink_state');
+  const docsNow = () => useApp.getState().docs;
+  const bookOf = (p: string) => qa<HTMLElement>('.book').find((b) => b.dataset.path === p) ?? null;
+  const dpr = window.devicePixelRatio || 1;
+  useApp.getState().setTheme('light');
+  tools.setSnap(false);
+  tools.setSense(1);
+  const stat = (xs: number[] | undefined) => {
+    const v = [...(xs ?? [])].sort((a, b) => a - b);
+    return v.length ? `${v.length}: middle ${v[v.length >> 1]!.toFixed(1)}, 90th ${v[Math.floor(v.length * 0.9)]!.toFixed(1)}, most ${v[v.length - 1]!.toFixed(1)}` : 'none';
+  };
+
+  // a notebook of blank paper, open, its first sheet's place on the glass known
+  const notebook = async (name: string) => {
+    const NB = `fleeting/${name}.md`;
+    await createWritten('fleeting', name);
+    const ID = await poll(() => docsNow()[NB]?.written?.id, `a notebook, ${name}`, 10000);
+    await setSetup(NB, { paper: 'blank' });
+    openNode(NB);
+    const b = await poll(() => { const k = bookOf(NB); return k && k.getClientRects().length && q(PAPER, k) ? k : null; }, 'it opens', 15000);
+    const sheet = `p.${ID}.${docsNow()[NB]!.written!.sheets[0]!}`;
+    await poll(async () => (await surfaceNow(b))?.sheets.some((l) => l.id === sheet), 'its sheet is on a surface', 20000);
+    return { NB, ID, b, sheet };
+  };
+  /** A point of a notebook's first sheet (its points) as a fraction of the window, as the rig takes it. */
+  const onGlass = async (b: HTMLElement, sheet: string) => {
+    const f = (await surfaceNow(b))!;
+    const l = f.sheets.find((x) => x.id === sheet)!;
+    const k = l.device.w / f.paper.w;
+    return { k, at: (x: number, y: number): [number, number] => [(l.device.x + x * k) / (window.innerWidth * dpr), (l.device.y + y * k) / (window.innerHeight * dpr)] };
+  };
+  const zoomTo = async (NB: string, b: HTMLElement, z: number) => {
+    setBookZoom(NB, z);
+    await poll(async () => { const f = await surfaceNow(b); return f && Math.abs(f.zoom - z) < 0.02 && f.phase === 'rest' ? f : null; }, `at ${Math.round(z * 100)}%`, 15000);
+    await bringPage(b, 1, 20, 0);
+    // (and to the sheet's left edge: zoomed past the pane it is shown from its middle)
+    const { surfaceGo } = await import('./surface.js');
+    await surfaceGo(surfaceIn(b)!, { page: 1, y: 0, x: 0 });
+    await poll(async () => { const f = await surfaceNow(b); return f && f.phase === 'rest' && f.sheets[0]!.device.x >= -1 ? f : null; }, 'the sheet\'s left edge in the pane', 10000);
+    await sleep(800);
+  };
+
+  if (part === 'smooth') {
+    const { NB, b, sheet } = await notebook('smooth ink');
+    tools.setTool('pen');
+    tools.setInk('pen');
+    tools.setRecent('pen', '#000000');
+    tools.setWidth('pen', 0.6);
+    await poll(async () => { const t = (await state()).tool; return t?.kind === 'pen' && Math.abs(t.width - 0.6) < 0.01; }, 'a pen 0.6 pt wide', 8000);
+    await invoke('dev_ink_pen', { on: true });
+    const report: string[] = [];
+    let row = 0;
+    for (const how of ['old', 'new']) {
+      await invoke('dev_ink_pencil', { what: `smooth-${how}` });
+      for (const z of [1, 2.5, 4]) {
+        await zoomTo(NB, b, z);
+        const g = await onGlass(b, sheet);
+        // a cursive word, loops 9 points across on the glass whatever the zoom, written from 40 points in
+        const r = 4.5 / (g.k / dpr), x0 = 40 / (g.k / dpr) + 4, y0 = (60 + 70 * (row % 6)) / (g.k / dpr) + 4;
+        row++;
+        const pts: number[] = [];
+        for (let i = 0; i <= 4 * 30; i++) {
+          const t = (i / 30) * 2 * Math.PI;
+          const [fx, fy] = g.at(x0 + r * (t / 2.2) - r * Math.sin(t), y0 - r * Math.cos(t) * 1.4);
+          pts.push(fx, fy);
+        }
+        const n0 = (await surfaceNow(b))!.sheets.find((l) => l.id === sheet)!.strokes;
+        const tag = `smooth-${how}-${String(z).replace('.', '-')}`;
+        const box = (name: string) => log(`smoothgeo: ${JSON.stringify({ shot: name, x: g.at(x0 - r - 2, 0)[0] * window.innerWidth * dpr, y: g.at(0, y0 - 1.6 * r - 2)[1] * window.innerHeight * dpr, w: (4 * 2 * Math.PI * r / 2.2 + 2 * r + 4) * g.k, h: (3.2 * r + 4) * g.k })}`);
+        ask('rest', ...pts, 1.6);
+        await poll(async () => (await state()).down, 'the finger writes', 20000);
+        await sleep(4200);
+        box(`${tag}-down`);
+        await shot(`${tag}-down`);
+        await poll(async () => { const s = await state(); const f = (s.surfaces ?? []).find((x) => x.sheets.some((l) => l.id === sheet)); return !s.down && f && f.sheets.find((l) => l.id === sheet)!.strokes === n0 + 1; }, 'lifted and kept', 30000);
+        await sleep(900);
+        box(`${tag}-rest`);
+        await shot(`${tag}-rest`);
+        const w = await state();
+        const written = w.lastTurns ?? [];
+        // and one put on the sheet as one written before was kept: its points rounded to the glass's points at this zoom
+        const qz = 1 / (g.k / dpr);
+        const old: number[][] = [];
+        for (let i = 0; i <= 4 * 120; i++) {
+          const t = (i / 120) * 2 * Math.PI;
+          const x = x0 + r * (t / 2.2) - r * Math.sin(t), y = y0 + 3.6 * r - r * Math.cos(t) * 1.4;
+          old.push([Math.round(x / qz) * qz, Math.round(y / qz) * qz, 2.3, 1]);
+        }
+        await invoke('dev_ink_stroke', { sheet, rest: false, hand: true, points: old });
+        await poll(async () => (await surfaceNow(b))!.sheets.find((l) => l.id === sheet)!.strokes === n0 + 2, 'the stroke from before is on the sheet', 15000);
+        await sleep(900);
+        log(`smoothgeo: ${JSON.stringify({ shot: `${tag}-before`, x: g.at(x0 - r - 2, 0)[0] * window.innerWidth * dpr, y: g.at(0, y0 + 2 * r - 2)[1] * window.innerHeight * dpr, w: (4 * 2 * Math.PI * r / 2.2 + 2 * r + 4) * g.k, h: (3.2 * r + 4) * g.k })}`);
+        await shot(`${tag}-before`);
+        const handed = (await state()).lastTurns ?? [];
+        const line = `smooth: ${how}, ${Math.round(z * 100)}%: written ${written.map((v) => v.toFixed(1)).join('° / ')}° (touch rounded by up to ${(w.lastRounding ?? 0).toFixed(3)} pt); from before ${handed.map((v) => v.toFixed(1)).join('° / ')}°`;
+        log(line);
+        report.push(line);
+      }
+    }
+    await invoke('dev_ink_pencil', { what: 'smooth-new' });
+    await invoke('dev_ink_pen', { on: false });
+    await ink.settled();
+    return;
+  }
+
+  // ── erase ──
+  const where = ((await invoke<string | null>('dev_env', { name: 'ILMI_WHERE' })) ?? '') || 'notebook';
+  const mode = ((await invoke<string | null>('dev_env', { name: 'ILMI_EMODE' })) ?? '') || 'stroke';
+  let sheet = '';
+  let at: (x: number, y: number) => [number, number];
+  let kk = 1;
+  let x0 = 0, y0 = 0;
+  if (where === 'notebook') {
+    const nb = await notebook('erase lag');
+    sheet = nb.sheet;
+    await zoomTo(nb.NB, nb.b, 2.5);
+    const g = await onGlass(nb.b, sheet);
+    at = g.at; kk = g.k;
+    x0 = 30; y0 = 30;
+  } else {
+    openNode(PAGEINK_BOOK);
+    const pb = await poll(() => { const x = bookOf(PAGEINK_BOOK); return x && x.getClientRects().length && q(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, x) ? x : null; }, 'the sample\'s chapter', 60000);
+    const hash = await poll(() => q<HTMLElement>('.pdf-view', pb)!.dataset.hash, 'its hash', 10000);
+    const pageEl = q<HTMLElement>(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, pb)!;
+    pageEl.scrollIntoView({ block: 'start' });
+    sheet = `p.${hash}.${PAGEINK_PAGE}`;
+    await poll(async () => (await state()).sheets.some((x) => x.id === sheet), 'its page has a sheet', 20000);
+    await sleep(1500);
+    // (the page's size in points: the scale it is drawn at is the page's own word, as `pdfink` reads it)
+    const pr = pageEl.getBoundingClientRect();
+    const scale0 = Number(pageEl.style.getPropertyValue('--total-scale-factor')) || pr.width / 612;
+    kk = scale0 * dpr;
+    at = (x, y) => [(pr.left + x * scale0) / window.innerWidth, (pr.top + y * scale0) / window.innerHeight];
+    x0 = 60; y0 = 120;
+  }
+  // a page of writing: 300 short wavy strokes in rows, put on the sheet as they are; then six red ones, standing
+  const vw = (window.innerWidth * dpr) / kk, vh = (window.innerHeight * dpr) / kk;
+  const fill: number[][][] = [];
+  for (let rI = 0; rI < 25; rI++) for (let cI = 0; cI < 12; cI++) {
+    const sx = x0 + cI * Math.min(30, (vw - 2 * x0) / 12), sy = y0 + 40 + rI * Math.min(16, (vh - y0 - 80) / 25);
+    fill.push(Array.from({ length: 12 }, (_, i) => [sx + i * 1.8, sy + 3 * Math.sin(i * 0.9 + rI + cI), 2.6, 1]));
+  }
+  tools.setTool('pen');
+  tools.setInk('pen');
+  tools.setRecent('pen', '#203040');
+  await sleep(400);
+  for (const pts of fill) await invoke('dev_ink_stroke', { sheet, rest: false, hand: false, points: pts });
+  tools.setRecent('pen', '#ff0000');
+  tools.setWidth('pen', 2.2);
+  await sleep(500);
+  const reds: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    const x = x0 + 20 + i * Math.min(40, (vw - 2 * x0 - 40) / 6);
+    reds.push(x);
+    await invoke('dev_ink_stroke', { sheet, rest: false, hand: false, points: Array.from({ length: 9 }, (_, j) => [x, y0 - 10 + j * 5, 3.3, 1]) });
+  }
+  await poll(async () => (await state()).sheets.find((x) => x.id === sheet)?.strokes === 306 || ((await state()).surfaces ?? []).some((f) => f.sheets.some((l) => l.id === sheet && l.strokes === 306)), '306 strokes on the sheet', 60000);
+  await ink.settled();
+  await sleep(2500);
+  log('shot: erase-before');
+  await sleep(2500);
+  const yc = y0 + 10;
+  log(`erasegeo: ${JSON.stringify({ where, mode, k: kk, dpr, reds: reds.map((x) => ({ x: at(x, 0)[0] * window.innerWidth * dpr, top: at(0, y0 - 10)[1] * window.innerHeight * dpr, cross: at(0, yc)[1] * window.innerHeight * dpr, bottom: at(0, y0 + 30)[1] * window.innerHeight * dpr })) })}`);
+  tools.setTool('eraser');
+  tools.setEraser(mode as import('./inkTools.js').EraserMode);
+  await poll(async () => { const t = (await state()).tool; return t?.kind === 'eraser' && (t.mode ?? 'stroke') === mode; }, `the eraser, ${mode}`, 8000);
+  log(`erasewidth: ${(await state()).tool?.width ?? 0}`);
+  await invoke('dev_ink_pen', { on: true });
+  await invoke('dev_ink_pencil', { what: 'erase-reset' });
+  await invoke('dev_ink_pencil', { what: 'clock-on' });
+  await sleep(700);
+  const path: number[] = [];
+  for (let x = reds[0]! - 25; x <= reds[5]! + 25; x += 6) path.push(...at(x, yc));
+  ask('rest', ...path, 0.6);
+  await poll(async () => !(await state()).down && ((await state()).eraseHit ?? []).length > 3, 'the eraser drawn across', 30000);
+  await sleep(1500);
+  await invoke('dev_ink_pencil', { what: 'clock-off' });
+  const d = await state();
+  log(`erase: ${where}, ${mode}: hit test ${stat(d.eraseHit)} ms; strokes handed ${stat(d.erasePut)} ms; drawn again at once ${stat(d.erasePatch)} ms over ${stat(d.erasePatchPx?.map((v) => v / 1e6))} Mpx, ${d.eraseSkipped ?? 0} left to the pictures; the page drew it ${stat(d.eraseShown)} ms after`);
+  await invoke('dev_ink_pen', { on: false });
+  // (the eraser's mode is kept on the device: left as it starts, for the runs after)
+  tools.setEraser('stroke');
+  tools.setTool('pen');
+  tools.setRecent('pen', '#000000');
+  await ink.settled();
+}
+
 async function writtenPressure(log: (s: string) => void): Promise<void> {
   type StoreFs = import('../vault/index.js').StoreFs;
   type InkStroke = import('../vault/index.js').InkStroke;

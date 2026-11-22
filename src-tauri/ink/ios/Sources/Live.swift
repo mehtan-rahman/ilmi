@@ -24,6 +24,8 @@ final class LiveInk {
   /// Whether it is so now: `ours`, unless a dev run measures PencilKit's own against it (`pencilDev` `live-kit`).
   static var on: Bool { ours && !kitForDev }
   static var kitForDev = false
+  /// A dev run's: the touch's place as UIKit rounds it, as before 2026-11-22, to compare.
+  static var roughForDev = false
 
   /// The layer the stroke is drawn in, inside the canvas's own.
   private let layer = CALayer()
@@ -38,16 +40,15 @@ final class LiveInk {
   /// A page in the dark theme draws its ink as in the light and turns it as the page's print is turned
   /// (`invert(0.92) hue-rotate(180deg)`, `pdf.css`): the stroke being written on it is turned the same way, and not as
   /// PencilKit shows a colour on a dark canvas (`stroke.m`'s `colorOf`), which is what a notebook's sheets show.
-  private var turned: Bool { asPage && canvas?.overrideUserInterfaceStyle == .dark }
   /// The page's turn as one matrix on sRGB: invert(0.92) is 0.92 − 0.84c, hue-rotate(180deg) is `hue` (rows sum to 1).
   private static let hue: [[CGFloat]] = [[-0.574, 1.430, 0.144], [0.426, 0.430, 0.144], [0.426, 1.430, -0.856]]
-  private static func turn(_ c: CGColor) -> CGColor {
+  static func turn(_ c: CGColor) -> CGColor {
     guard let s = c.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil)?.components, s.count >= 3 else { return c }
     let v = hue.map { row in min(1, max(0, 0.92 - 0.84 * (row[0] * s[0] + row[1] * s[1] + row[2] * s[2]))) }
     return CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: v + [s.count > 3 ? s[3] : 1]) ?? c
   }
   private static let ci = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, .outputColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
-  private static func turn(_ img: CGImage) -> CGImage {
+  static func turn(_ img: CGImage) -> CGImage {
     let m = hue.map { row in row.map { -0.84 * $0 } }
     let f = CIFilter(name: "CIColorMatrix")!
     f.setValue(CIImage(cgImage: img), forKey: kCIInputImageKey)
@@ -77,6 +78,8 @@ final class LiveInk {
   /// and from the touch to the frame it was drawn in, the last few (ms).
   private(set) var shownWidth: Double = 0
   private(set) var lags: [Double] = []
+  /// A dev run's: of the stroke last begun, how far UIKit's rounded place of a touch was from its precise one, at most (points on the glass).
+  private(set) var rounding: Double = 0
   /// A dev run's: why the last stroke PencilKit handed over had none drawn for it here.
   private(set) var missed = ""
 
@@ -101,6 +104,7 @@ final class LiveInk {
     points = []
     force = nil
     began = 0
+    rounding = 0
     made = Date()
     seed = UInt32.random(in: 1...UInt32.max)
     writing = true
@@ -169,8 +173,14 @@ final class LiveInk {
   /// counts for those after it), not a predicted one.
   private func point(_ u: UITouch, in c: PKCanvasView, keep: Bool) -> PKStrokePoint {
     let z = max(c.zoomScale, 0.0001)
-    // (where a touch is in a scroll view is in its content's points: the drawing's, as large as it is zoomed)
-    let at = u.location(in: c)
+    // (where a touch is in a scroll view is in its content's points: the drawing's, as large as it is zoomed). The
+    // precise place: UIKit's `location` is rounded to the screen's points, and a curve made of places rounded so,
+    // divided by the zoom, is a run of short straight steps meeting at corners (2026-11-22, BUILD-LOG)
+    let at = LiveInk.roughForDev ? u.location(in: c) : u.preciseLocation(in: c)
+    if keep {
+      let rough = u.location(in: c)
+      rounding = max(rounding, Double(hypot(rough.x - at.x, rough.y - at.y)))
+    }
     let p = CGPoint(x: at.x / z, y: at.y / z)
     if began == 0 { began = u.timestamp }
     let pencil = u.type == .pencil
@@ -224,17 +234,38 @@ final class LiveInk {
   /// The stroke as it is now, on the glass: an outline as a shape (a pen, the even line, a highlighter), PencilKit's
   /// picture of it for a fountain pen and a pencil. `at`: the touch's time, for a dev run's measure of the wait.
   private func draw(_ pts: [PKStrokePoint], at touched: TimeInterval?) {
-    guard let c = canvas, let l = current, let k = stroke(pts), let g = Geom(k, dark: c.overrideUserInterfaceStyle == .dark && !asPage) else { return }
-    let turned = self.turned
-    let z = c.zoomScale
-    let screen = c.window?.screen.scale ?? UIScreen.main.scale
+    guard let c = canvas, let l = current, let k = stroke(pts) else { return }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     layer.frame = CGRect(origin: .zero, size: c.contentSize)
+    let drawn = Self.paint(k, in: l, canvas: c, asPage: asPage)
+    CATransaction.commit()
+    guard drawn else { return }
+    // (what the glass shows: as wide as this, at the time of the touch it shows)
+    let round = k.ink.inkType == .pen || { if #available(iOS 17.0, *) { return k.ink.inkType == .monoline }; return false }()
+    shownWidth = Double(pts.reduce(0) { $0 + (round ? max(0.05, 2 * $1.size.width - 4) : $1.size.width) } / CGFloat(pts.count))
+    if let t = touched {
+      let now = ProcessInfo.processInfo.systemUptime
+      lags.append((now - t) * 1000)
+      if lags.count > 400 { lags.removeFirst(lags.count - 400) }
+    }
+  }
+
+  /// A stroke as `l` shows it on a canvas's glass, as the page or the sheets draw it: an outline as a shape (a pen,
+  /// the even line, a highlighter), or a picture (a fountain pen, a pencil: on a page `asPage`, the page's own). `l`
+  /// lies over the canvas's content, unscaled: what is in it is the canvas's zoom times the drawing's points. False
+  /// when there is nothing of it to draw. In a transaction of the caller's.
+  @discardableResult
+  static func paint(_ k: PKStroke, in l: CALayer, canvas c: PKCanvasView, asPage: Bool) -> Bool {
+    let dark = c.overrideUserInterfaceStyle == .dark
+    guard let g = Geom(k, dark: dark && !asPage) else { return false }
+    let turned = asPage && dark
+    let z = c.zoomScale
+    let screen = c.window?.screen.scale ?? UIScreen.main.scale
     if let o = g.outline() {
       let s = (l.sublayers?.first as? CAShapeLayer) ?? {
         let n = CAShapeLayer()
-        n.actions = layer.actions
+        n.actions = l.actions
         n.fillRule = .nonZero
         n.lineJoin = .round
         n.lineCap = .round
@@ -243,7 +274,7 @@ final class LiveInk {
         return n
       }()
       var by = CGAffineTransform(scaleX: z, y: z)
-      s.frame = layer.bounds
+      s.frame = CGRect(origin: .zero, size: c.contentSize)
       s.path = o.path.copy(using: &by)
       let colour = turned ? Self.turn(o.colour) : o.colour
       s.fillColor = colour
@@ -257,16 +288,14 @@ final class LiveInk {
         s.lineWidth = 0
         s.opacity = 1
       }
-
     } else if asPage, let pic = g.pagePicture() {
       // the page's own picture of it, as the page has it, scaled to the glass as the page scales it
       // (brought down to the glass's pixels averaged, as the web view brings an image down)
-      let frame = CGRect(x: pic.box.minX * z, y: pic.box.minY * z, width: pic.box.width * z, height: pic.box.height * z)
       l.contents = turned ? Self.turn(pic.image) : pic.image
       l.contentsGravity = .resize
       l.minificationFilter = .trilinear
       l.magnificationFilter = .linear
-      l.frame = frame
+      l.frame = CGRect(x: pic.box.minX * z, y: pic.box.minY * z, width: pic.box.width * z, height: pic.box.height * z)
     } else {
       // a picture, as many pixels as the screen shows it with
       let box = g.box.insetBy(dx: -2, dy: -2).integral
@@ -282,15 +311,7 @@ final class LiveInk {
       l.contentsScale = screen
       l.frame = CGRect(x: box.minX * z, y: box.minY * z, width: box.width * z, height: box.height * z)
     }
-    CATransaction.commit()
-    // (what the glass shows: as wide as this, at the time of the touch it shows)
-    let round = k.ink.inkType == .pen || { if #available(iOS 17.0, *) { return k.ink.inkType == .monoline }; return false }()
-    shownWidth = Double(pts.reduce(0) { $0 + (round ? max(0.05, 2 * $1.size.width - 4) : $1.size.width) } / CGFloat(pts.count))
-    if let t = touched {
-      let now = ProcessInfo.processInfo.systemUptime
-      lags.append((now - t) * 1000)
-      if lags.count > 400 { lags.removeFirst(lags.count - 400) }
-    }
+    return true
   }
 }
 
@@ -351,6 +372,7 @@ final class LiveClock: NSObject {
   }
 
   func touch(_ t: UITouch, _ event: UIEvent?) {
+    // (any touch the watcher sees: a stroke's, or the eraser's)
     guard running, let w = t.window else { return }
     for u in event?.coalescedTouches(for: t) ?? [t] {
       let p = u.location(in: w)
@@ -368,5 +390,68 @@ final class LiveClock: NSObject {
     let scale = UIScreen.main.scale
     let text = "scale \(scale)\nframes\n" + frames.joined(separator: "\n") + "\ntouches\n" + touches.joined(separator: "\n") + "\n"
     try? text.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("live-clock.txt"), atomically: true, encoding: .utf8)
+  }
+}
+
+/// The eraser on a page the page draws (a PDF's), on the glass at once (2026-11-22). The page draws its ink itself, in
+/// the web view's process: told of what an eraser left, it drew it 40 to 55 ms later, and a telling each move, each
+/// with every name the page holds, came faster than it drew them, so a stroke went from the glass up to 190 ms after
+/// the eraser touched it (BUILD-LOG). Now, while the eraser is down, the sheet's strokes are drawn here, by name, in a
+/// layer inside its canvas, and the page holds them unseen (as it holds a stroke still on the canvas while written);
+/// what the eraser takes goes from this layer in the turn it is taken, and what it leaves of a stroke cut (`part`)
+/// comes into it. When the eraser lifts the page shows its own again, and this goes when the page says it has drawn it.
+final class EraseGlass {
+  let layer = CALayer()
+  /// The highlighters, under the rest, as the page lays them.
+  private let marks = CALayer()
+  private let pens = CALayer()
+  private var shown: [String: CALayer] = [:]
+  private weak var canvas: PKCanvasView?
+  /// Lifted: the page shows its own from the telling `until` on, and this goes when it has drawn it.
+  var ending = false
+  var until = 0
+  private static let still: [String: CAAction] = ["sublayers": NSNull(), "contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "frame": NSNull(), "opacity": NSNull(), "hidden": NSNull()]
+
+  init(canvas: PKCanvasView, blend: String?) {
+    self.canvas = canvas
+    for l in [layer, marks, pens] { l.actions = Self.still }
+    layer.zPosition = 9_000
+    // (ink is laid on the page as the page lays it: multiplied onto the paper, screened on dark paper)
+    layer.compositingFilter = blend
+    layer.addSublayer(marks)
+    layer.addSublayer(pens)
+    canvas.layer.addSublayer(layer)
+  }
+
+  /// What the sheet holds now, by name: what it no longer holds goes, what it holds anew comes, in this turn.
+  func sync(_ strokes: [PKStroke], names: [String]) {
+    guard let c = canvas else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    let size = CGRect(origin: .zero, size: c.contentSize)
+    for l in [layer, marks, pens] where l.frame != size { l.frame = size }
+    let want = Set(names)
+    for (n, l) in shown where !want.contains(n) {
+      l.removeFromSuperlayer()
+      shown[n] = nil
+    }
+    for (k, n) in zip(strokes, names) where shown[n] == nil && !n.isEmpty {
+      let l = CALayer()
+      l.actions = Self.still
+      if LiveInk.paint(k, in: l, canvas: c, asPage: true) {
+        (k.ink.inkType == .marker ? marks : pens).addSublayer(l)
+        shown[n] = l
+      }
+    }
+    CATransaction.commit()
+  }
+
+  var count: Int { shown.count }
+
+  func remove() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    layer.removeFromSuperlayer()
+    CATransaction.commit()
   }
 }

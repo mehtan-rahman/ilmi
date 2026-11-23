@@ -167,6 +167,8 @@ export type Field =
   | { key: 'retention'; value: number }
   | { key: 'leech'; value: number }
   | { key: 'leech-action'; value: LeechAction }
+  /** `false`: a card a date-less scheduler scores waits for tomorrow once reviewed today. */
+  | { key: 'same-day'; value: boolean }
   /** Which pages of its PDF the document is: a chapter of a book whose pages are another document's file. */
   | { key: 'pages'; value: PageRange }
   /** The exams everything under the document is studied toward, in the order written. */
@@ -263,7 +265,7 @@ export interface Diagnostic {
 
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'notes', 'url', 'author', 'published', 'tabs',
-  'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam', 'finish',
+  'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'same-day', 'pages', 'exam', 'finish',
   'written', 'paper', 'sheets', 'paper-rule', 'paper-margin', 'paper-margin-right', 'paper-left', 'paper-right', 'paper-margin-line', 'paper-margin-color', 'paper-top', 'paper-bottom', 'paper-size', 'paper-turn', 'pageless', 'paper-color', 'paper-line',
 ];
 

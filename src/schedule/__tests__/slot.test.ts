@@ -152,6 +152,30 @@ describe('scores over the queue', () => {
     expect(byId(list, 'b').slot!.reaches).toBeUndefined();
   });
 
+  it('same-day: false holds a card reviewed today until tomorrow; true, and the default, ask it again today', () => {
+    // a, b, c reviewed this morning; the scheduler says all three are under the target again
+    const DECK_TODAY = DECK.replaceAll('last=2026-10-20T09:00:00Z', 'last=2026-11-10T09:00:00Z');
+    const scores = (i: CardItem & { id: string; sched: { last?: string } }): Score | undefined =>
+      ['a', 'b'].includes(i.id) ? { last: i.sched.last!, recall: 0.5 } : i.id === 'c' ? { last: i.sched.last!, due: '2026-11-10T13:00:00Z' } : undefined;
+    for (const [sameDay, due] of [[undefined, true], [true, true], [false, false]] as const) {
+      const list = items(DECK_TODAY);
+      applyScores(list, scores, ret, NOW, sameDay === undefined ? undefined : () => sameDay);
+      for (const id of ['a', 'b', 'c']) expect([id, sameDay, isDue(byId(list, id), NOW)]).toEqual([id, sameDay, due]);
+      if (!due) {
+        expect(byId(list, 'a')).toMatchObject({ due: addDays(TODAY, 1), slot: { recall: 0.5, reaches: addDays(TODAY, 1) } });
+        expect(byId(list, 'c')).toMatchObject({ due: addDays(TODAY, 1), slot: { reaches: addDays(TODAY, 1) } });
+      }
+    }
+    // reviewed before today, it is due today as recall says, whatever the option
+    const list = items();
+    applyScores(list, scorer(list, { a: { recall: 0.5 } }), ret, NOW, () => false);
+    expect(isDue(byId(list, 'a'), NOW)).toBe(true);
+    // a date past today is kept as it is
+    const later = items(DECK_TODAY);
+    applyScores(later, (i) => (i.id === 'a' ? { last: i.sched.last!, due: '2026-11-14' } : undefined), ret, NOW, () => false);
+    expect(byId(later, 'a').due).toBe('2026-11-14');
+  });
+
   it('the target is the one the card is studied at', () => {
     const list = [...items(DECK, 'hard/deck.md'), ...items(DECK, 'easy/deck.md')];
     const at = (p: string) => (p.startsWith('hard') ? 0.95 : 0.8);

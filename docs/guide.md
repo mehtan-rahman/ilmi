@@ -798,7 +798,11 @@ second kind there are no dates: a card is due once its recall has fallen to
 its `retention`, and of those the least likely to be recalled come first.
 New cards, the learning steps (a card back within the session), the day's
 `new-per-day` and `reviews-per-day`, exams, and suspended cards are as they
-are under the built in. The grade buttons say `back in` only what the
+are under the built in. A card you have already reviewed today can come
+due again the same day once its recall falls far enough, which at a high
+retention can be within the hour; `reviewed today, again: tomorrow` in a
+document's options (front matter `same-day: false`) holds such cards
+until the next day for everything under it. The grade buttons say `back in` only what the
 scheduler in use says; one that does not say leaves them bare. If a
 scheduler fails or is too slow, one line says so and the built in schedules
 until the app is opened again.

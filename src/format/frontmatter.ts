@@ -126,7 +126,8 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       return v === null ? null : { key, value: v };
     }
     case 'frozen':
-    case 'tabs': {
+    case 'tabs':
+    case 'same-day': {
       const v = parseBool(stripComment(raw));
       return v === null ? null : { key, value: v };
     }
@@ -373,7 +374,7 @@ export function formatField(f: Field): string {
     case 'pri': return `pri: ${f.value}`;
     case 'pdf': case 'url': case 'author': return `${f.key}: ${formatTitle(f.value)}`;
     case 'published': return `published: ${f.value}`;
-    case 'tabs': return `tabs: ${f.value ? 'true' : 'false'}`;
+    case 'tabs': case 'same-day': return `${f.key}: ${f.value ? 'true' : 'false'}`;
     case 'new-per-day': case 'reviews-per-day': case 'leech': case 'leech-action': return `${f.key}: ${f.value}`;
     case 'retention': return `retention: ${formatNumber(f.value)}`;
     case 'pages': return `pages: ${formatPages(f.value)}`;
@@ -427,6 +428,7 @@ export interface Meta {
   retention?: number;
   leech?: number;
   leechAction?: LeechAction;
+  sameDay?: boolean;
   /** The `pages` field: which pages of its PDF the document is. */
   pages?: PageRange;
   /** The `exam` field: the exams set here, as written; what applies after inheritance is `schedule/exams.ts`. */
@@ -506,6 +508,7 @@ export function meta(doc: Doc): Meta {
       case 'retention': out.retention = e.value; break;
       case 'leech': out.leech = e.value; break;
       case 'leech-action': out.leechAction = e.value; break;
+      case 'same-day': out.sameDay = e.value; break;
       case 'pages': out.pages = e.value; break;
       case 'exam': out.exams = e.value; break;
       case 'finish': out.finish = e.value; break;

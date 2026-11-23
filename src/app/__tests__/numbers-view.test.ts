@@ -295,8 +295,11 @@ describe('the inspector\'s options', () => {
     await mount(createElement(Inspector), 'shell');
     expect(block().querySelector<HTMLInputElement>('[data-opt="newPerDay"] input')!.placeholder).toBe('20');
     expect(block().querySelector<HTMLInputElement>('[data-opt="reviewsPerDay"] input')!.placeholder).toBe('none');
-    expect(texts('.opt-action button')).toEqual(['suspended', 'marked']);
-    expect(block().querySelector('.opt-action button[data-active="1"]')!.textContent).toBe('marked');
+    expect(texts('[data-opt="leechAction"] .opt-action button')).toEqual(['suspended', 'marked']);
+    expect(block().querySelector('[data-opt="leechAction"] .opt-action button[data-active="1"]')!.textContent).toBe('marked');
+    // a card reviewed today may be due again today unless a document says otherwise
+    expect(texts('[data-opt="sameDay"] .opt-action button')).toEqual(['today', 'tomorrow']);
+    expect(block().querySelector('[data-opt="sameDay"] .opt-action button[data-active="1"]')!.textContent).toBe('today');
     unmount();
   });
 });

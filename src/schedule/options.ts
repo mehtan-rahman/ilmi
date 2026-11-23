@@ -25,10 +25,12 @@ export interface DeckOptions {
   /** Lapses that make a card a leech. */
   leech: number;
   leechAction: LeechAction;
+  /** A card a date-less scheduler scores may come due again the day it was reviewed; false, it waits for tomorrow. */
+  sameDay: boolean;
 }
 
 export type OptionKey = keyof DeckOptions;
-export const OPTION_KEYS: readonly OptionKey[] = ['newPerDay', 'reviewsPerDay', 'retention', 'leech', 'leechAction'];
+export const OPTION_KEYS: readonly OptionKey[] = ['newPerDay', 'reviewsPerDay', 'retention', 'leech', 'leechAction', 'sameDay'];
 
 /**
  * Twenty new cards a day per deck, as Anki has it: enough to meter the
@@ -37,9 +39,9 @@ export const OPTION_KEYS: readonly OptionKey[] = ['newPerDay', 'reviewsPerDay', 
  * own default. Eight lapses, Anki's, and a leech is only marked, never
  * suspended unasked.
  */
-export const OPTION_DEFAULTS: DeckOptions = { newPerDay: 20, reviewsPerDay: null, retention: 0.9, leech: 8, leechAction: 'tag' };
+export const OPTION_DEFAULTS: DeckOptions = { newPerDay: 20, reviewsPerDay: null, retention: 0.9, leech: 8, leechAction: 'tag', sameDay: true };
 
-const metaKey = { newPerDay: 'newPerDay', reviewsPerDay: 'reviewsPerDay', retention: 'retention', leech: 'leech', leechAction: 'leechAction' } as const satisfies Record<OptionKey, keyof Meta>;
+const metaKey = { newPerDay: 'newPerDay', reviewsPerDay: 'reviewsPerDay', retention: 'retention', leech: 'leech', leechAction: 'leechAction', sameDay: 'sameDay' } as const satisfies Record<OptionKey, keyof Meta>;
 
 export interface Resolved {
   opts: DeckOptions;

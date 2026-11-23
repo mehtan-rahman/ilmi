@@ -217,7 +217,7 @@ function ivlRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteSche
 
 // ── options ──────────────────────────────────────────────────────
 
-const OPTION_FIELD: Record<Exclude<OptionKey, 'leechAction'>, 'new-per-day' | 'reviews-per-day' | 'retention' | 'leech'> = {
+const OPTION_FIELD: Record<Exclude<OptionKey, 'leechAction' | 'sameDay'>, 'new-per-day' | 'reviews-per-day' | 'retention' | 'leech'> = {
   newPerDay: 'new-per-day', reviewsPerDay: 'reviews-per-day', retention: 'retention', leech: 'leech',
 };
 
@@ -240,9 +240,9 @@ export function OptionsBlock({ path }: { path: string }) {
     return <span className="dim opt-from" data-from={f}>from {titleOf(f, docs, root)}</span>;
   };
   const isOwn = (k: OptionKey) => own && from[k] === path;
-  const write = (field: 'new-per-day' | 'reviews-per-day' | 'retention' | 'leech' | 'leech-action', v: number | string | null) =>
+  const write = (field: 'new-per-day' | 'reviews-per-day' | 'retention' | 'leech' | 'leech-action' | 'same-day', v: number | string | boolean | null) =>
     currentVault()?.update(path, (d) => setField(d, field as 'leech', v as number | null)).catch(failed('option'));
-  const num = (k: Exclude<OptionKey, 'leechAction'>, label: string, min: number, max: number | undefined, step: number, parse: (t: string) => number | null, unit?: string): [string, ReactNode] => {
+  const num = (k: Exclude<OptionKey, 'leechAction' | 'sameDay'>, label: string, min: number, max: number | undefined, step: number, parse: (t: string) => number | null, unit?: string): [string, ReactNode] => {
     const value = opts[k];
     const shown = value === null ? 'none' : String(value);
     if (!own) return [label, <span key={k} data-opt={k}>{shown}{unit && value !== null ? ` ${unit}` : ''} {where(k)}</span>];
@@ -272,6 +272,16 @@ export function OptionsBlock({ path }: { path: string }) {
             ))}
           </div>
         ) : <span className="opt-val">{action === 'suspend' ? 'suspended' : 'marked'}</span>}
+      </div>
+      <div className="frozen-row" data-opt="sameDay" title="for a scheduler without dates (fsrs-7, a plugin's): whether a card reviewed today can be due again before tomorrow">
+        <span className="fr-state">reviewed today, again {where('sameDay')}</span>
+        {own ? (
+          <div className="opt-action">
+            {([true, false] as const).map((on) => (
+              <button key={String(on)} type="button" data-active={opts.sameDay === on ? '1' : '0'} onClick={() => void write('same-day', isOwn('sameDay') && opts.sameDay === on ? null : on)}>{on ? 'today' : 'tomorrow'}</button>
+            ))}
+          </div>
+        ) : <span className="opt-val">{opts.sameDay ? 'today' : 'tomorrow'}</span>}
       </div>
     </Block>
   );

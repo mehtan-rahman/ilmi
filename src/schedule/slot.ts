@@ -21,7 +21,7 @@
 import type { CardSchedule, Review } from '../format/index.js';
 import type { Grade } from './card.js';
 import { addDays, dayOf, dayStart, instantOf, isDay, whenToDate } from './dates.js';
-import { burySiblings, itemKey, type CardItem, type QueueItem } from './queue.js';
+import { burySiblings, itemKey, seenToday, type CardItem, type QueueItem } from './queue.js';
 
 /** A card as a scheduler is handed it. */
 export interface SchedCard {
@@ -177,9 +177,11 @@ export function crossing(days: readonly number[], recall: readonly number[], tar
  * then. It carries `slot`, and its `due` reads as the day it comes up. The
  * two directions of a card are held apart again where either changed
  * (`burySiblings`). Run before the exams and the day's allowance, which
- * hold as they do. Resolves to how many cards it changed.
+ * hold as they do. Where `sameDayOf` its document is false (`same-day:
+ * false`), a card reviewed today that would be due again today waits for
+ * tomorrow instead. Resolves to how many cards it changed.
  */
-export function applyScores(items: QueueItem[], scoreOf: (item: CardItem & { id: string; sched: CardSchedule }) => Score | undefined, retentionOf: (path: string) => number, now: Date): number {
+export function applyScores(items: QueueItem[], scoreOf: (item: CardItem & { id: string; sched: CardSchedule }) => Score | undefined, retentionOf: (path: string) => number, now: Date, sameDayOf: (path: string) => boolean = () => true): number {
   const today = dayOf(now);
   const tomorrow = addDays(today, 1);
   const pairs = new Map<string, CardItem[]>();
@@ -193,9 +195,11 @@ export function applyScores(items: QueueItem[], scoreOf: (item: CardItem & { id:
     const s = scoreOf(i);
     if (!s || s.last !== i.sched.last) continue;
     let due: string;
+    // reviewed today where the document says once a day: not again before tomorrow
+    const wait = !sameDayOf(i.path) && seenToday(i.sched, now);
     if (s.recall !== undefined) {
       const target = retentionOf(i.path);
-      if (s.recall <= target) due = today;
+      if (s.recall <= target) due = wait ? tomorrow : today;
       else {
         // not due: the day its curve gives, else the built in's; never today
         const ahead = s.due !== undefined ? dayOf(whenToDate(s.due)) : dayOf(whenToDate(i.sched.due!));
@@ -204,7 +208,7 @@ export function applyScores(items: QueueItem[], scoreOf: (item: CardItem & { id:
       i.slot = { recall: s.recall, ratio: target > 0 ? s.recall / target : s.recall, due };
       if (s.recall <= target || s.due !== undefined) i.slot.reaches = due;
     } else if (s.due !== undefined) {
-      due = s.due;
+      due = wait && dayOf(whenToDate(s.due)) <= today ? tomorrow : s.due;
       i.slot = { due, reaches: dayOf(whenToDate(due)) };
     } else continue;
     // a sibling held back by the built in's days is held, or not, by these

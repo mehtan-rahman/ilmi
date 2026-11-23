@@ -43,9 +43,12 @@ describe('options', () => {
     setField(doc, 'retention', 0.925);
     setField(doc, 'leech', 4);
     setField(doc, 'leech-action', 'suspend');
-    expect(serialize(doc)).toBe('---\ntype: deck\nnew-per-day: 0\nreviews-per-day: 150\nretention: 0.925\nleech: 4\nleech-action: suspend\n---\n\na :: b\n');
-    expect(meta(doc)).toMatchObject({ newPerDay: 0, reviewsPerDay: 150, retention: 0.925, leech: 4, leechAction: 'suspend' });
-    for (const k of ['new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action'] as const) setField(doc, k, null);
+    setField(doc, 'same-day', false);
+    expect(serialize(doc)).toBe('---\ntype: deck\nnew-per-day: 0\nreviews-per-day: 150\nretention: 0.925\nleech: 4\nleech-action: suspend\nsame-day: false\n---\n\na :: b\n');
+    expect(meta(doc)).toMatchObject({ newPerDay: 0, reviewsPerDay: 150, retention: 0.925, leech: 4, leechAction: 'suspend', sameDay: false });
+    expect(meta(parse(serialize(doc)).doc).sameDay).toBe(false);
+    expect(meta(parse('---\nsame-day: maybe\n---\n').doc).sameDay).toBeUndefined();
+    for (const k of ['new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'same-day'] as const) setField(doc, k, null);
     expect(serialize(doc)).toBe('---\ntype: deck\n---\n\na :: b\n');
   });
 });

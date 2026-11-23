@@ -120,7 +120,7 @@ function dropBody(path: string): void {
 }
 
 /** What of a front matter reaches the documents under it. */
-const inherited = (m: Meta) => [m.newPerDay, m.reviewsPerDay, m.retention, m.leech, m.leechAction, m.exams];
+const inherited = (m: Meta) => [m.newPerDay, m.reviewsPerDay, m.retention, m.leech, m.leechAction, m.sameDay, m.exams];
 
 function derivedOf(path: string, now: Date): Derived {
   const day = dayOf(now);

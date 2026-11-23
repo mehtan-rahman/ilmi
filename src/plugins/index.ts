@@ -323,6 +323,7 @@ export function laySlot(items: QueueItem[], log: readonly Review[], now: Date, a
     s.setLog(log);
     if (!s.active()) return false;
     const retentionOf = (path: string) => optionsAt(path).opts.retention;
+    const sameDayOf = (path: string) => optionsAt(path).opts.sameDay;
     const index = s.histories();
     const cards: SchedCard[] = [];
     const by = new Map<QueueItem, SchedCard>();
@@ -332,7 +333,7 @@ export function laySlot(items: QueueItem[], log: readonly Review[], now: Date, a
     }
     if (ask) s.request(cards);
     if (!s.scored()) return false;
-    return applyScores(items, (i) => { const c = by.get(i); return c && s.scoreOf(c.id, c.key, i.sched.last); }, retentionOf, now) > 0;
+    return applyScores(items, (i) => { const c = by.get(i); return c && s.scoreOf(c.id, c.key, i.sched.last); }, retentionOf, now, sameDayOf) > 0;
   } catch (e) {
     console.error('scheduler', e);
     return false;

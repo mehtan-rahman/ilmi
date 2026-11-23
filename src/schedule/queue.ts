@@ -207,7 +207,7 @@ export function dirPri(card: Card, dir: Dir | undefined, docPri: number): number
 }
 
 /** Was this schedule last graded on `now`'s local day? */
-const seenToday = (s: CardSchedule | undefined, now: Date): boolean =>
+export const seenToday = (s: CardSchedule | undefined, now: Date): boolean =>
   !!s?.last && dayOf(whenToDate(s.last)) === dayOf(now);
 
 /**

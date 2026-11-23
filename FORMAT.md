@@ -469,6 +469,7 @@ dropped, with a diagnostic.
 | `retention`    | number 0.7–0.99             | `0.9`     | the recall FSRS schedules for (its request retention)              |
 | `leech`        | int 1–9999                  | `8`       | lapses that make a card a leech                                    |
 | `leech-action` | `suspend` `tag`             | `tag`     | what a leech does: suspended (`sus=1`), or only marked             |
+| `same-day`     | `true` `false`              | `true`    | a card a date-less scheduler scores may be due again the day it was reviewed |
 | `pages`        | `n` or `n-m`                |           | which pages of its PDF the document is, numbered as the PDF numbers them |
 | `exam`         | `day label`, `, ` between   |           | the exams everything under the document is studied toward (exams, below) |
 | `finish`       | day                         |           | the day a source's reading is paced to end by (finish, below)      |
@@ -861,8 +862,8 @@ children are not drawn as tabs (a tab's show as one line under it), and it
 draws three levels. A book imported from an EPUB lands as a document with
 `tabs: true` and its chapters in its children directory.
 
-**Options.** `new-per-day`, `reviews-per-day`, `retention`, `leech`, and
-`leech-action` are study options. Set on a document, each applies to its
+**Options.** `new-per-day`, `reviews-per-day`, `retention`, `leech`,
+`leech-action`, and `same-day` are study options. Set on a document, each applies to its
 cards and to everything under it (its children directory, all the way
 down, folders included) unless something lower sets it; where nothing
 sets one, the default in the table holds. A folder has no front-matter and
@@ -877,7 +878,13 @@ in review only, never cards in learning steps. `retention` is handed to
 FSRS for every grade under it. A leech is a card whose lapses reach
 `leech`, and again at every half of it after (eight, then twelve,
 sixteen); `leech-action: suspend` writes `sus=1` on the line graded
-(§6.2), `tag` writes nothing and the app marks it. A value that does not
+(§6.2), `tag` writes nothing and the app marks it. `same-day` is read
+only under a scheduler without dates (PLUGINS.md, *A scheduler*):
+with `false`, a card out of its learning steps that was graded today is
+not due again before tomorrow, however low its recall falls; with `true`,
+it is due again whenever its recall falls to `retention`, which at a high
+retention can be hours or minutes later. The built in schedules reviews
+by whole days and is unaffected. A value that does not
 parse (`retention: 1.2`, `new-per-day: -3`) is a raw line with a
 diagnostic, as any known key's; `retention` is written as the shortest
 decimal (§7).

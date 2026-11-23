@@ -23821,37 +23821,47 @@ export async function smokeRemote(vault: Vault): Promise<void> {
     styleRemote();
     unmount = mountRemote(host, appTransport(url));
     must(getComputedStyle(host).backgroundColor !== 'rgba(0, 0, 0, 0)' || getComputedStyle(q('.rm', host) ?? host).position === 'fixed', 'the controller in the app has its look');
-    const ids = () => qa<HTMLButtonElement>('.rm-main button', host).map((b) => b.dataset.id ?? '');
-    const press = (id: string) => q<HTMLButtonElement>(`.rm-main button[data-id="${id}"], .rm-nav button[data-id="${id}"]`, host)?.click();
-    const ready = (id: string) => { const b = q<HTMLButtonElement>(`button[data-id="${id}"]`, host); return !!b && !b.disabled; };
+    const ids = () => qa<HTMLElement>('.rm-pad [data-slot]:not([data-slot="up"])', host).map((b) => b.dataset.id ?? '').sort();
+    const press = (id: string) => q<HTMLButtonElement>(`.rm-pad [data-id="${id}"]`, host)?.click();
+    // a finger on the surface: down, across, up (the gesture's own path, not the label's)
+    const finger = (dx: number, dy: number) => {
+      const pad = q<HTMLElement>('.rm-pad', host)!;
+      const r = pad.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const at = (type: string, px: number, py: number) => pad.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: px, clientY: py, pointerId: 7, button: 0, pointerType: 'touch' }));
+      at('pointerdown', x, y); at('pointermove', x + dx / 2, y + dy / 2); at('pointermove', x + dx, y + dy); at('pointerup', x + dx, y + dy);
+    };
+    const ready = (id: string) => !!q(`.rm-pad [data-id="${id}"]`, host) && !q('.rm-pad[data-wait="1"]', host);
     await poll(() => host.dataset.status === 'on', 'the phone is connected');
     await poll(() => q('.remote-n', panel)?.textContent === '2 phones connected', 'the mac says two phones are on (the frame, the controller)');
 
     // ── outside a session: enter queue, and the session comes up on the Mac ──
     useApp.setState({ paletteOpen: false });
     await poll(() => ids().join() === 'enter', 'outside a session the phone offers enter queue');
-    must(/to do$/.test(q('.rm-main .rm-s', host)?.textContent ?? ''), `with how much is to do (${q('.rm-main .rm-s', host)?.textContent})`);
+    must(/to do$/.test(q('.rm-pad .rm-s', host)?.textContent ?? ''), `with how much is to do (${q('.rm-pad .rm-s', host)?.textContent})`);
     await shot('remote-enter');
     press('enter');
     await poll(() => useApp.getState().session && q('.recall-wrap, .doc-session'), 'enter queue from the phone starts the session on the mac');
     // › on the phone to the first card
     for (let i = 0; i < 40 && !ids().includes('reveal'); i++) {
-      await poll(() => ready('next') || ids().includes('reveal'), 'the phone has › or reveal');
+      await poll(() => (ids().length > 0 && ready(ids()[0]!)) || ids().includes('reveal'), 'the phone has something to tap');
       if (ids().includes('reveal')) break;
       const before = useApp.getState().session?.at ?? 0;
-      press('next');
-      await poll(() => (useApp.getState().session?.at ?? 0) !== before, '› on the phone moves the mac on');
+      finger(0, 0); // a tap on a reading is its next; on a card's answer, reveal: either moves on
+      if (ids().includes('reveal')) break;
+      await poll(() => (useApp.getState().session?.at ?? 0) !== before, 'a tap on the phone moves the mac on');
     }
     await poll(() => ids().join() === 'reveal' && ready('reveal'), 'a card with its answer down is reveal alone on the phone');
     must(q('.rm-count', host)?.textContent === q('.sess-count')?.textContent?.trim(), `the phone's count is the mac's (${q('.rm-count', host)?.textContent})`);
     await shot('remote-card');
 
     // ── reveal, then the grades with the Mac's own intervals ──
-    press('reveal');
-    await poll(() => q('.card[data-revealed="1"]'), 'reveal on the phone reveals on the mac');
-    await poll(() => ids().join() === 'g1,g2,g3,g4', 'the phone shows the four grades');
-    const macGaps = qa('.grades button .gap').map((e) => e.textContent);
-    const phoneGaps = qa('.rm-main .rm-s', host).map((e) => e.textContent);
+    finger(0, 0);
+    await poll(() => q('.card[data-revealed="1"]'), 'a tap anywhere on the phone reveals on the mac');
+    await poll(() => ids().join() === 'g1,g2,g3,g4', 'the phone has the four grades on its surface');
+    must(q('.rm-pad [data-slot="left"]', host)?.getAttribute('data-id') === 'g1' && q('.rm-pad [data-slot="tap"]', host)?.getAttribute('data-id') === 'g3' && q('.rm-pad [data-slot="right"]', host)?.getAttribute('data-id') === 'g4' && q('.rm-pad [data-slot="down"]', host)?.getAttribute('data-id') === 'g2', 'again a swipe left, good a tap, easy a swipe right, hard a swipe down');
+    const macGaps = qa<HTMLElement>('.grades button').map((b) => `${b.dataset.grade}:${b.querySelector('.gap')?.textContent}`).sort();
+    const phoneGaps = qa<HTMLElement>('.rm-pad [data-slot]:not([data-slot="up"])', host).map((b) => `${b.dataset.id!.slice(1)}:${b.querySelector('.rm-s')?.textContent}`).sort();
     must(JSON.stringify(macGaps) === JSON.stringify(phoneGaps), `with the mac's intervals (${phoneGaps.join(' · ')})`);
     await shot('remote-grades');
 
@@ -23864,12 +23874,24 @@ export async function smokeRemote(vault: Vault): Promise<void> {
 
     // ── good, tapped twice: one grade ──
     await poll(() => ready('g3'), 'good can be pressed');
-    press('g3');
-    press('g3');
-    await poll(() => (useApp.getState().session!.marks?.given.size ?? 0) === given + 1 && (useApp.getState().session!.at ?? 0) > at, 'good on the phone grades the card on the mac and moves on');
+    finger(0, 0);
+    finger(0, 0);
+    await poll(() => (useApp.getState().session!.marks?.given.size ?? 0) === given + 1 && (useApp.getState().session!.at ?? 0) > at, 'a tap on the phone grades the card good on the mac and moves on');
     await sleep(1200);
-    must((useApp.getState().session!.marks?.given.size ?? 0) === given + 1 && (useApp.getState().session!.at ?? 0) === at + 1, 'two taps graded once');
-    await poll(() => ids().length > 0 && !ids().includes('g3') || ids().join() === 'g1,g2,g3,g4' && ready('g1'), 'the phone has the next element\'s buttons');
+    must((useApp.getState().session!.marks?.given.size ?? 0) === given + 1 && (useApp.getState().session!.at ?? 0) === at + 1, 'two taps graded once (the second revealed the next card at most)');
+    await poll(() => ids().length > 0 && ready(ids()[0]!), 'the phone has the next element\'s buttons');
+    // a swipe left on a card's grades is again
+    if (!ids().includes('g1')) { finger(0, 0); await poll(() => ids().join() === 'g1,g2,g3,g4' && ready('g1'), 'the next card revealed by a tap'); }
+    const given2 = useApp.getState().session!.marks?.given.size ?? 0;
+    const shownAt = useApp.getState().session!.at ?? 0;
+    finger(-Math.max(120, q<HTMLElement>('.rm-pad', host)!.clientWidth * 0.3), 4);
+    await poll(() => (useApp.getState().session!.marks?.given.size ?? 0) === given2 + 1, 'a swipe left grades it');
+    const g = [...(useApp.getState().session!.marks?.given.values() ?? [])].at(-1) as { g?: number } | undefined;
+    must(g?.g === 1, `as again (${g?.g})`);
+    // a swipe up is back to it
+    await poll(() => ready('prev'), 'back can be swiped');
+    finger(0, -Math.max(120, q<HTMLElement>('.rm-pad', host)!.clientHeight * 0.3));
+    await poll(() => (useApp.getState().session!.at ?? 0) === shownAt, 'a swipe up goes back to the card just graded');
     await shot('remote-next');
 
     // ── hidden, the strip's chip; stop, and the phone says so ──

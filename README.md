@@ -132,9 +132,11 @@ a day, three textbooks a semester finish.
 Studying on the Mac, the phone can hold the buttons. Run `phone as a remote`
 from the palette: a QR code comes up. Point the phone's camera at it (it opens
 in the phone's browser, nothing to install) or use `scan a code` in ilmi on the
-phone. The phone shows whatever the session shows: reveal, the four grades with
-their intervals, got it, a reading's next / later / dismiss, ‹ and ›, and
-`enter queue` outside a session. The phone has to be on the same Wi-Fi as the
+phone. It is made to be used without looking: tap anywhere to reveal, tap
+again for good, swipe left for again, down for hard, right for easy, up to go
+back. The phone buzzes the moment a swipe counts, gives each grade its own
+feel, and tells you by feel when the Mac shows a new card, something to read,
+or the end. Outside a session a tap enters the queue. The phone has to be on the same Wi-Fi as the
 Mac. `stop` ends it, and a phone that scanned the code before can't connect
 after that.
 

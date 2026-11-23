@@ -71,3 +71,6 @@ export const hapticGrade = (g: Grade): void => play(GRADE_HAPTIC[g]);
 export const hapticFinished = (): void => play(FINISHED_HAPTIC);
 /** Something small done under the finger: a blank, a passage, a highlight, a menu from a long press, a topic's next, later or dismiss. */
 export const hapticTick = (): void => play('tick');
+
+/** One of the native side's by name (the phone as a remote's patterns, `remoteClient.ts`). */
+export const hapticPlay = (kind: Haptic): void => play(kind);

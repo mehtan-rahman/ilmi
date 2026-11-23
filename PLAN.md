@@ -9950,9 +9950,21 @@ connect, a comment every 15 s, `{"stopped":true}` when the remote is
 stopped), `POST /<token>/press` a press as JSON (4 KB at most), handed to the
 page as the `remote-press` event; `remote-clients` says how many streams are
 open. **The phone** (`src/remote/controller.ts`): `mountRemote` draws the
-buttons large for a thumb (one fills the glass, four grades are a square,
-reading's three are rows, ‹ › at the foot, a line for connecting / lost /
-stopped), each press felt where the device can. It and `browserTransport`
+whole glass as one surface to be used without looking: a tap anywhere is
+the main thing (reveal, good, got it, next), a swipe left again, down hard,
+right easy, up back (‹); a reading's later and dismiss are left and right.
+The labels sit at the edges they are swiped toward, so there is no grid in
+portrait or landscape. A swipe is felt the moment it counts, before the
+finger lifts (past max(44px, 14% of the short side), its direction 1.2×
+the other), and the surface leans toward it; a tap is under 16px and 600 ms.
+Each answer has its own feel (again three short buzzes, hard two, good one,
+easy two spaced out, back two soft), and so does what the Mac shows next: a
+soft bump for a new card, two heavy for something to read, success at the
+end, a warning for a press the Mac did not answer in 1.5 s. One gesture made
+while the last waits is kept 1.5 s and sent against the new view, so tap-tap
+speedruns work; the version check means a stray tap reveals the next card at
+most. On an iPhone the feels are the native haptics (`REMOTE_HAPTICS`); in
+iOS 18 Safari a hidden switch's tick, on Android `navigator.vibrate`. It and `browserTransport`
 each stand alone, so the page a phone's browser is given is made of their
 own source (`remotePage`): any phone's camera opens the code in its browser,
 nothing to install. ilmi on a phone or an iPad runs the same `mountRemote`
@@ -9969,10 +9981,11 @@ remembered; Mac only, as host (an iPad's palette has no `phone as a remote`).
 presses and waits, the phone's page script run over a stand-in EventSource,
 the stream cut anywhere, stopped, the readings of each kind of session
 markup, presses by version); cargo `remote::tests`; `ILMI_SMOKE=remote` on
-the Mac (30 ok, 6 shots): the code on the network address, the page, a wrong
+the Mac (36 ok, 6 shots): the code on the network address, the page, a wrong
 token, the page in a frame the size of a phone beside the app's controller,
-two phones counted, enter queue → › to a card → reveal → the grades with the
-Mac's intervals → good, a stale press, two taps graded once, hide / chip /
+two phones counted, enter queue → a tap to a card → a tap to reveal → the grades
+at their edges with the Mac's intervals → a tap for good, a swipe left for
+again, a swipe up back, a stale press, two taps graded once, hide / chip /
 stop, the phone told, the server gone.
 **Not done, a device's to judge:** a real phone on a real Wi-Fi network
 (a network that keeps devices apart, as some guest and campus networks do,

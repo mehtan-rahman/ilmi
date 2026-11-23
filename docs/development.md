@@ -1294,9 +1294,10 @@ from its own source (`remotePage`), and `src/app/remoteClient.ts` runs the same
 controller inside ilmi on a phone over the http plugin. `ILMI_SMOKE=remote` on
 the Mac, over a copy of the sample, needs no network beyond the Mac's own
 address. It shows the page in a frame the size of a phone and the app's
-controller beside it, drives the session from the controller (enter queue, ›,
-reveal, good), and checks a stale press, a double tap, hide, stop, and that the
-server is gone afterwards. 31 checks, 6 shots.
+controller beside it, drives the session with real pointer gestures on the
+controller (taps to enter, reveal and grade good, a swipe left for again, a
+swipe up back), and checks a stale press, a double tap, hide, stop, and that the
+server is gone afterwards. 36 checks, 6 shots.
 
 Haptics (milestone 83) are `src/app/haptics.ts`: named calls (`hapticReveal`,
 `hapticGrade`, `hapticFinished`, `hapticTick`) made from the session and the

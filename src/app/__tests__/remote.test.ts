@@ -21,65 +21,153 @@ const { useApp } = await import('../store.js');
 const view = (over: Partial<RemoteView> = {}): RemoteView => ({ v: 1, title: 'kana and its sisters', count: '3 / 20', kind: 'card', note: '', main: [{ id: 'reveal', label: 'reveal' }], nav: [{ id: 'prev', label: '‹' }, { id: 'next', label: '›', off: true }], ...over });
 const GRADES = [{ id: 'g1', label: 'again', sub: '1m' }, { id: 'g2', label: 'hard', sub: '6m' }, { id: 'g3', label: 'good', sub: '1d' }, { id: 'g4', label: 'easy', sub: '4d' }];
 
-/** A transport the test drives: what it is told to show, and what was pressed. */
+/** A transport the test drives: what it is told to show, what was pressed, and what was felt. */
 function fake() {
   let onView: (v: RemoteView) => void = () => {};
   let onStatus: (s: RemoteStatus) => void = () => {};
   const presses: [number, string][] = [];
+  const felt: string[] = [];
   const t: RemoteTransport = {
     listen(v, s) { onView = v; onStatus = s; return () => {}; },
     press: async (v, id) => { presses.push([v, id]); },
+    feel: (what) => { felt.push(what); },
   };
-  return { t, presses, show: (v: RemoteView) => onView(v), status: (s: RemoteStatus) => onStatus(s) };
+  return { t, presses, felt, show: (v: RemoteView) => onView(v), status: (s: RemoteStatus) => onStatus(s) };
 }
 
 /** `mountRemote` as the phone's browser has it: made again from its source text, so it uses nothing of this module. */
 const fromSource = new Function(`return (${mountRemote.toString()})`)() as typeof mountRemote;
 
-const ids = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLButtonElement>('.rm-main button')).map((b) => b.dataset.id);
+/** The buttons on the surface, by gesture. */
+const slots = (root: HTMLElement) => Object.fromEntries(Array.from(root.querySelectorAll<HTMLElement>('.rm-pad [data-slot]')).map((b) => [b.dataset.slot, b.dataset.id]));
+
+/** A finger on the surface: down, through each point, up. jsdom has no PointerEvent: an Event with its fields. */
+function finger(root: HTMLElement, path: [number, number][], ms = 80): void {
+  const pad = root.querySelector<HTMLElement>('.rm-pad')!;
+  const fire = (type: string, [x, y]: [number, number]) => {
+    const e = new Event(type, { bubbles: true });
+    Object.assign(e, { clientX: x, clientY: y, pointerId: 1, button: 0 });
+    pad.dispatchEvent(e);
+  };
+  const now = Date.now();
+  vi.setSystemTime(now);
+  fire('pointerdown', path[0]!);
+  for (const p of path.slice(1)) fire('pointermove', p);
+  vi.setSystemTime(now + ms);
+  fire('pointerup', path.at(-1)!);
+}
+const tap = (root: HTMLElement) => finger(root, [[150, 300], [152, 301]]);
+const swipe = (root: HTMLElement, dx: number, dy: number) => finger(root, [[150, 300], [150 + dx / 2, 300 + dy / 2], [150 + dx, 300 + dy]]);
 
 describe('the controller', () => {
-  it('stands alone: made from its own source it draws, presses, and waits', () => {
-    const root = document.body.appendChild(document.createElement('div'));
-    const f = fake();
-    const unmount = fromSource(root, f.t);
-    expect(root.querySelector('.rm-status')!.textContent).toBe('connecting to the mac…');
-    f.show(view());
-    expect(ids(root)).toEqual(['reveal']);
-    expect(root.querySelector('.rm-count')!.textContent).toBe('3 / 20');
-    expect(root.querySelector('.rm-main')!.getAttribute('data-n')).toBe('1');
-    const next = root.querySelector<HTMLButtonElement>('.rm-nav button[data-id="next"]')!;
-    expect(next.disabled).toBe(true);
-    root.querySelector<HTMLButtonElement>('.rm-main button')!.click();
-    expect(f.presses).toEqual([[1, 'reveal']]);
-    // a second tap before the Mac has moved on sends nothing
-    root.querySelector<HTMLButtonElement>('.rm-main button')!.click();
-    expect(f.presses).toHaveLength(1);
-    expect(root.querySelector<HTMLButtonElement>('.rm-main button')!.disabled).toBe(true);
-    // the same view again (a reconnect) still waits; the next one frees the buttons
-    f.show(view());
-    expect(root.querySelector<HTMLButtonElement>('.rm-main button')!.disabled).toBe(true);
-    f.show(view({ v: 2, main: GRADES }));
-    expect(ids(root)).toEqual(['g1', 'g2', 'g3', 'g4']);
-    expect(root.querySelector('.rm-main')!.getAttribute('data-n')).toBe('4');
-    expect(Array.from(root.querySelectorAll('.rm-s')).map((e) => e.textContent)).toEqual(['1m', '6m', '1d', '4d']);
-    root.querySelector<HTMLButtonElement>('button[data-id="g3"]')!.click();
-    expect(f.presses).toEqual([[1, 'reveal'], [2, 'g3']]);
-    unmount();
-    expect(root.textContent).toBe('');
+  it('stands alone: made from its own source, one surface, the grades by gesture and never a grid', () => {
+    vi.useFakeTimers();
+    try {
+      const root = document.body.appendChild(document.createElement('div'));
+      const f = fake();
+      const unmount = fromSource(root, f.t);
+      expect(root.querySelector('.rm-status')!.textContent).toBe('connecting to the mac…');
+      f.show(view());
+      expect(slots(root)).toEqual({ up: 'prev', tap: 'reveal' });
+      expect(root.querySelector('.rm-count')!.textContent).toBe('3 / 20');
+      // a tap anywhere reveals; felt as a reveal
+      tap(root);
+      expect(f.presses).toEqual([[1, 'reveal']]);
+      expect(f.felt).toEqual(['reveal']);
+      f.show(view({ v: 2, main: GRADES }));
+      expect(slots(root)).toEqual({ up: 'prev', left: 'g1', tap: 'g3', right: 'g4', down: 'g2' });
+      expect(root.querySelector('.rm-pad .rm-slot[data-slot="tap"] .rm-s')!.textContent).toBe('1d');
+      // no answer shown is felt as anything more than the press
+      expect(f.felt).toEqual(['reveal']);
+      tap(root);
+      expect(f.presses.at(-1)).toEqual([2, 'g3']);
+      f.show(view({ v: 3 }));
+      // the next card felt as it comes
+      vi.advanceTimersByTime(100);
+      expect(f.felt).toEqual(['reveal', 'g3', 'card']);
+      unmount();
+      expect(root.textContent).toBe('');
+    } finally { vi.useRealTimers(); }
   });
 
-  it('frees the buttons when a press brought nothing new', () => {
+  it('a swipe counts once it has gone far enough, felt then, and sends on the lift; a short one is nothing', () => {
+    vi.useFakeTimers();
+    try {
+      const root = document.body.appendChild(document.createElement('div'));
+      const f = fake();
+      fromSource(root, f.t);
+      f.show(view({ main: GRADES }));
+      swipe(root, -20, 0);
+      expect(f.presses).toEqual([]);
+      expect(f.felt).toEqual([]);
+      swipe(root, -120, 10);
+      expect(f.felt).toEqual(['arm', 'g1']);
+      expect(f.presses).toEqual([[1, 'g1']]);
+      for (const [dx, dy, id, v] of [[130, -5, 'g4', 2], [8, 140, 'g2', 3], [0, -140, 'prev', 4]] as const) {
+        f.show(view({ v: v, main: GRADES }));
+        swipe(root, dx, dy);
+        expect(f.presses.at(-1)).toEqual([v, id]);
+      }
+      expect(f.felt).toEqual(['arm', 'g1', 'arm', 'g4', 'arm', 'g2', 'arm', 'back']);
+      // a diagonal is no direction, and a slow press that did not move is not a tap
+      f.show(view({ v: 5, main: GRADES }));
+      swipe(root, 100, 100);
+      finger(root, [[150, 300], [151, 300]], 900);
+      expect(f.presses.at(-1)).toEqual([4, 'prev']);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('a gesture while the mac has not answered is done on what comes next, never twice on one view', () => {
     vi.useFakeTimers();
     try {
       const root = document.body.appendChild(document.createElement('div'));
       const f = fake();
       fromSource(root, f.t);
       f.show(view());
-      root.querySelector<HTMLButtonElement>('.rm-main button')!.click();
-      vi.advanceTimersByTime(1600);
-      expect(root.querySelector<HTMLButtonElement>('.rm-main button')!.disabled).toBe(false);
+      tap(root);
+      tap(root);
+      expect(f.presses).toEqual([[1, 'reveal']]);
+      // the same view again (a reconnect) does not let it through
+      f.show(view());
+      expect(f.presses).toEqual([[1, 'reveal']]);
+      f.show(view({ v: 2, main: GRADES }));
+      expect(f.presses).toEqual([[1, 'reveal'], [2, 'g3']]);
+      // kept a moment only: one made long before is dropped
+      swipe(root, -150, 0);
+      vi.advanceTimersByTime(1000);
+      tap(root);
+      vi.advanceTimersByTime(1400);
+      f.show(view({ v: 3, main: GRADES }));
+      expect(f.presses).toEqual([[1, 'reveal'], [2, 'g3']]);
     } finally { vi.useRealTimers(); }
+  });
+
+  it('a press that came to nothing is felt, and the surface is free again', () => {
+    vi.useFakeTimers();
+    try {
+      const root = document.body.appendChild(document.createElement('div'));
+      const f = fake();
+      fromSource(root, f.t);
+      f.show(view());
+      tap(root);
+      vi.advanceTimersByTime(1600);
+      expect(f.felt).toEqual(['reveal', 'missed']);
+      tap(root);
+      expect(f.presses).toEqual([[1, 'reveal'], [1, 'reveal']]);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('a reading: tap is its next, left later, right dismiss; it is felt as something to look at', () => {
+    const root = document.body.appendChild(document.createElement('div'));
+    const f = fake();
+    fromSource(root, f.t);
+    f.show(view());
+    f.show(view({ v: 2, kind: 'read', title: 'lindqvist › ch 3', main: [{ id: 'on', label: 'done for today' }, { id: 'postpone', label: 'later' }, { id: 'done', label: 'dismiss' }] }));
+    expect(slots(root)).toEqual({ up: 'prev', left: 'postpone', tap: 'on', right: 'done' });
+    expect(f.felt).toEqual(['look']);
+    // the end of the queue: the system's success
+    f.show(view({ v: 3, kind: 'none', title: '', main: [], nav: [], note: 'all done, 12 items · back to the queue' }));
+    expect(f.felt).toEqual(['look', 'end']);
   });
 
   it('says a line alone in the buttons\' place, and beside them over them', () => {
@@ -87,20 +175,22 @@ describe('the controller', () => {
     const f = fake();
     fromSource(root, f.t);
     f.show(view({ main: [], nav: [], note: 'all done, 12 items · back to the queue', count: '' }));
-    expect(root.querySelector('.rm-main .rm-note')!.textContent).toBe('all done, 12 items · back to the queue');
+    expect(root.querySelector('.rm-pad .rm-note')!.textContent).toBe('all done, 12 items · back to the queue');
     f.show(view({ v: 2, note: 'next for today', main: [{ id: 'pass', label: 'next' }] }));
     expect(root.querySelector('.rm-line .rm-note')!.textContent).toBe('next for today');
-    expect(root.querySelector('.rm-main .rm-note')).toBeNull();
+    expect(root.querySelector('.rm-pad .rm-note')).toBeNull();
   });
 
-  it('says the mac stopped, and draws no buttons then', () => {
+  it('says the mac stopped, and nothing on the surface does anything then', () => {
     const root = document.body.appendChild(document.createElement('div'));
     const f = fake();
     fromSource(root, f.t);
     f.show(view());
     f.status('stopped');
     expect(root.querySelector('.rm-status')!.textContent).toMatch(/^the mac stopped the remote/);
-    expect(ids(root)).toEqual([]);
+    expect(slots(root)).toEqual({});
+    tap(root);
+    expect(f.presses).toEqual([]);
     f.status('lost');
     expect(root.dataset.status).toBe('lost');
   });
@@ -119,7 +209,7 @@ describe('the controller', () => {
     expect(sources[0]!.url).toBe('/abcdefghijklmnopqrstuv/events');
     sources[0]!.onopen?.();
     sources[0]!.onmessage?.({ data: JSON.stringify(view({ v: 7 })) });
-    document.querySelector<HTMLButtonElement>('#rm .rm-main button')!.click();
+    document.querySelector<HTMLButtonElement>('#rm .rm-slot[data-slot="tap"]')!.click();
     await Promise.resolve();
     expect(posted).toEqual([{ url: '/abcdefghijklmnopqrstuv/press', body: '{"v":7,"id":"reveal"}' }]);
     // the Mac stops the remote: said, and the stream not opened again

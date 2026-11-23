@@ -6,12 +6,39 @@
 // server is on, and a web view would refuse plain http from it).
 
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
-import { REMOTE_CSS, mountRemote, type RemoteStatus, type RemoteTransport, type RemoteView } from '../remote/controller.js';
-import { hapticTick } from './haptics.js';
+import { REMOTE_CSS, mountRemote, type RemoteFeel, type RemoteStatus, type RemoteTransport, type RemoteView } from '../remote/controller.js';
+import { GRADE_HAPTIC, REVEAL_HAPTIC, hapticPlay, type Haptic } from './haptics.js';
 import { notify } from './land.js';
 import { scanCode } from './scan.js';
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * What the remote's feels are on an iPhone: the session's own for a reveal and the grades (`haptics.ts`), easy's
+ * light tap twice so it is not taken for the swipe's; a tap the moment a swipe counts; a soft bump for a new card, a
+ * heavy one for something to read on the Mac, the system's success at the end, its warning for a press lost. Each a
+ * list of [ms after the first, kind].
+ */
+export const REMOTE_HAPTICS: Record<RemoteFeel, [number, Haptic][]> = {
+  arm: [[0, 'tick']],
+  reveal: [[0, REVEAL_HAPTIC]],
+  g1: [[0, GRADE_HAPTIC[1]]],
+  g2: [[0, GRADE_HAPTIC[2]]],
+  g3: [[0, GRADE_HAPTIC[3]]],
+  g4: [[0, GRADE_HAPTIC[4]], [110, GRADE_HAPTIC[4]]],
+  press: [[0, 'rigid']],
+  back: [[0, 'soft'], [90, 'soft']],
+  card: [[0, 'soft']],
+  look: [[0, 'heavy'], [140, 'heavy']],
+  end: [[0, 'success']],
+  missed: [[0, 'warning']],
+};
+
+const feelOnPhone = (what: RemoteFeel): void => {
+  for (const [at, kind] of REMOTE_HAPTICS[what] ?? []) {
+    if (at === 0) hapticPlay(kind); else setTimeout(() => hapticPlay(kind), at);
+  }
+};
 
 /** The Mac's remote address, as its code holds it: plain http to a host and port, then the token. */
 const REMOTE = /^http:\/\/[^/\s]+:\d+\/[A-Za-z0-9_-]{16,64}\/?$/;
@@ -74,7 +101,7 @@ export function appTransport(url: string, opts: { fetch?: Fetch; close?: () => v
     press(v, id) {
       return fetch(`${base}/press`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ v, id }) }).then(() => {}, () => {});
     },
-    feel: hapticTick,
+    feel: feelOnPhone,
     ...(opts.close ? { close: opts.close } : {}),
   };
 }

@@ -6,6 +6,23 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-23 — the remote used without looking: gestures and haptics (milestone 90)
+
+The user: "can you make it such that there isn't a 2x2 grid in either portrait or landscape? so that i dont have to
+look at phone every single time. make ui/ux inutitive enough that someone can speedrun without looking at phone.
+additionally, i think haptic feedback can be better too".
+
+**Done.** The controller is one surface: tap anywhere for the main thing (reveal, good, got it, next), swipe left
+again, down hard, right easy, up back. Labels sit at the edges they are swiped toward. A swipe is felt when it
+counts, before the finger lifts, and each grade, a new card, a reading, the end and a lost press feel different
+(PLAN 90's notes). A gesture made while the last waits is queued 1.5 s, so tapping through works.
+
+**Checks.** `remote.test.ts` (18), the whole suite (2699 passed, 173 files). `ILMI_SMOKE=remote` on the Mac with real
+pointer events: 36 ok, the shots show the grades at the edges with the Mac's intervals and back appearing after a
+grade. The first try at the run never started: the user's own `tauri dev` held port 1420, so check runs now use 1490.
+
+**Not verified:** the feel on a real iPhone (installed for the user to try).
+
 ## 2026-11-22 — the phone as a remote for the Mac's session (milestone 90)
 
 The user: "make mobile be a companion app to the laptop version … while i'm doing reviews on laptop (either through

@@ -1347,6 +1347,14 @@ Drag the app into Applications from the DMG. The build is unsigned unless a
 Developer ID certificate is on the keychain, so the first launch is refused
 and allowed once under System Settings > Privacy & Security (Open Anyway).
 
+A new version is written in every place that names one, alike:
+`src-tauri/tauri.conf.json` (what the Mac and the iOS builds take, and the
+app's `ilmi.version`), `src-tauri/Cargo.toml` and `Cargo.lock`'s ilmi,
+`package.json` and `package-lock.json`, and the iOS project's
+`ilmi_iOS/Info.plist` and `project.yml` (the iOS build writes the plist
+from the config, so committed it matches what is built).
+`src/plugins/__tests__/version.test.ts` fails while any of them differs.
+
 On GitHub, pushing a tag `v<version>` runs `.github/workflows/release.yml`:
 tests and the typecheck on Linux, then the app on a macOS runner as a
 universal binary (Apple Silicon and Intel), attached to a draft release

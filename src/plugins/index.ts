@@ -29,14 +29,15 @@ import { SCHEDULER_FILE, SchedulerSlot, chosenIn, formatSchedulerFile, parseSche
 import { fsrs7, readFsrs7 } from './fsrs7.js';
 import { addStyle, closeSurfaces, showModal, showPopover } from './surfaces.js';
 import './plugins.css';
+import conf from '../../src-tauri/tauri.conf.json';
 
 export type { Ilmi, Selection as PluginSelection, BlockContext } from './api.js';
 export { PluginHost, type PluginRow, type PluginCommand, type PluginAction, type SettingControl, type InstallResult, COMMAND_PREFIX } from './runtime.js';
 export { BUILT_IN, SchedulerSlot, type SchedulerRow } from './scheduler.js';
 export { fitOffer, fitToReviews, fsrs7Fit, fsrs7Fitting } from './fsrs7.js';
 
-/** The app's version, as `ilmi.version`; `src-tauri/tauri.conf.json` has the same. */
-export const APP_VERSION = '0.1.0';
+/** The app's version, as `ilmi.version`: `src-tauri/tauri.conf.json`'s, the one every platform's build takes. */
+export const APP_VERSION: string = conf.version;
 
 let host: PluginHost | null = null;
 let slot: SchedulerSlot | null = null;

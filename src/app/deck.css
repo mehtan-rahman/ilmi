@@ -35,7 +35,9 @@
 .deck-study .ds-study[data-able="0"] { opacity: 0.4; }
 .deck-study .ds-n { font-size: var(--t-sm); font-weight: 400; color: color-mix(in oklab, var(--paper) 70%, transparent); margin-left: 6px; font-variant-numeric: tabular-nums; }
 .deck-study .ds-cram { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-.deck-study .deck-add { width: auto; margin: 0; }
+/* `+ card` on the bar's centre line with study and the boxes (the note's add-card margins and padding are not for here) */
+.deck-browser .deck-study .deck-add { width: auto; height: 28px; margin: 0; padding: 0; align-self: center; display: inline-flex; align-items: center; line-height: 1; }
+.deck-browser .deck-study .deck-add .kbd { margin: 0; }
 
 .deck-bar {
   position: sticky;

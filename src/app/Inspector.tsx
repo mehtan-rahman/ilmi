@@ -36,6 +36,8 @@ import { boxesLabel } from './written.js';
 import { passageId } from '../vault/index.js';
 import { goToMark, goToPassage, openNotes, passageWhen, pdfHashOf, setMark, useMarks } from './book.js';
 import { bookmarksOf, highlightsOf, passageMarksOf } from '../pdf/index.js';
+import { usePlugins } from '../plugins/index.js';
+import { setInspector } from './vault.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
@@ -975,5 +977,47 @@ export function Inspector() {
     );
   }
 
-  return <div className="insp">{body}</div>;
+  return <InspectorFrame>{body}</InspectorFrame>;
+}
+
+// ── plugins' panels ──────────────────────────────────────────────
+
+/**
+ * The inspector, or a plugin's panel in its place (`ilmi.ui.panel`): with a
+ * panel added, a row of tabs at the top, `inspector` first. A panel is
+ * filled the first time it is shown and kept, hidden, while another tab is
+ * up, so what it holds (a conversation, a reply still coming) is as it was.
+ */
+function InspectorFrame({ children }: { children: ReactNode }) {
+  const host = usePlugins();
+  const panels = host?.panels() ?? [];
+  const chosen = useApp((s) => s.inspector.panel);
+  const shown = panels.some((p) => p.key === chosen) ? chosen : undefined;
+  const opened = useRef(new Set<string>());
+  if (shown) opened.current.add(shown);
+  for (const k of [...opened.current]) if (!panels.some((p) => p.key === k)) opened.current.delete(k);
+  return (
+    <div className="insp" data-panel={shown ?? ''}>
+      {panels.length > 0 && (
+        <div className="insp-tabs opt-action" role="tablist">
+          <button type="button" role="tab" data-active={shown === undefined ? '1' : '0'} aria-selected={shown === undefined} onClick={() => setInspector({ panel: undefined })}>inspector</button>
+          {panels.map((p) => (
+            <button key={p.key} type="button" role="tab" data-panel={p.key} data-active={shown === p.key ? '1' : '0'} aria-selected={shown === p.key} onClick={() => setInspector({ panel: p.key })}>{p.name}</button>
+          ))}
+        </div>
+      )}
+      {shown === undefined && children}
+      {host && [...opened.current].map((k) => <PanelHost key={k} panel={k} hidden={k !== shown} mount={(el) => host.mountPanel(k, el)} />)}
+    </div>
+  );
+}
+
+function PanelHost({ panel, hidden, mount }: { panel: string; hidden: boolean; mount: (el: HTMLElement) => () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const mountRef = useRef(mount);
+  useEffect(() => {
+    const el = ref.current;
+    return el ? mountRef.current(el) : undefined;
+  }, []);
+  return <div ref={ref} className="insp-panel" data-panel={panel} hidden={hidden} />;
 }

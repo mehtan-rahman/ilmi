@@ -182,6 +182,8 @@ export interface Sidebar {
 export interface Inspector {
   width: number;
   open: boolean;
+  /** A plugin's panel shown in the inspector's place (`<plugin>:<id>`, `ilmi.ui.panel`); absent, the inspector. */
+  panel?: string | undefined;
 }
 
 /** A card selected in a reader or a deck, for the inspector's card editor. */

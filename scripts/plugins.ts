@@ -18,7 +18,7 @@ const SRC = join(ROOT, 'plugins');
 const DIST = join(SRC, 'dist');
 const CORPUS = join(ROOT, 'src/format/__tests__/corpus/vault/.ilmi');
 /** The plugins copied into the corpus vault, and the ones its `plugins.json` has on (the dictionary is there, off, for its smoke; the sample scheduler, off, for the slot's tests). */
-const CORPUS_COPY = ['hello', 'dictionary', 'recall-sample'];
+const CORPUS_COPY = ['hello', 'dictionary', 'recall-sample', 'claude'];
 const CORPUS_ON = ['hello'];
 
 // ── a flat, stored zip: deterministic, no dependency ──────────────

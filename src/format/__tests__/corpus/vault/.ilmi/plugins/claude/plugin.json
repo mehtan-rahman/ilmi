@@ -1,0 +1,9 @@
+{
+  "id": "claude",
+  "name": "claude",
+  "version": "0.1.0",
+  "api": 4,
+  "description": "a chat with claude beside your pages: it reads, searches and edits your documents and adds cards, each change shown with an undo. needs an anthropic api key, kept on the device",
+  "author": "ilmi",
+  "repo": "https://github.com/mehtan-rahman/ilmi"
+}

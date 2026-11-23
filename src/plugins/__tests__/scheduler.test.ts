@@ -417,7 +417,7 @@ describe('a plugin\'s scheduler', () => {
     await addPlugin(fs, 'old', 'module.exports.activate = (ilmi) => { ilmi.scheduler.register({ id: "old-dates", name: "old dates", next: () => ({ due: "2026-12-01" }) }); ilmi.ui.notice("api " + ilmi.api + " for a manifest of " + ilmi.manifest.api); };');
     await enable(fs, ['old']);
     await host.start();
-    expect(bridge.notices).toEqual(['api 3 for a manifest of 1']);
+    expect(bridge.notices).toEqual(['api 4 for a manifest of 1']);
     expect(slot.rows().map((r) => r.id)).toEqual(['old-dates']);
   });
 

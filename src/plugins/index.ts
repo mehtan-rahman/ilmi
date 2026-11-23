@@ -17,7 +17,7 @@ import { dueToday, gapLabel, gapOfDue } from '../app/items.js';
 import { cardsPath, kindOf, tabKindOf } from '../app/names.js';
 import { activeTab } from '../app/panes.js';
 import { useApp } from '../app/store.js';
-import { note, openNode, optionsAt, refreshQueue } from '../app/vault.js';
+import { note, openNode, optionsAt, refreshQueue, setInspector } from '../app/vault.js';
 import type { Card, CardSchedule, Review } from '../format/index.js';
 import { FSRS7_ID, applyScores, dayOf, isDay, preview, schedCardOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SchedCard, type Scheduler, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
@@ -88,10 +88,13 @@ function lensOf(): A.Lens | null {
   return { path: id, kind: tabKindOf(id, s.docs) as A.LensKind };
 }
 
+/** Dev only: the claude smoke answers a plugin's requests itself, so a window check needs no key and sends nothing. */
+export const devNet: { fetch?: (url: string, init?: RequestInit) => Promise<Response> } = {};
+
 const bridge: Bridge = {
   version: APP_VERSION,
   notice: (text) => note(text),
-  fetch: (url, init) => httpFetch(url, init),
+  fetch: (url, init) => (devNet.fetch ?? httpFetch)(url, init),
   today: () => {
     const s = useApp.getState();
     return dueToday(s.queue, new Date(), s.budget).map(toElement);
@@ -106,6 +109,10 @@ const bridge: Bridge = {
   popover: showPopover,
   modal: showModal,
   addStyle,
+  showPanel: (key) => {
+    useApp.setState({ inspForced: true, bookInsp: true });
+    setInspector({ open: true, panel: key });
+  },
 };
 
 const inField = (t: EventTarget | null) => {

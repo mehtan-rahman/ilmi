@@ -23918,3 +23918,137 @@ export async function smokeRemote(vault: Vault): Promise<void> {
     if (useRemote.getState().url) await stopRemote();
   }
 }
+
+// `ILMI_SMOKE=claude` (`ILMI_PLUGIN_ZIP=plugins/dist/claude.zip`, over a copy
+// of `samples/double-major`): adds the claude plugin from its zip, turns it
+// on, and reads its row in tweaks; opens the iʿrāb drills and the chat from
+// the palette's command, the inspector's tabs above it; sends a message with
+// no key (the chat asks for one); then, with a key of the smoke's own and the
+// API answered here (`devNet`, nothing leaves the machine), a whole turn: a
+// read, a card added in Arabic, a reply in Markdown; the change's undo; and
+// back to the inspector's tab and to claude again, the conversation kept.
+export async function smokeClaude(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke claude: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const DECK = 'courses/fall-2026/arab-401-advanced-grammar/irab-drills.md';
+  const CARD = 'ظَلَّ الجَوُّ بَارِدًا\n?\nظَلَّ: فِعْلٌ مَاضٍ نَاقِصٌ مَبْنِيٌّ عَلَى الفَتْحِ.\nالجَوُّ: اسْمُ ظَلَّ مَرْفُوعٌ وَعَلَامَةُ رَفْعِهِ الضَّمَّةُ الظَّاهِرَةُ.\nبَارِدًا: خَبَرُ ظَلَّ مَنْصُوبٌ وَعَلَامَةُ نَصْبِهِ الفَتْحَةُ الظَّاهِرَةُ.';
+  const { pluginHost, addPluginFromPath, devNet } = await import('../plugins/index.js');
+  const sse = (blocks: ({ text: string } | { tool: string; input: Record<string, string> })[]) => {
+    const ev: unknown[] = [{ type: 'message_start', message: { id: 'msg_smoke', type: 'message', role: 'assistant', model: 'claude-opus-5-5', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } }];
+    blocks.forEach((b, index) => {
+      if ('text' in b) {
+        ev.push({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } });
+        for (const part of b.text.match(/.{1,6}/gsu) ?? []) ev.push({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: part } });
+      } else {
+        ev.push({ type: 'content_block_start', index, content_block: { type: 'tool_use', id: `toolu_smoke_${index}_${b.tool}`, name: b.tool, input: {} } });
+        ev.push({ type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(b.input) } });
+      }
+      ev.push({ type: 'content_block_stop', index });
+    });
+    ev.push({ type: 'message_delta', delta: { stop_reason: blocks.some((b) => 'tool' in b) ? 'tool_use' : 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } });
+    ev.push({ type: 'message_stop' });
+    // a few events at a time, as a reply streams in
+    const chunks = ev.map((e) => `event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`);
+    let i = 0;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(c) {
+        if (i >= chunks.length) { c.close(); return; }
+        await sleep(35);
+        c.enqueue(new TextEncoder().encode(chunks.slice(i, i + 3).join('')));
+        i += 3;
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+  const script = [
+    () => sse([{ text: 'Let me look at how the drills are written.' }, { tool: 'read_document', input: { path: DECK } }]),
+    () => sse([{ tool: 'add_card', input: { deck: DECK, text: CARD } }]),
+    () => sse([{ text: 'Added **ظَلَّ الجَوُّ بَارِدًا** to the drills, parsed the way the others are:\n\n- ظَلَّ as a نَاقِص verb, like أَصْبَحَ and كَانَ\n- its اسم and خبر with their signs of case\n\nIt is a new card, so it comes up with today\'s new ones.' }]),
+  ];
+  let sent = 0;
+  try {
+    const host = pluginHost();
+    if (!host) throw new Error('no plugin runtime');
+    const zip = await invoke<string | null>('dev_env', { name: 'ILMI_PLUGIN_ZIP' });
+    if (!zip) throw new Error('no ILMI_PLUGIN_ZIP');
+    // no key left from a run before: the no-key step sends nothing
+    await invoke('plugin_cache_remove', { collection: null, plugin: 'claude', key: 'anthropic-api-key' });
+    const added = await addPluginFromPath(zip, { replace: true });
+    log(`added: ${JSON.stringify(added)}`);
+    const row = () => q<HTMLElement>('.tweaks .pl-row[data-id="claude"]');
+    useApp.setState({ tweaksOpen: true });
+    await until(row);
+    if (row()!.dataset.state !== 'on') row()!.querySelector<HTMLButtonElement>('.pl-head .pl-toggle')!.click();
+    await until(() => (row()?.dataset.state === 'on' ? true : null), 8000);
+    await until(() => (row()?.querySelector('.pl-set') ? true : null));
+    await sleep(500);
+    log(`row: "${row()!.textContent?.replace(/\s+/g, ' ').slice(0, 300)}"`);
+    row()!.scrollIntoView({ block: 'center' });
+    await shot('claude-tweaks');
+    useApp.setState({ tweaksOpen: false });
+
+    openNode(DECK);
+    await sleep(800);
+    setInspector({ open: true });
+    useApp.setState({ inspForced: true });
+    const cmd = host.pluginCommands().find((c) => c.title === 'claude: open the chat');
+    log(`command: ${JSON.stringify(cmd)}`);
+    host.runCommand(cmd!.id);
+    const chat = await until(() => q<HTMLElement>('.insp-panel .claude-chat'));
+    log(`tabs: ${qa('.insp-tabs button').map((b) => `${b.textContent}${(b as HTMLElement).dataset.active === '1' ? '*' : ''}`).join(' | ')}; focus ${document.activeElement?.className}; panel ${chat.offsetWidth}×${chat.offsetHeight}`);
+    await shot('claude-empty');
+
+    const input = chat.querySelector<HTMLTextAreaElement>('.cc-input')!;
+    const send = (text: string) => { input.value = text; input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); };
+    send('hello');
+    await until(() => chat.querySelector('.cc-error'));
+    log(`no key: "${chat.querySelector('.cc-error')!.textContent}"`);
+    await shot('claude-nokey');
+
+    // a key of the smoke's own, on this dev device only; the API answered here
+    await invoke('plugin_cache_put', new TextEncoder().encode('sk-ant-smoke-not-a-key'), { headers: { plugin: encodeURIComponent('claude'), key: encodeURIComponent('anthropic-api-key') } });
+    await host.reload('claude');
+    const chat2 = await until(() => q<HTMLElement>('.insp-panel .claude-chat'), 8000).catch(() => null);
+    if (!chat2) { host.runCommand(cmd!.id); }
+    const live = await until(() => q<HTMLElement>('.insp-panel:not([hidden]) .claude-chat'));
+    devNet.fetch = async (url) => {
+      if (!String(url).startsWith('https://api.anthropic.com/')) throw new Error(`smoke: unexpected ${url}`);
+      const next = script[sent++];
+      if (!next) throw new Error('smoke: no reply scripted');
+      return next();
+    };
+    const input2 = live.querySelector<HTMLTextAreaElement>('.cc-input')!;
+    input2.value = 'add a drill for ظَلَّ like the others';
+    input2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await until(() => (live.dataset.busy === '1' ? true : null));
+    await sleep(500);
+    await shot('claude-streaming', 300);
+    await until(() => (live.dataset.busy === '0' && sent === 3 ? true : null), 20000);
+    const file = await vault.fs.readText(vault.abs(DECK));
+    log(`turn: requests ${sent}; log ${qa('.claude-chat .cc-log > *').map((e) => e.className).join(', ')}; card in deck ${file.includes('ظَلَّ الجَوُّ بَارِدًا')}; change "${live.querySelector('.cc-change')?.textContent}"`);
+    await shot('claude-turn', 4000);
+
+    // undo the card; the inspector's tab and back, the conversation kept
+    const undo = qa<HTMLButtonElement>('.claude-chat .cc-link').find((b) => b.textContent === 'undo')!;
+    undo.click();
+    await until(() => (undo.textContent === 'undone' ? true : null));
+    log(`undone: card in deck ${(await vault.fs.readText(vault.abs(DECK))).includes('ظَلَّ الجَوُّ بَارِدًا')}`);
+    q<HTMLButtonElement>('.insp-tabs button')!.click();
+    await until(() => (q('.insp')?.getAttribute('data-panel') === '' ? true : null));
+    await shot('claude-inspector-tab');
+    q<HTMLButtonElement>('.insp-tabs button[data-panel="claude:chat"]')!.click();
+    await until(() => q('.insp-panel:not([hidden]) .claude-chat'));
+    log(`back: replies ${qa('.claude-chat .cc-reply').length}; saved panel ${useApp.getState().inspector.panel}`);
+    document.documentElement.setAttribute('data-theme', 'dark');
+    await shot('claude-dark');
+    document.documentElement.setAttribute('data-theme', useApp.getState().theme);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
+  } finally {
+    delete devNet.fetch;
+    await invoke('plugin_cache_remove', { collection: null, plugin: 'claude', key: 'anthropic-api-key' }).catch(() => {});
+  }
+}

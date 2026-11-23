@@ -910,6 +910,21 @@ A collection from before this reads itself in the first time it opens, while
 you go on working. Until it has, the palette's foot says how far it has come,
 and anything it has not reached is not found.
 
+## Claude beside the pages
+
+The `claude` plugin (tweaks › plugins, `add a plugin` with
+`plugins/dist/claude.zip`) puts a chat with Claude in the inspector's place:
+the inspector's top gains `inspector · claude`, and `claude: open the chat`
+in the palette or `ask claude` on a selection opens it. Ask it to make cards
+from a passage, reword a deck, find where something is, or tidy a note; it
+reads the collection, makes the change, and says each one in the chat with
+`open` and `undo`. It never touches what the app keeps under a card (its id
+and schedule lines): an edit that would is refused and Claude is told why,
+so a card it rewords keeps its history. It needs an Anthropic API key (from
+console.anthropic.com, billed to that account), added under the plugin's
+row in tweaks; the key stays on the device and is not part of the
+collection, so add it on each device. `new chat` starts again.
+
 ## Sync
 
 A collection syncs between devices as a git repository. In the settings (⌘,),

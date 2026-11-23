@@ -135,7 +135,11 @@ merchant passage from the inspector, reads the row's words, makes a pass on the
 pacing's day, reads `behind`, clears it, and counts a chapter's pages.
 `ILMI_SMOKE=welcome` runs before any vault opens and walks the welcome instead,
 seeding its rows with `ILMI_VAULT`; the other modes are listed at the top of
-`src/app/smoke.ts`. `ILMI_SMOKE=book` (a scratch copy of `samples/double-major`,
+`src/app/smoke.ts`. `ILMI_SMOKE=claude` (a scratch copy of `samples/double-major`,
+with `ILMI_PLUGIN_ZIP=<this repo>/plugins/dist/claude.zip` after `npm run plugins`)
+adds the claude plugin, opens its panel, and walks a turn against replies the
+smoke gives itself (`devNet` in `src/plugins/index.ts`): no key is needed and
+nothing is sent. `ILMI_SMOKE=book` (a scratch copy of `samples/double-major`,
 with `ILMI_BOOKS=<this repo>/design/books`) walks a book and its notes on
 `design/books/ch3-book.pdf`, the sample's Lindqvist ch. 3 at pp. 41–44 of its
 book (`pdflatex ch3-book.tex` after `ch3.tex` rebuilds it): the pages across

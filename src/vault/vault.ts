@@ -42,7 +42,7 @@ export interface VaultState {
   /** Sidebar width in px, and whether it is hidden. */
   sidebar?: { width?: number; hidden?: boolean };
   /** Inspector width in px, and whether it is open. */
-  inspector?: { width?: number; open?: boolean };
+  inspector?: { width?: number; open?: boolean; panel?: string | undefined };
   /** How many elements a day holds; the queue folds there. 0 or absent is no fold. */
   budget?: number;
   /** The folder an `ilmi://new` link lands in when it names none; `''` or absent is the root. */

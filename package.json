@@ -21,6 +21,7 @@
     "plugins": "tsx scripts/plugins.ts"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
     "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^22.20.3",
     "@types/react": "^19.3.0",

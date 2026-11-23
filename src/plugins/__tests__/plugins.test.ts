@@ -326,8 +326,8 @@ describe('faults', () => {
     await addPlugin(fs, 'old', KEEP_HANDLE, { api: 0, name: 'old one' });
     await enable(fs, ['old', 'hello']);
     await open();
-    expect(bridge.notices).toEqual(['old one was written for api 0, this is api 3']);
-    expect(host.rows().find((r) => r.id === 'old')).toMatchObject({ state: 'refused', enabled: true, error: 'written for api 0, this is api 3' });
+    expect(bridge.notices).toEqual(['old one was written for api 0, this is api 4']);
+    expect(host.rows().find((r) => r.id === 'old')).toMatchObject({ state: 'refused', enabled: true, error: 'written for api 0, this is api 4' });
     expect(globalThis.__ilmi).toBeUndefined();
     expect(host.pluginCommands().length).toBe(1);
   });

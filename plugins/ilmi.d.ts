@@ -1,8 +1,9 @@
 // Generated from src/plugins/api.ts by `npm run plugins`; edit that file.
-// The plugin API, version 3 (1; 2 added the scheduler slot and the cache; 3
+// The plugin API, version 4 (1; 2 added the scheduler slot and the cache; 3
 // a settings row that does something, a picked file's bytes, the review log
-// for a plugin that is not scheduling, and a cache for the device; a plugin
-// written for 1 or 2 runs as it did): what `activate(ilmi)` is handed. Types only;
+// for a plugin that is not scheduling, and a cache for the device; 4 a panel
+// in the inspector's place; a plugin written for an earlier one runs as it
+// did): what `activate(ilmi)` is handed. Types only;
 // this file is copied verbatim to `plugins/ilmi.d.ts` by `npm run plugins`,
 // so a plugin's TypeScript sees the same names the app does. Everything a
 // plugin can do through this handle, the app does through the same
@@ -11,7 +12,7 @@
 // change on disk.
 
 /** The API version this file describes. A plugin's manifest names the one it was written for: this one, or one before it (each only added to the last). */
-export type ApiVersion = 3;
+export type ApiVersion = 4;
 
 /** `plugin.json`. */
 export interface PluginManifest {
@@ -20,7 +21,7 @@ export interface PluginManifest {
   name: string;
   version: string;
   /** The API version the plugin was written against: the app's, or one before it that the app still runs. */
-  api: ApiVersion | 1 | 2;
+  api: ApiVersion | 1 | 2 | 3;
   description?: string;
   author?: string;
   repo?: string;
@@ -98,7 +99,7 @@ export interface VaultApi {
   read(path: string): Promise<string>;
   /** Replace a file's text. A document goes through the format module and is normalized; other files are written as they are. */
   write(path: string, text: string): Promise<void>;
-  /** A new file; `path` must not exist. Resolves to the path as written (a document is renamed `name 2.md` when the name is taken). */
+  /** A new file; `path` must not exist. The folders on the way are made. Resolves to the path as written (a document is renamed `name 2.md` when the name is taken). */
   create(path: string, text: string): Promise<string>;
   remove(path: string): Promise<void>;
   /** A new file name (no extension) for a document or folder; resolves to the new path. */
@@ -256,6 +257,22 @@ export interface UiApi {
    * `extensions` (`['bin', 'json']`, no dots) limits what can be chosen where the system can. Since api 3.
    */
   pickFile(opts?: { extensions?: readonly string[] }): Promise<PickedFile | null>;
+  /**
+   * A panel in the inspector's place, beside the pages: `name` is its tab at
+   * the inspector's top, `mount(el)` fills `el` once, the first time the
+   * panel is shown, and may return what undoes it. The element stays while
+   * the plugin is on, hidden when another tab is chosen. Since api 4.
+   */
+  panel(spec: PanelSpec): Dispose;
+  /** Show one of this plugin's panels by its id, opening the inspector where it is closed. Since api 4. */
+  showPanel(id: string): void;
+}
+
+export interface PanelSpec {
+  id: string;
+  /** Its tab at the inspector's top: a word or two, lowercase as the app's chrome is. */
+  name: string;
+  mount(el: HTMLElement): void | Dispose;
 }
 
 export type StoreData = Record<string, unknown>;

@@ -10139,3 +10139,35 @@ not read in the window, emphasis across a math chip, no code colouring;
 real collection; 10–15: their lists), the plugin directory the user set
 aside ("can wait"), and, with the user, whatever is next. The handoff
 prompt at the top of `BUILD-LOG.md` says so.
+
+### [x] 91. Claude beside the pages
+Done 2026-11-23. Notes: **The panel** (plugin api 4): `ilmi.ui.panel({ id,
+name, mount })` adds a tab at the inspector's top (`inspector` first) and
+shows the plugin's element in the inspector's place; `ilmi.ui.showPanel(id)`
+opens it. The choice is the device's (`inspector.panel` in the view state).
+A panel is filled the first time it is shown and kept hidden while another
+tab is up, so a conversation and a reply still coming survive a switch; the
+runtime empties the element on unmount (React's development mode mounts
+twice, and the first window run drew the chat twice). `vault.create` makes
+the folders on the way, as `addCard` did. **The `claude` plugin**
+(`plugins/claude/`): a chat on `claude-opus-5-5` through `@anthropic-ai/sdk`
+over `ilmi.net.fetch` (adaptive thinking, `effort` in its settings, the
+server-side fallback on a refusal, prompt caching; the system prompt is fixed
+and what is open and selected rides at the head of each message), a manual
+streaming loop with stop. Tools: list, search (case and Arabic marks
+ignored), read, edit by exact replacement, create, add a card, open. Every
+write passes `guard.ts` (no schedule line changed, added or lost, no `^id`
+parted from its card, no cloze schedule without its blank, no new parse
+diagnostic) or is handed back to Claude with the reason; each change is a
+line in the chat with `open` and `undo`, which restores only while the
+document is as the change left it. The API key is the person's, kept in
+`cache.device`: never in the collection, so it does not sync or export. A
+line is laid out right to left only when it has more Arabic letters than
+Latin ones (`dir="auto"` reversed an English sentence that opened with an
+Arabic word). Tests: the guard, the tools over the corpus, and whole turns
+against a scripted API (the request's model, fallback, caching and streamed
+tool input; a read and an edit; a refused edit; a refused key; stop).
+`ILMI_SMOKE=claude` walks it in the window against replies the smoke gives
+itself (`devNet`). **Owed:** a reply streamed from the real API through the
+Tauri HTTP client needs a real key (the window run reached the API and read
+its 401 correctly); a phone has no inspector, so no panel there yet.

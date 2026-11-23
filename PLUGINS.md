@@ -26,11 +26,12 @@ through it, the app does through the same functions.
 to run on deactivate. Every registration returns a disposer; the runtime
 calls them all when the plugin is turned off, the vault closes, or the
 plugin's files change on disk (it is then reloaded, with a notice). The
-types are in [`plugins/ilmi.d.ts`](plugins/ilmi.d.ts); `api` is `3`. A plugin
-whose `plugin.json` says `1` or `2` runs as it did: 2 only added `scheduler`
-and `cache`, and 3 `ui.pickFile`, a settings row that does something
-(`s.action`), `scheduler.history` and `cache.device`. One that says a later
-number than the app's is refused with a notice.
+types are in [`plugins/ilmi.d.ts`](plugins/ilmi.d.ts); `api` is `4`. A plugin
+whose `plugin.json` says `1`, `2` or `3` runs as it did: 2 only added
+`scheduler` and `cache`, 3 `ui.pickFile`, a settings row that does something
+(`s.action`), `scheduler.history` and `cache.device`, and 4 `ui.panel` and
+`ui.showPanel`. One that says a later number than the app's is refused with
+a notice.
 
 ```
 ilmi.version, ilmi.api, ilmi.manifest
@@ -47,6 +48,7 @@ ilmi.session.current()  session.on('grade' | 'read-on' | 'worked-on', fn)
 ilmi.lens.active()  lens.open(path)  lens.on('open' | 'selection', fn)
 ilmi.ui.notice(text)  ui.popover(rect, el)  ui.modal(el)  ui.settings(fn(s))
 ilmi.ui.pickFile({ extensions? })                    one file from the system's picker: { name, bytes } or null
+ilmi.ui.panel({ id, name, mount(el) })  ui.showPanel(id)   a panel in the inspector's place
 ilmi.net.fetch(url, init?)                           through the app, no CORS
 ilmi.store.load() save(data) get(key) on('change', fn)   data.json
 ilmi.scheduler.register({ id, name, recall? | next?, preview?, curve?, prepare?, observe? })
@@ -83,6 +85,15 @@ Notes on a few of them:
   none was chosen. `extensions` (no dots) limits the choice where the system
   can; an iPad and an iPhone only know the common ones, so leave it out for
   a format of your own and look at the bytes.
+- `ui.panel` adds a tab at the inspector's top (`inspector` first, then each
+  panel by its `name`); choosing it shows the panel in the inspector's place,
+  beside the pages, and the choice is the device's, kept with the inspector's
+  width. `mount(el)` fills `el` the first time the panel is shown and may
+  return what undoes it; the element is kept while the plugin is on, hidden
+  while another tab is up, so what it holds (a conversation, a reply still
+  coming) is as it was. `ui.showPanel(id)` shows one of the plugin's own
+  panels, opening the inspector where it was closed. A panel is wherever the
+  inspector is: on a phone, which has none, it is not shown.
 - `ui.popover` and `ui.modal` take an element you built and style the box
   as the palette; esc, a press outside, or `close()` ends it. The box has
   focus when it opens, so listen on the `el` that comes back
@@ -216,6 +227,20 @@ collection in memory and a bridge that remembers its notices and fetches.
 ## The ones here
 
 - `hello`: the sample, one of everything.
+- `claude`: a chat with Claude in a panel. Claude reads, searches and opens
+  documents, edits them by an exact replacement, makes new ones, and adds
+  cards (`add_card`); every change is shown in the chat with `open` and
+  `undo` (which puts the text back only while the document is as the change
+  left it). An edit is refused, with the reason handed back to Claude, when
+  it would change, add or drop a schedule line, part a card from its `^id`,
+  leave a cloze group's schedule without its blank, or add a parse
+  diagnostic (`guard.ts`); nothing under `.ilmi/` is reachable. Each message
+  carries what is open and selected, and `ask claude` on the selection cue
+  quotes the passage. The model is `claude-opus-5-5` (adaptive thinking,
+  `effort` in its settings, the server-side fallback on a refusal, prompt
+  caching), called through `ilmi.net.fetch` with the person's own API key,
+  which `api key › add` keeps in `cache.device`: on the device, never in
+  the collection, so it does not sync, export, or reach a git remote.
 - `recall-sample`: a sample scheduler, a few lines (the ones above, and the
   buttons' outcomes): a demo of the slot, not a memory model.
 - `dictionary`: `look up` on the selection cue (key `d`) normalizes the

@@ -1,0 +1,36 @@
+/* the claude panel: the app's tokens, its quiet chrome; replies in the reading face */
+.claude-chat { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: var(--s-3); font-size: var(--t-sm); }
+.claude-chat .cc-head { display: flex; align-items: center; justify-content: space-between; color: var(--fg-3); flex-shrink: 0; }
+.claude-chat .cc-model { font-size: var(--t-xs, 11px); letter-spacing: 0.02em; }
+.claude-chat button { appearance: none; border: 0; background: transparent; color: var(--fg-3); font: inherit; cursor: default; padding: 0; }
+.claude-chat button:hover { color: var(--fg-1); }
+.claude-chat button:disabled { color: var(--fg-3); opacity: 0.7; }
+.claude-chat .cc-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s-3); padding-right: 2px; overscroll-behavior: contain; }
+.claude-chat .cc-hint { color: var(--fg-3); line-height: 1.5; margin: 0; }
+.claude-chat .cc-user { align-self: flex-end; max-width: 92%; background: var(--paper); border: 1px solid var(--line-1); border-radius: var(--radius); padding: 6px 9px; white-space: pre-wrap; line-height: 1.45; color: var(--fg-1); }
+.claude-chat .cc-reply { font-family: var(--serif); font-size: var(--t-md); line-height: 1.5; color: var(--fg-1); overflow-wrap: anywhere; }
+.claude-chat .cc-reply p { margin: 0 0 0.6em; white-space: pre-wrap; }
+.claude-chat .cc-reply p:last-child { margin-bottom: 0; }
+.claude-chat .cc-reply ul, .claude-chat .cc-reply ol { margin: 0 0 0.6em; padding-left: 1.3em; }
+.claude-chat .cc-reply code { font-family: var(--mono, ui-monospace, monospace); font-size: 0.88em; background: var(--bg); border-radius: 2px; padding: 0 3px; }
+.claude-chat .cc-reply pre { font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-sm); background: var(--bg); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 6px 8px; overflow-x: auto; white-space: pre-wrap; margin: 0 0 0.6em; }
+.claude-chat .cc-tool, .claude-chat .cc-wait, .claude-chat .cc-note { color: var(--fg-3); }
+.claude-chat .cc-wait { animation: cc-pulse 1.4s ease-in-out infinite; }
+@keyframes cc-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+.claude-chat .cc-tool-err, .claude-chat .cc-error { color: var(--bad, var(--fg-2)); }
+.claude-chat .cc-change { display: flex; align-items: baseline; gap: var(--s-2, 8px); color: var(--fg-2); border-left: 2px solid var(--line-1); padding-left: 8px; }
+.claude-chat .cc-change-t { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.claude-chat .cc-link { text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line-1); flex-shrink: 0; }
+.claude-chat .cc-foot { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; padding-bottom: var(--s-4); }
+.claude-chat .cc-quote { display: flex; gap: 6px; align-items: flex-start; color: var(--fg-2); border-left: 2px solid var(--line-1); padding-left: 8px; }
+.claude-chat .cc-quote[hidden] { display: none; }
+.claude-chat .cc-quote-t { flex: 1 1 auto; max-height: 4.5em; overflow: hidden; }
+.claude-chat .cc-row { display: flex; gap: 6px; align-items: flex-end; }
+.claude-chat .cc-input { flex: 1 1 auto; min-width: 0; resize: none; background: var(--paper); border: 1px solid var(--line-1); border-radius: var(--radius); color: var(--fg-1); font-family: var(--sans); font-size: var(--t-sm); line-height: 1.45; padding: 6px 8px; outline: none; }
+.claude-chat .cc-input:focus { border-color: var(--fg-3); }
+.claude-chat .cc-send { border: 1px solid var(--line-1) !important; border-radius: var(--radius); padding: 4px 10px !important; height: 28px; }
+.claude-chat[data-busy="1"] .cc-send { color: var(--fg-1); }
+.claude-key { display: flex; flex-direction: column; gap: 10px; padding: 14px; max-width: 360px; font-size: var(--t-sm); }
+.claude-key p { margin: 0; color: var(--fg-2); line-height: 1.45; }
+.claude-key-field { background: var(--paper); border: 1px solid var(--line-1); border-radius: var(--radius); padding: 6px 8px; color: var(--fg-1); font-family: var(--mono, ui-monospace, monospace); outline: none; }
+.claude-key button { align-self: flex-end; border: 1px solid var(--line-1); border-radius: var(--radius); background: transparent; color: var(--fg-1); padding: 4px 12px; font: inherit; }

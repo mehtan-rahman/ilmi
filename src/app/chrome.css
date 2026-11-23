@@ -259,6 +259,10 @@ html[data-mobile="1"] .top .right button.sync { padding: 12px 6px; margin: -12px
 }
 .insp .frozen-row .fr-toggle:hover { border-color: color-mix(in oklab, var(--fg) calc(30% * var(--chrome)), transparent); }
 /* a choice of a few: a segmented control */
+.insp .insp-tabs { align-self: flex-start; flex-shrink: 0; }
+.insp[data-panel]:not([data-panel=""]) { overflow: hidden; padding-bottom: 0; gap: var(--s-4); }
+.insp .insp-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; user-select: text; }
+.insp .insp-panel[hidden] { display: none; }
 .insp .deck-default, .insp .opt-action {
   display: inline-flex;
   flex-shrink: 0;

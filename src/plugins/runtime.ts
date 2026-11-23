@@ -11,9 +11,9 @@ import { cardFields, meta, parse, serialize, setField, type Doc as FDoc, type Fi
 import { baseOf, dirOf, isDoc, nameOf, type Vault, type VaultEvent } from '../vault/index.js';
 import type * as A from './api.js';
 
-export const API: A.ApiVersion = 3;
+export const API: A.ApiVersion = 4;
 /** The versions a plugin may be written for: each only added to the one before. */
-export const APIS: readonly number[] = [1, 2, 3];
+export const APIS: readonly number[] = [1, 2, 3, 4];
 export const PLUGINS_DIR = '.ilmi/plugins';
 export const ENABLED_FILE = '.ilmi/plugins.json';
 export const MANIFEST = 'plugin.json';
@@ -35,6 +35,8 @@ export interface Bridge {
   version: string;
   notice(text: string): void;
   fetch(url: string, init?: RequestInit): Promise<Response>;
+  /** Show a plugin's panel in the inspector's place (`<plugin>:<id>`). */
+  showPanel?(key: string): void;
   today(): A.QueueElement[];
   onQueue(fn: () => void): A.Dispose;
   current(): A.QueueElement | null;
@@ -169,6 +171,7 @@ export class PluginHost {
   private states = new Map<string, { state: PluginState; error?: string }>();
   private commands = new Map<string, Reg<A.CommandSpec>>();
   private actions = new Map<string, Reg<A.SelectionActionSpec>>();
+  private panelRegs = new Map<string, Reg<A.PanelSpec>>();
   private blockHooks: (Reg<A.BlockHook> & { key: string })[] = [];
   private hookSeq = 0;
   private hooked = new WeakMap<HTMLElement, Map<string, string>>();
@@ -413,6 +416,7 @@ export class PluginHost {
     }
     for (const [k, r] of [...this.commands]) if (r.plugin === id) this.commands.delete(k);
     for (const [k, r] of [...this.actions]) if (r.plugin === id) this.actions.delete(k);
+    for (const [k, r] of [...this.panelRegs]) if (r.plugin === id) this.panelRegs.delete(k);
     this.blockHooks = this.blockHooks.filter((h) => h.plugin !== id);
     for (const [name, list] of this.events) this.events.set(name, list.filter((r) => r.plugin !== id));
     this.states.set(id, { state: 'off' });
@@ -492,6 +496,31 @@ export class PluginHost {
     if (!r) return false;
     this.guard(r.plugin, r.spec.run.bind(r.spec))(sel);
     return true;
+  }
+
+  /** The panels the plugins on have added, in the order they were added: `key` is `<plugin>:<id>`. */
+  panels(): { key: string; plugin: string; name: string }[] {
+    return [...this.panelRegs].map(([key, r]) => ({ key, plugin: r.plugin, name: r.spec.name }));
+  }
+
+  /** Fill `el` with the panel `key`; what undoes it, a throw failing its plugin as any throw does. */
+  mountPanel(key: string, el: HTMLElement): A.Dispose {
+    const r = this.panelRegs.get(key);
+    if (!r) return () => {};
+    let undo: void | A.Dispose;
+    try {
+      undo = r.spec.mount(el);
+    } catch (e) {
+      this.fail(r.plugin, e);
+      return () => {};
+    }
+    return () => {
+      if (typeof undo === 'function') {
+        try { undo(); } catch (e) { console.error(`plugin ${r.plugin}:`, e); }
+      }
+      // what the plugin left in it goes too, so a panel filled again starts empty
+      el.replaceChildren();
+    };
   }
 
   /** The command whose `key` is `key`, by its id. */
@@ -827,7 +856,10 @@ export class PluginHost {
         const rel = cleanPluginPath(path);
         if (await vault.fs.stat(vault.abs(rel))) throw new Error(`${rel}: already there`);
         if (isDoc(rel)) {
-          const made = await vault.createDoc(dirOf(rel), 'note', nameOf(rel));
+          // the folders on the way are made, as addCard makes them
+          let dir = '';
+          for (const seg of dirOf(rel).split('/').filter(Boolean)) dir = await vault.folderIn(dir, seg);
+          const made = await vault.createDoc(dir, 'note', nameOf(rel));
           const next = parse(text).doc;
           await vault.update(made, (doc) => {
             delete doc.frontmatter;
@@ -919,6 +951,20 @@ export class PluginHost {
         live();
         if (!this.bridge.pickFile) throw new Error('no file picker here');
         return this.bridge.pickFile(opts);
+      },
+      panel: (spec) => {
+        live();
+        if (!spec?.id || !spec.name || typeof spec.mount !== 'function') throw new Error('a panel needs an id, a name and mount');
+        const key = `${id}:${spec.id}`;
+        this.panelRegs.set(key, { plugin: id, spec });
+        this.bump();
+        return keep(() => { this.panelRegs.delete(key); this.bump(); });
+      },
+      showPanel: (panel) => {
+        live();
+        const key = `${id}:${panel}`;
+        if (!this.panelRegs.has(key)) throw new Error(`no panel ${panel}`);
+        this.bridge.showPanel?.(key);
       },
     };
 

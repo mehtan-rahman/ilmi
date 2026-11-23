@@ -238,7 +238,7 @@ describe('a grade as its log line', () => {
     const prev: CardSchedule = { due: '2026-10-28', state: 'review', stability: 9.123456, difficulty: 5, reps: 4, lapses: 0, ivl: 9, last: '2026-10-19T09:00:00Z' };
     const next: CardSchedule = { due: '2026-11-25', state: 'review', stability: 26.987654321, difficulty: 4.91234567, reps: 5, lapses: 0, ivl: 26, last: '2026-10-30T09:30:00Z' };
     const now = new Date('2026-10-30T09:30:12.345Z');
-    const tz = -now.getTimezoneOffset();
+    const tz = 0 - now.getTimezoneOffset(); // never -0, which a deep equal tells from 0
     expect(reviewOf('deck.md', 'ab', 'r', 3, prev, next, now, 7100.4)).toEqual({
       at: '2026-10-30T09:30:12Z', doc: 'deck.md', card: 'ab', key: 'r', g: 3, st: 'review', elapsed: 11, ivl: 9, next: 26, s: 26.9877, d: 4.9123, ms: 7100, tz,
     });
@@ -252,7 +252,7 @@ describe('a grade as its log line', () => {
     const next: CardSchedule = { state: 'review', ivl: 3, stability: 3, difficulty: 5 };
     const inSteps: CardSchedule = { due: '2026-10-30T09:20:00Z', state: 'learning', steps: 1, ivl: 0, last: '2026-10-30T09:10:00Z' };
     const r = reviewOf('deck.md', 'ab', undefined, 3, inSteps, next, now, 94_210.2, { form: 'cloze', did: '3fa9c0d17b2e4455aabbccddeeff0011', n: 14, retention: 0.85, by: 'fsrs-7' });
-    expect(r).toMatchObject({ ms: REVIEW_MS_CAP, time: 94210, form: 'cloze', did: '3fa9c0d17b2e', n: 14, ret: 0.85, by: 'fsrs-7', step: 1, tz: -now.getTimezoneOffset() });
+    expect(r).toMatchObject({ ms: REVIEW_MS_CAP, time: 94210, form: 'cloze', did: '3fa9c0d17b2e', n: 14, ret: 0.85, by: 'fsrs-7', step: 1, tz: 0 - now.getTimezoneOffset() });
     // the usual is not written: the built in, 0.9, a time under the cap, a card out of its steps
     const usual = reviewOf('deck.md', 'ab', undefined, 3, { state: 'review', ivl: 3, last: '2026-10-27T09:00:00Z' }, next, now, 5000, { form: 'qa', retention: 0.9 });
     expect(Object.keys(usual).sort()).toEqual(['at', 'card', 'd', 'doc', 'elapsed', 'form', 'g', 'ivl', 'ms', 'next', 's', 'st', 'tz']);

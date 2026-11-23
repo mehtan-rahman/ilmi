@@ -52,6 +52,9 @@ async function mount(el: React.ReactElement, cls = 'pane-body') {
 function unmount() { act(() => root.unmount()); host.remove(); }
 
 beforeAll(async () => {
+  // the sample's reviews end in november 2026: the clock held there, so the weeks shown hold them whatever day the test runs
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-20T12:00:00Z'));
   dir = await fsp.mkdtemp(join(tmpdir(), 'ilmi-numbers-'));
   await fsp.cp(SAMPLE, dir, { recursive: true });
   vault = await Vault.open(nodeFs, dir);
@@ -67,6 +70,7 @@ beforeAll(async () => {
   useApp.setState({ vault: dir, tree: vault.tree, files: vault.documents(), docs, order: vault.order, queue: [], reviews, lensViews: {}, deckViews: {}, selectedCard: null, reveal: null, folds: {}, railFolded: {} });
 });
 afterAll(async () => {
+  vi.useRealTimers();
   vault.close();
   await fsp.rm(dir, { recursive: true, force: true });
 });

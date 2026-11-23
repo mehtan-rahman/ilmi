@@ -38,5 +38,8 @@
 	<!-- `scan a code` reads a pairing code off another device's screen (milestone 84) -->
 	<key>NSCameraUsageDescription</key>
 	<string>ilmi uses the camera to scan a pairing code shown by ilmi on another device.</string>
+	<!-- the phone as a remote (milestone 90): the Mac's remote is on the local network -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ilmi uses the local network to act as a remote for ilmi on your Mac.</string>
 </dict>
 </plist>

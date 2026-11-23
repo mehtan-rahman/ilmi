@@ -1,0 +1,42 @@
+/* The remote's code on the Mac (milestone 90, `RemotePanel.tsx`): a card at the foot, square paper as the notice is */
+.remote-panel {
+  position: fixed;
+  z-index: 72;
+  right: calc(var(--insp-w, 0px) + 16px);
+  bottom: 32px;
+  width: min(440px, calc(100vw - 32px));
+  display: flex;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+  font-family: var(--sans);
+  font-size: var(--t-sm);
+  color: var(--fg-2);
+  animation: remote-in 160ms ease-out;
+}
+@keyframes remote-in { from { opacity: 0; transform: translateY(6px); } }
+.remote-qr { flex: none; width: 168px; height: 168px; border: 1px solid var(--line-1); border-radius: var(--radius); background: #fff; }
+.remote-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.remote-title { color: var(--fg-1); font-weight: 500; }
+.remote-line { line-height: 1.45; }
+.remote-url { font-family: var(--mono); font-size: var(--t-xs); color: var(--fg-4); overflow-wrap: anywhere; }
+.remote-n { color: var(--fg-3); }
+.remote-n[data-on="1"] { color: var(--fg-1); }
+.remote-acts { margin-top: auto; display: flex; gap: var(--s-2); justify-content: flex-end; }
+.remote-acts button, .remote-chip {
+  font: inherit;
+  color: var(--fg-2);
+  background: none;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 3px 10px;
+}
+.remote-acts button:hover, .remote-chip:hover { color: var(--fg-1); border-color: var(--line-2, var(--line-1)); }
+.remote-chip { padding: 0 8px; font-size: var(--t-xs); line-height: 18px; }
+.remote-chip[data-on="1"] { color: var(--fg-1); }
+
+/* the remote inside ilmi on a phone (`remoteClient.ts`): over everything, the controller's own look under it */
+.rm-host { position: fixed; inset: 0; z-index: 200; }

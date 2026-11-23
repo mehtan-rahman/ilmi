@@ -8,6 +8,7 @@ import { activeTab } from './panes.js';
 import { useApp } from './store.js';
 import { notebookOf } from './tabs.js';
 import { useBackInFront } from './book.js';
+import { RemoteChip } from './RemotePanel.js';
 
 export function BottomStrip() {
   const panes = useApp((s) => s.panes);
@@ -46,6 +47,7 @@ export function BottomStrip() {
         </Fragment>
       ))}
       <span className="grow" />
+      <RemoteChip />
     </div>
   );
 }

@@ -23753,3 +23753,146 @@ export async function smokePdfInk(path: string | null): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// ── `ILMI_SMOKE=remote` (milestone 90): the phone as a remote ──
+// On the Mac, over a copy of the sample: `phone as a remote` from the palette's
+// command, its card with the code; the server's page fetched as a phone's
+// browser fetches it, and the same page in a frame the size of a phone (its
+// own stream, its own presses: a shot shows it); the phone's ilmi's
+// controller drawn beside it over its own transport, at the address the code
+// holds, and driven by its buttons: `enter queue`, › to a card, reveal, the
+// grades with the Mac's own intervals, good; a press made on what was shown
+// before does nothing, two taps grade once; `stop` says so on the phone.
+export async function smokeRemote(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke remote: ${s}`);
+  const shot = async (name: string, ms = 1500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const { fetch: httpFetch } = await import('@tauri-apps/plugin-http');
+  const { stopRemote, useRemote } = await import('./remote.js');
+  const { mountRemote } = await import('../remote/controller.js');
+  const { appTransport, styleRemote } = await import('./remoteClient.js');
+  const host = document.createElement('div');
+  const frame = document.createElement('iframe');
+  let unmount = () => {};
+  try {
+    useApp.getState().setTheme('light');
+    await poll(() => useApp.getState().files.length === 66, 'the sample is in the collection', 15000);
+    void vault;
+
+    // ── the Mac: the palette's command, the card with the code ──
+    useApp.setState({ paletteOpen: true });
+    const input = await poll(() => q<HTMLInputElement>('.palette-panel input'), 'the palette is open');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'phone as a remote');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(200);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const panel = await poll(() => q('.remote-panel'), 'phone as a remote shows its card');
+    const url = useRemote.getState().url!;
+    must(/^http:\/\/(\d+\.){3}\d+:\d+\/[A-Za-z0-9_-]{22}$/.test(url), `the code holds the mac's address and a token (${url.replace(/\/[^/]+$/, '/…')})`);
+    must(!url.startsWith('http://127.'), 'the address is on the network, not the loopback');
+    must(q('.remote-qr path', panel)?.getAttribute('d')?.length, 'the card draws the code');
+    must(q('.remote-n', panel)?.textContent === 'no phone connected yet', 'no phone yet');
+    await shot('remote-panel');
+
+    // ── the server: its page, and nothing without the token ──
+    const page = await (await httpFetch(url)).text();
+    must(page.includes('<title>ilmi remote</title>') && page.includes('mountRemote') && page.includes('EventSource'), 'the page a phone is given is the controller, from its own source');
+    must((await httpFetch(url.replace(/\/[^/]+$/, '/not-the-token'))).status === 404, 'another token is not found');
+    must((await httpFetch(`${url}/press`, { method: 'POST', body: 'not json' })).status === 400, 'a press that is not JSON is refused');
+
+    // ── a phone's browser: the page in a frame the size of a phone ──
+    frame.src = url;
+    frame.style.cssText = 'position:fixed;z-index:300;left:24px;top:60px;width:390px;height:700px;border:1px solid #888;background:#fff';
+    document.body.appendChild(frame);
+    // ── the phone's ilmi: the same controller over the app's transport, beside it ──
+    host.style.cssText = 'position:fixed;z-index:300;left:440px;top:60px;width:390px;height:700px;border:1px solid #888;transform:translateZ(0)';
+    document.body.appendChild(host);
+    styleRemote();
+    unmount = mountRemote(host, appTransport(url));
+    must(getComputedStyle(host).backgroundColor !== 'rgba(0, 0, 0, 0)' || getComputedStyle(q('.rm', host) ?? host).position === 'fixed', 'the controller in the app has its look');
+    const ids = () => qa<HTMLButtonElement>('.rm-main button', host).map((b) => b.dataset.id ?? '');
+    const press = (id: string) => q<HTMLButtonElement>(`.rm-main button[data-id="${id}"], .rm-nav button[data-id="${id}"]`, host)?.click();
+    const ready = (id: string) => { const b = q<HTMLButtonElement>(`button[data-id="${id}"]`, host); return !!b && !b.disabled; };
+    await poll(() => host.dataset.status === 'on', 'the phone is connected');
+    await poll(() => q('.remote-n', panel)?.textContent === '2 phones connected', 'the mac says two phones are on (the frame, the controller)');
+
+    // ── outside a session: enter queue, and the session comes up on the Mac ──
+    useApp.setState({ paletteOpen: false });
+    await poll(() => ids().join() === 'enter', 'outside a session the phone offers enter queue');
+    must(/to do$/.test(q('.rm-main .rm-s', host)?.textContent ?? ''), `with how much is to do (${q('.rm-main .rm-s', host)?.textContent})`);
+    await shot('remote-enter');
+    press('enter');
+    await poll(() => useApp.getState().session && q('.recall-wrap, .doc-session'), 'enter queue from the phone starts the session on the mac');
+    // › on the phone to the first card
+    for (let i = 0; i < 40 && !ids().includes('reveal'); i++) {
+      await poll(() => ready('next') || ids().includes('reveal'), 'the phone has › or reveal');
+      if (ids().includes('reveal')) break;
+      const before = useApp.getState().session?.at ?? 0;
+      press('next');
+      await poll(() => (useApp.getState().session?.at ?? 0) !== before, '› on the phone moves the mac on');
+    }
+    await poll(() => ids().join() === 'reveal' && ready('reveal'), 'a card with its answer down is reveal alone on the phone');
+    must(q('.rm-count', host)?.textContent === q('.sess-count')?.textContent?.trim(), `the phone's count is the mac's (${q('.rm-count', host)?.textContent})`);
+    await shot('remote-card');
+
+    // ── reveal, then the grades with the Mac's own intervals ──
+    press('reveal');
+    await poll(() => q('.card[data-revealed="1"]'), 'reveal on the phone reveals on the mac');
+    await poll(() => ids().join() === 'g1,g2,g3,g4', 'the phone shows the four grades');
+    const macGaps = qa('.grades button .gap').map((e) => e.textContent);
+    const phoneGaps = qa('.rm-main .rm-s', host).map((e) => e.textContent);
+    must(JSON.stringify(macGaps) === JSON.stringify(phoneGaps), `with the mac's intervals (${phoneGaps.join(' · ')})`);
+    await shot('remote-grades');
+
+    // ── a press on what was shown before does nothing ──
+    const at = useApp.getState().session!.at ?? 0;
+    const given = useApp.getState().session!.marks?.given.size ?? 0;
+    await httpFetch(`${url}/press`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ v: 1, id: 'g3' }) });
+    await sleep(600);
+    must((useApp.getState().session!.at ?? 0) === at && !q('.card[data-revealed="0"]'), 'a press made on a view gone by grades nothing');
+
+    // ── good, tapped twice: one grade ──
+    await poll(() => ready('g3'), 'good can be pressed');
+    press('g3');
+    press('g3');
+    await poll(() => (useApp.getState().session!.marks?.given.size ?? 0) === given + 1 && (useApp.getState().session!.at ?? 0) > at, 'good on the phone grades the card on the mac and moves on');
+    await sleep(1200);
+    must((useApp.getState().session!.marks?.given.size ?? 0) === given + 1 && (useApp.getState().session!.at ?? 0) === at + 1, 'two taps graded once');
+    await poll(() => ids().length > 0 && !ids().includes('g3') || ids().join() === 'g1,g2,g3,g4' && ready('g1'), 'the phone has the next element\'s buttons');
+    await shot('remote-next');
+
+    // ── hidden, the strip's chip; stop, and the phone says so ──
+    q<HTMLButtonElement>('.remote-panel [data-act="hide"]')!.click();
+    await poll(() => !q('.remote-panel') && q('.remote-chip')?.textContent === 'remote · 2 phones', 'hide keeps the remote on, its chip in the strip');
+    q<HTMLButtonElement>('.remote-chip')!.click();
+    await poll(() => q('.remote-panel'), 'the chip brings the card back');
+    q<HTMLButtonElement>('.remote-panel [data-act="stop"]')!.click();
+    await poll(() => host.dataset.status === 'stopped', 'stop: the phone says the mac stopped the remote', 5000);
+    must(!q('.remote-panel') && !q('.remote-chip') && !useRemote.getState().url, 'nothing of the remote is left on the mac');
+    await shot('remote-stopped');
+    let refused = false;
+    try { await httpFetch(url, { connectTimeout: 1500 } as RequestInit); } catch { refused = true; }
+    must(refused, 'the server is gone');
+    log('done');
+  } catch (e) {
+    log('shot: remote-failed');
+    await sleep(1500);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    unmount();
+    host.remove();
+    frame.remove();
+    if (useRemote.getState().url) await stopRemote();
+  }
+}

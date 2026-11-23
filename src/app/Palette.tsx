@@ -24,6 +24,8 @@ import { closeTabs, containerOf, createNode, currentVault, openBlock, openCard, 
 import { appNow } from './clock.js';
 import { openCollectionNumbers } from './NumbersLens.js';
 import { Glyph } from './icons.js';
+import { openRemote } from './remote.js';
+import { scanRemote } from './remoteClient.js';
 
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
@@ -43,6 +45,9 @@ const COMMANDS: Command[] = [
   { id: 'inspector', title: 'inspector' },
   { id: 'theme', title: 'next theme' },
   { id: 'tweaks', title: 'settings' },
+  // the phone as a remote (milestone 90): a Mac shows its code, a phone or an iPad scans one
+  { id: 'remote', title: 'phone as a remote' },
+  { id: 'remote-scan', title: 'remote for a mac · scan its code' },
   // the File menu's four, by the same ids, so there is a path without the native menu
   { id: MENU_ID.open, title: 'import folder…' },
   { id: MENU_ID.new, title: 'new collection…' },
@@ -54,7 +59,7 @@ const COMMANDS: Command[] = [
 ];
 
 /** What an iPad's palette leaves out: a second pane, and what goes through a folder picker (a folder in, a new collection, an export). */
-const DESKTOP_ONLY: ReadonlySet<string> = new Set(['split', 'close-pane', MENU_ID.open, MENU_ID.new, 'export-folder', 'export-zip']);
+const DESKTOP_ONLY: ReadonlySet<string> = new Set(['remote', 'split', 'close-pane', MENU_ID.open, MENU_ID.new, 'export-folder', 'export-zip']);
 
 /** What a phone's leaves out beside those: the tree is behind the same button as the palette, and there is no inspector (milestone 56). */
 const NOT_ON_A_PHONE: ReadonlySet<string> = new Set(['sidebar', 'inspector']);
@@ -134,6 +139,8 @@ function runCommand(id: string): void {
     case 'inspector': toggleInspector(); break;
     case 'theme': s.cycleTheme(); break;
     case 'tweaks': useApp.setState({ tweaksOpen: true }); break;
+    case 'remote': openRemote(); break;
+    case 'remote-scan': scanRemote(); break;
     case 'numbers': openCollectionNumbers(); break;
     case 'portals-beside': { const book = bookInFront(); if (book !== null) togglePortalsBeside(book); break; }
     case 'export-folder':
@@ -216,7 +223,7 @@ export function Palette() {
   // an iPad has one pane and no folder to pick: its commands leave those out (`platform.ts`)
   const mobile = useApp((s) => s.mobile);
   const phone = useApp((s) => s.phone);
-  const commands = useMemo(() => [...sectionCommand(), ...contentsCommand(), ...marksCommands(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && (c.id !== 'fit-fsrs7' || fitOffer().enough) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
+  const commands = useMemo(() => [...sectionCommand(), ...contentsCommand(), ...marksCommands(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && (c.id !== 'fit-fsrs7' || fitOffer().enough) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(!mobile && c.id === 'remote-scan') && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   // (one that is not where it was is the welcome's to show, with its `forget`)
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault && !gone.includes(r.path)).map((r) => ({ path: r.path, name: r.name })), [recents, gone, vault]);

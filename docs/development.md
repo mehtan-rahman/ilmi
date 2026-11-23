@@ -1285,6 +1285,19 @@ camera refused, something that is not a code, a scan cancelled, then a code
 for the remote, from which the collection is cloned and opened; its own
 `pair a device` is then read back. No token in either is real.
 
+The phone as a remote (milestone 90): `src-tauri/src/remote.rs` is the
+server (on the local network, port 51765 or any free one, every path under a
+token made at start), `src/app/remote.ts` reads the session's buttons off the
+page and clicks the one a phone pressed, `src/remote/controller.ts` is what a
+phone shows, written to stand alone so the page a phone's browser gets is made
+from its own source (`remotePage`), and `src/app/remoteClient.ts` runs the same
+controller inside ilmi on a phone over the http plugin. `ILMI_SMOKE=remote` on
+the Mac, over a copy of the sample, needs no network beyond the Mac's own
+address. It shows the page in a frame the size of a phone and the app's
+controller beside it, drives the session from the controller (enter queue, ›,
+reveal, good), and checks a stale press, a double tap, hide, stop, and that the
+server is gone afterwards. 31 checks, 6 shots.
+
 Haptics (milestone 83) are `src/app/haptics.ts`: named calls (`hapticReveal`,
 `hapticGrade`, `hapticFinished`, `hapticTick`) made from the session and the
 few places a tick belongs, each a name handed to `app_haptic`, which on iOS

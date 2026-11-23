@@ -6,6 +6,30 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-22 — the phone as a remote for the Mac's session (milestone 90)
+
+The user: "make mobile be a companion app to the laptop version … while i'm doing reviews on laptop (either through
+study or through queue or something) to let my phone act as an anki controller essentially". A new section in
+PLAN.md, *The phone as a companion to the Mac*, with 90 as its first milestone; its notes have how it works.
+
+**How it fits.** It is not a mode: the session is unchanged, and the phone's buttons are the session's own buttons,
+read off the page and clicked when pressed, so study, the queue, a deck and cram all work, and so will any button
+added later. One code serves both phones: any phone's camera opens the remote in its browser, nothing to install
+(handy while a free Apple ID's install expires each week), and ilmi on a phone scans the same code (the welcome's
+`scan a code`, or the palette's `remote for a mac`) and shows the same controller.
+
+**Checks.** `remote.test.ts` (15), cargo `remote::tests` (2), the whole suite (2695 passed, 173 files).
+`ILMI_SMOKE=remote` on the Mac: 31 ok, 6 shots looked at (the code card; the phone's browser page and the app's
+controller side by side with reveal, then the four grades showing the Mac's own intervals, 10m · 28d · 42d · 2mo;
+both saying stopped). The first run showed the app's controller without its look (its CSS was never put in the app's
+page); fixed, with a test and a check.
+
+**Not verified:** a real phone on a real network, the iPhone's local-network prompt, the camera reading the code
+off the Mac's screen. Networks that keep devices apart (some guest and campus Wi-Fi) will not reach the Mac.
+
+**Handoff prompt:** read PLAN.md's *The phone as a companion to the Mac*. The next companion features build on
+`remote.rs` (a channel from Mac to phone already exists: the event stream).
+
 ## 2026-11-22 — the pages under a shade with the keyboard up; small writing smooth zoomed out
 
 **The keyboard (the iPad, 1dcdea6):** "looks weird like this now ... only when the keyboard pops up": the contents

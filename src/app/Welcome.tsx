@@ -36,6 +36,7 @@ import { joinCollection } from './crdt.js';
 import { NO_STORAGE, signIn, signOut, storageName, storageOf, storageReady, type StorageSettings } from './storage.js';
 import { decodePairing, joinFromPairing, needsSignIn, storageOfPairing } from './pair.js';
 import { scanCode } from './scan.js';
+import { isRemoteCode, showRemote } from './remoteClient.js';
 import { StorageFields } from './StorageFields.js';
 import { connectClone, forgetVault, importVault, importVaultFrom, listVaults, nameNewVault, newVault, openVault } from './vault.js';
 import { Glyph, Icon } from './icons.js';
@@ -169,6 +170,8 @@ export function Welcome() {
     setProblem(null);
     void scanCode().then(async (text) => {
       if (text === null) return;
+      // the Mac's remote code (milestone 90): the remote over the welcome, no collection needed
+      if (isRemoteCode(text)) { showRemote(text); return; }
       const p = decodePairing(text);
       if (needsSignIn(p)) {
         setJoinStorage(storageOfPairing(p));

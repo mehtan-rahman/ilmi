@@ -9919,6 +9919,67 @@ bar (the rail and the tree drag as they did); the page setup of a tab
 following its parent's later changes (decided against: each is its own);
 `new tab` naming on a phone, where there is no rail to rename in.
 
+## The phone as a companion to the Mac
+
+Asked by the user, 2026-11-22: "make mobile be a companion app to the laptop
+version … one feature to start us off is while i'm doing reviews on laptop
+(either through study or through queue or something) to let my phone act as
+an anki controller essentially". More companion features follow here.
+
+### [x] 90. The phone as a remote for the Mac's session
+Notes: **The Mac** (`src/app/remote.ts`, `RemotePanel.tsx`, `remote.css`):
+the palette's `phone as a remote` starts a server on the local network
+(`src-tauri/src/remote.rs`, std's `TcpListener` on port 51765 or any free
+one, a thread a connection) and shows a card at the foot with a QR code of
+its address, `http://<the Mac's address>:<port>/<token>` (128 random bits,
+base64url, made when the server starts and kept nowhere), how many phones are
+on, `hide` (the strip's `remote` chip brings it back) and `stop`. Any path
+without the token is a 404. **One source of what can be done:** what the
+phone shows is read off the page (`readView`): the buttons in front of the
+session (reveal; the four grades with the intervals written on them and the
+one given; got it; next; skip; a reading's three; ‹ ›) and the count and
+title, sent again whenever the page changes (a `MutationObserver` and the
+store, 40 ms apart at most) and only when it says something new. A press
+clicks the same button, so study, the day's queue, a deck and cram all work
+as they do by hand. Outside a session the phone offers `enter queue` with how
+much is to do. Every view has a version; a press names the one it was made
+on, and a press on a view gone by is dropped, so a second tap meant for a
+card already graded grades nothing. **The server:** `GET /<token>` is the
+phone's page, `GET /<token>/events` server-sent events (the last state on
+connect, a comment every 15 s, `{"stopped":true}` when the remote is
+stopped), `POST /<token>/press` a press as JSON (4 KB at most), handed to the
+page as the `remote-press` event; `remote-clients` says how many streams are
+open. **The phone** (`src/remote/controller.ts`): `mountRemote` draws the
+buttons large for a thumb (one fills the glass, four grades are a square,
+reading's three are rows, ‹ › at the foot, a line for connecting / lost /
+stopped), each press felt where the device can. It and `browserTransport`
+each stand alone, so the page a phone's browser is given is made of their
+own source (`remotePage`): any phone's camera opens the code in its browser,
+nothing to install. ilmi on a phone or an iPad runs the same `mountRemote`
+over the http plugin (`remoteClient.ts`; a web view would refuse plain http
+from the app's page): the welcome's `scan a code` takes the remote's code as
+well as a pairing code, and the palette has `remote for a mac · scan its
+code`. iOS's Info.plist has `NSLocalNetworkUsageDescription`.
+**Decided:** the Mac reads its own buttons rather than a second list of
+actions kept beside them (one source); the phone shows the buttons, not the
+card (the card is on the Mac's screen); the token lives as long as the
+server, so a phone scans again after the Mac's app restarts; no pairing is
+remembered; Mac only, as host (an iPad's palette has no `phone as a remote`).
+**Checks:** `remote.test.ts` (the controller made from its own source text,
+presses and waits, the phone's page script run over a stand-in EventSource,
+the stream cut anywhere, stopped, the readings of each kind of session
+markup, presses by version); cargo `remote::tests`; `ILMI_SMOKE=remote` on
+the Mac (30 ok, 6 shots): the code on the network address, the page, a wrong
+token, the page in a frame the size of a phone beside the app's controller,
+two phones counted, enter queue → › to a card → reveal → the grades with the
+Mac's intervals → good, a stale press, two taps graded once, hide / chip /
+stop, the phone told, the server gone.
+**Not done, a device's to judge:** a real phone on a real Wi-Fi network
+(a network that keeps devices apart, as some guest and campus networks do,
+will not reach the Mac; macOS's firewall may ask once to let ilmi take
+connections); the system's local-network prompt on an iPhone; the camera
+reading the code off the Mac's screen.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

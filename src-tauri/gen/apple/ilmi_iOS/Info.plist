@@ -57,5 +57,7 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>ilmi uses the camera to scan a pairing code shown by ilmi on another device.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ilmi uses the local network to act as a remote for ilmi on your Mac.</string>
 </dict>
 </plist>

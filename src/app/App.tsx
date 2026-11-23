@@ -29,12 +29,14 @@ import './app.css';
 import './chrome.css';
 import './phone.css';
 import './motion.css';
+import './remote.css';
 import { quiet, startMotion } from './motion.js';
 import { installEdge, openedFromTree, sheetTo } from './edge.js';
 import { installRowSwipe } from './rowSwipe.js';
 import { installPull } from './pull.js';
 import { installKeyboardDrag } from './keyboard.js';
 import { Glyph } from './icons.js';
+import { RemotePanel } from './RemotePanel.js';
 
 /** Narrower than this and a drag on the handle hides the sidebar. */
 const SIDE_COLLAPSE = 80;
@@ -382,6 +384,7 @@ export function App() {
         {inspOn && !mobile && <div className="insp-resize" onMouseDown={startInspResize} />}
         {phone ? !whole && <PhoneBar under={activeId === SESSION} /> : <BottomStrip />}
         <Notice />
+        {!mobile && <RemotePanel />}
       </div>
       {paletteOpen && <Palette />}
       {tweaksOpen && <Tweaks />}

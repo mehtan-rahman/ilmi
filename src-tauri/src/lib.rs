@@ -10,6 +10,7 @@ mod nudge;
 mod oauth;
 mod pages;
 mod plugin;
+mod remote;
 mod cache;
 mod fit;
 mod storage;
@@ -840,6 +841,30 @@ async fn app_haptic(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, ki
     }
 }
 
+/// The phone as a remote (milestone 90, `remote.rs`): the server started with the remote's page, its address back.
+#[tauri::command]
+fn remote_start(app: tauri::AppHandle, page: String) -> Result<serde_json::Value, String> {
+    remote::start(app, page)
+}
+
+/// The remote's server stopped: every phone let go.
+#[tauri::command]
+fn remote_stop() {
+    remote::stop();
+}
+
+/// What the phones show now, as JSON.
+#[tauri::command]
+fn remote_state(state: String) {
+    remote::set_state(state);
+}
+
+/// How many phones are connected.
+#[tauri::command]
+fn remote_clients() -> usize {
+    remote::clients()
+}
+
 /// A dev run's: a finger stands in for the Pencil, which no simulator has.
 #[tauri::command]
 async fn dev_ink_pen(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, on: bool, once: Option<bool>, keep: Option<bool>) -> Result<(), String> {
@@ -1581,7 +1606,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, fsrs_fit, plugin_cache_get, plugin_cache_put, plugin_cache_remove, inbox_forget, inbox_sweep, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_shapes, ink_shown, ink_outlines, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, ink_caps, ink_pinch, ink_surface, ink_surface_do, ink_selection, ink_paste, ink_share, pages_pdf, dev_ink_unshare, dev_ink_pencil, dev_ink_stroke, dev_pdf_info, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, dev_ink_picture, dev_ink_plain, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push, pdf_sizes, store_blob_give, page_fell, ink_reader, ink_pdf, ink_pdf_do, pages_generation, zoom_log, zoom_log_path, dev_pages_slow])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, fsrs_fit, plugin_cache_get, plugin_cache_put, plugin_cache_remove, inbox_forget, inbox_sweep, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_shapes, ink_shown, ink_outlines, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, ink_caps, ink_pinch, ink_surface, ink_surface_do, ink_selection, ink_paste, ink_share, pages_pdf, dev_ink_unshare, dev_ink_pencil, dev_ink_stroke, dev_pdf_info, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, dev_ink_picture, dev_ink_plain, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push, pdf_sizes, store_blob_give, page_fell, ink_reader, ink_pdf, ink_pdf_do, pages_generation, zoom_log, zoom_log_path, dev_pages_slow, remote_start, remote_stop, remote_state, remote_clients])
         .setup(|app| {
             // a PDF's pages drawn are kept a while among the app's caches, and the zoom log beside them (on an iPad
             // `Library/Caches/ilmi-zoom.log` in the app's own container, never in a collection)

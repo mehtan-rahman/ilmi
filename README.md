@@ -127,6 +127,17 @@ On an iPhone the day is the face: the queue, a card in a session, the tree behin
 `design/sim/` holds the simulation this was tuned on: at forty-five minutes
 a day, three textbooks a semester finish.
 
+## The phone as a remote
+
+Studying on the Mac, the phone can hold the buttons. Run `phone as a remote`
+from the palette: a QR code comes up. Point the phone's camera at it (it opens
+in the phone's browser, nothing to install) or use `scan a code` in ilmi on the
+phone. The phone shows whatever the session shows: reveal, the four grades with
+their intervals, got it, a reading's next / later / dismiss, ‹ and ›, and
+`enter queue` outside a session. The phone has to be on the same Wi-Fi as the
+Mac. `stop` ends it, and a phone that scanned the code before can't connect
+after that.
+
 ## Clipping from a phone
 
 On an iPhone the app is the day's cards and a quick card (`docs/guide.md`,

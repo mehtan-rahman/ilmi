@@ -10171,3 +10171,17 @@ tool input; a read and an edit; a refused edit; a refused key; stop).
 itself (`devNet`). **Owed:** a reply streamed from the real API through the
 Tauri HTTP client needs a real key (the window run reached the API and read
 its 401 correctly); a phone has no inspector, so no panel there yet.
+
+### [x] 92. Practice: reps for an exam, nothing scheduled
+Asked by the user: "an exam / cram review mode where i can just get my reps in with some cards for the practice".
+Notes: not a mode of its own; a deck's study bar has `practice · not scheduled` beside `include not due` (which it
+hides: practice takes every unsuspended card), the button says `practice` and the selection's `study these` says
+`practice these`; the palette has `practice…`, the `study…` list with practice on a pick. `studyItems` with
+`practice` is cram's cards shuffled (Fisher–Yates; `random` for a test); the session (`session.practice`) asks every
+card as a test (no `got it`), writes no grade and no log line, and a card graded again comes back once at the end, until
+it is not (`comeBack`, given again included); its buttons say `asked again` under again and nothing of the schedule,
+the card's line says `practice · not scheduled`, the header `<deck> · practice · n left`, and its end is a notice,
+`practice · 7 reps over 6 cards · nothing scheduled`. The remote reads it as any session. Cram is unchanged (early
+reviews written). **Checks:** `study.test.ts` (the shuffle), `session-returns.test.ts` (nothing written, again until
+good); `ILMI_SMOKE=practice` on the Mac: 27 ok, 3 shots (the deck bar, the grades, the end), every file of the
+collection unchanged after the session.

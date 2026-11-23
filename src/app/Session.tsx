@@ -192,6 +192,8 @@ interface CardProps {
   onEdit(run: Promise<unknown>): void;
   /** It may come up to learn: the tweak on, and not learnt already at another element of this session. */
   learnable?: boolean;
+  /** A practice session's (`session.practice`): no grade is written, so the buttons say none of the schedule's gaps. */
+  practice?: boolean;
   /** It was learnt at this element, in this session: come back to with ‹, it is up to learn again, though its line says it was. */
   learntHere?: boolean;
   /** Learnt (space, ⏎): its line says so (`seen`), and it is tested at the session's end. */
@@ -208,7 +210,10 @@ const learnKey = (c: CardItem) => `${c.path}#${c.id ?? c.block}#${c.group ? JSON
 
 export { neverTested };
 
-function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onEdit, learnable, learntHere, onLearnt, onSuspend }: CardProps) {
+/** What a practice session's buttons say: only that again asks the card once more, nothing of the schedule. */
+const PRACTICE_GAPS: Record<Grade, string> = { 1: 'asked again', 2: '', 3: '', 4: '' };
+
+function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onEdit, learnable, practice, learntHere, onLearnt, onSuspend }: CardProps) {
   const loaded = useDoc(item.path);
   const docPri = useApp((s) => s.docs[item.path]?.pri);
   // a card never tested, and not learnt yet (its line has no `seen`), comes up answered, to learn: its test is at the
@@ -242,7 +247,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
   const from = given?.written ? regradeFrom(sched, given.written) : sched;
   // another scheduler than the built in has this card (`schedule/slot.ts`): its own words on the buttons, or none
   const slotGaps = useSlotGaps(item, from, now);
-  const gaps = slotGaps ?? gapLabels(from, now, optionsAt(item.path).opts.retention, exam && { exam, key: lineKey(card?.id ?? item.id, text, item.group, item.dir) });
+  const gaps = practice ? PRACTICE_GAPS : slotGaps ?? gapLabels(from, now, optionsAt(item.path).opts.retention, exam && { exam, key: lineKey(card?.id ?? item.id, text, item.group, item.dir) });
   // the answer shown, felt under the finger where the device can (`haptics.ts`)
   const reveal = () => { if (!revealed) hapticReveal(); setRevealed(true); };
   const grade = (g: Grade) => { if (revealed) onGrade(g, sched); else reveal(); };
@@ -343,6 +348,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
       {pri !== PRI_DEFAULT && <span>p {pri}</span>}
       {given && <span className="cm-given">graded {GRADE_WORD[given.g]}</span>}
       {learning && <span className="cm-learn">first time · learn it</span>}
+      {practice && <span className="cm-learn cm-practice">practice · not scheduled</span>}
       {suspended
         ? <span className="cm-due" data-due="0" data-st={dueTone('suspended')}>suspended</span>
         : <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'} data-st={dueTone(dueWord(sched?.due, now))}>{dueWord(sched?.due, now)}</span>}
@@ -708,7 +714,11 @@ export function Session({ active, onOpen }: Props) {
   useEffect(() => {
     if (total > 0 && idx >= total) sessionEnded();
     // the end is felt once a session, however often its lens is drawn again there
-    if (total > 0 && idx >= total && seq !== undefined && endFelt !== seq) { endFelt = seq; hapticFinished(); }
+    if (total > 0 && idx >= total && seq !== undefined && endFelt !== seq) {
+      endFelt = seq;
+      hapticFinished();
+      if (session?.practice) notify(`practice · ${plural(given.size, 'rep')} over ${plural(distinct, 'card')} · nothing scheduled`);
+    }
     if (deck && total > 0 && idx >= total) openNode(deck.id);
     if (deck || total === 0 || idx < total) return;
     const t = setTimeout(() => openNode(queueId('today')), 1500);
@@ -825,6 +835,13 @@ export function Session({ active, onOpen }: Props) {
     const vault = currentVault();
     if (!vault) return;
     hapticGrade(g);
+    // practice: nothing written; again asks the card once more at the end (given again, as the grade now says)
+    if (session?.practice) {
+      given.set(key, { g, run: Promise.resolve(null), written: null, from: line, next: line as CardSchedule });
+      comeBack(key, shown, g === 1);
+      advance();
+      return;
+    }
     const now = appNow();
     const ms = now.getTime() - shownAt.current;
     const place = idx;
@@ -945,7 +962,7 @@ export function Session({ active, onOpen }: Props) {
   // a card learnt and then tested is in the walk twice: one element
   const distinct = new Set(items.map((i) => (i.kind === 'card' ? learnKey(i) : `${i.kind}#${i.path}#${i.kind === 'section' ? `${i.block}#${i.passage ? `${i.passage.hash}#${i.passage.boxes}` : i.heading}` : ''}`))).size;
   // the tests still to come of cards that will be learnt first: counted from the start, so the total does not grow underfoot
-  const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && itemOwesLearning(c) && !learnt.has(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
+  const ahead = learnNew && !session?.practice ? items.filter((c, i) => c.kind === 'card' && itemOwesLearning(c) && !learnt.has(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
   // a card that comes back is one more when its grade brings it: that cannot be told from the start
   const shownTotal = asked + ahead;
 
@@ -970,7 +987,7 @@ export function Session({ active, onOpen }: Props) {
       <div className="recall-meta">
         <Nav idx={place} total={asked} onPrev={goPrev} onNext={goNext} onOut={onOut} past={past} />
         {deck
-          ? <span className="sess-count sess-deck">{studyHeader(deck.title, shownTotal - place)}</span>
+          ? <span className="sess-count sess-deck">{studyHeader(session?.practice ? `${deck.title} · practice` : deck.title, shownTotal - place)}</span>
           : <span className="sess-count">{place + 1} / {shownTotal}</span>}
         <span className="el-tag" data-el="card" data-form={el.form}>{FORM_LABEL[el.form]}</span>
         <button type="button" className="meta-srclink card-trail" onClick={openSource} title={`${plainMath(trail.join(' › '))}  o`}>
@@ -978,7 +995,7 @@ export function Session({ active, onOpen }: Props) {
           <span className="ms-arrow">↗</span>
         </button>
       </div>
-      <CardElement key={key} item={el} active={active} given={given.get(key)} locked={given.has(`${seq}:${returns.get(key)}`)} onGrade={(g, line) => onGrade(el, g, line)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key} learntHere={learnt.get(learnKey(el)) === key} onLearnt={() => onLearnt(el)} onSuspend={onSuspend} />
+      <CardElement key={key} item={el} active={active} given={given.get(key)} locked={given.has(`${seq}:${returns.get(key)}`)} onGrade={(g, line) => onGrade(el, g, line)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={!session?.practice && learnNew && (learnt.get(learnKey(el)) ?? key) === key} practice={!!session?.practice} learntHere={learnt.get(learnKey(el)) === key} onLearnt={() => onLearnt(el)} onSuspend={onSuspend} />
     </div>
   );
 }

@@ -30,6 +30,7 @@ import { scanRemote } from './remoteClient.js';
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
   { id: 'study', title: 'study…' },
+  { id: 'practice', title: 'practice… · reps for an exam, nothing scheduled' },
   { id: 'postpone', title: 'postpone the rest' },
   // FSRS-7's weights fitted to the collection's own review log (`plugins/fsrs7.ts`), once there is enough of it
   { id: 'fit-fsrs7', title: 'fit fsrs-7 to my reviews' },
@@ -176,7 +177,8 @@ export function Palette() {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   // `study…` turns the list into the things that can be studied: a deck, a folder, a document with cards under it
-  const [studying, setStudying] = useState(false);
+  // `study…` or `practice…`: the list is the things that can be studied, and a pick studies or practises it
+  const [studying, setStudying] = useState<false | 'study' | 'practice'>(false);
   // `move to…` on a section (milestone 50): the list is the notes it can go to
   const moving = useApp((s) => s.sectionMove);
   // the note for a PDF on its own (milestone 70): one that is there, or a new one named as typed, then the folder it goes in
@@ -232,7 +234,7 @@ export function Palette() {
     if (!studying) return [];
     const out: Entry[] = [];
     const add = (path: string, tag: Entry['tag'], title: string) => {
-      if (hasCards(path)) out.push({ key: `s:${path}`, title, sub: 'study', tag, target: { command: `study:${path}` } });
+      if (hasCards(path)) out.push({ key: `s:${path}`, title, sub: studying === 'practice' ? 'practice' : 'study', tag, target: { command: `${studying === 'practice' ? 'practice' : 'study'}:${path}` } });
     };
     for (const f of folderPaths(tree)) add(f, 'folder', f === '' ? 'the whole collection' : f);
     for (const [path, info] of Object.entries(docs)) add(path, info.type, info.title ?? path.replace(/\.md$/, ''));
@@ -297,8 +299,9 @@ export function Palette() {
   const run = (it: Entry | undefined) => {
     if (!it) return;
     const t = it.target;
-    if ('command' in t && t.command === 'study') { setStudying(true); setQ(''); inputRef.current?.focus(); return; }
+    if ('command' in t && (t.command === 'study' || t.command === 'practice')) { setStudying(t.command); setQ(''); inputRef.current?.focus(); return; }
     if ('command' in t && t.command.startsWith('study:')) { close(); studyDeck(t.command.slice(6)); return; }
+    if ('command' in t && t.command.startsWith('practice:')) { close(); studyDeck(t.command.slice(9), { practice: true }); return; }
     if ('command' in t && t.command === 'contents') { setContents(bookInFront()); setQ(''); inputRef.current?.focus(); return; }
     if ('command' in t && MARK_LISTS[t.command]) { setListing({ kind: MARK_LISTS[t.command]!, book: bookInFront() }); setQ(''); inputRef.current?.focus(); return; }
     if ('command' in t && t.command.startsWith('mk:') && listing) {
@@ -367,7 +370,7 @@ export function Palette() {
       <div className="palette-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
           <span className="g"><Glyph g="⌕" /></span>
-          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `${attaching.kind === 'written' ? 'written notes' : 'notes'} on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : listing ? `${MARK_LIST_NAME[listing.kind]}${listing.book !== null && listing.kind !== 'all-bookmarks' && listing.kind !== 'marks' ? ` · ${titleOf(listing.book, docs, vault).slice(0, 40)}` : ''}` : contents !== null ? `contents · ${titleOf(contents, docs, vault).slice(0, 40)}` : studying ? 'study…' : 'open or run'} spellCheck={false} />
+          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `${attaching.kind === 'written' ? 'written notes' : 'notes'} on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : listing ? `${MARK_LIST_NAME[listing.kind]}${listing.book !== null && listing.kind !== 'all-bookmarks' && listing.kind !== 'marks' ? ` · ${titleOf(listing.book, docs, vault).slice(0, 40)}` : ''}` : contents !== null ? `contents · ${titleOf(contents, docs, vault).slice(0, 40)}` : studying ? `${studying}…` : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
         <div className="palette-list" ref={listRef} data-found={found?.q} data-places={inPlaces && places !== null ? listing.kind : undefined}>

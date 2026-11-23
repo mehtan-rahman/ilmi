@@ -56,6 +56,18 @@ describe('a deck', () => {
     ]);
   });
 
+  it('practice: every card, shuffled, as the random source says', async () => {
+    const docs = await loaded(under(DECK));
+    const all = studyItems(docs, NOW, { cram: true }).map(key).sort();
+    let n = 0;
+    const r = () => [0.9, 0.1, 0.5, 0.3, 0.7][n++ % 5]!;
+    const one = studyItems(docs, NOW, { practice: true, random: r }).map(key);
+    expect([...one].sort()).toEqual(all);
+    expect(one).not.toEqual(studyItems(docs, NOW, { cram: true }).map(key));
+    n = 0;
+    expect(studyItems(docs, NOW, { practice: true, random: r }).map(key)).toEqual(one);
+  });
+
   it('suspended cards are left out, due or not', async () => {
     const rows = deckRows(await loaded([DECK]), NOW).filter((r) => r.id === 'cv-vorsatz' || r.id === 'cv-gedacht');
     await applyBulk(vault, rows, { kind: 'suspend' });

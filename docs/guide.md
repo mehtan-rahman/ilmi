@@ -753,7 +753,9 @@ dismiss. A card graded into its learning steps (`again`, or a new card
 graded `good`: due in minutes, not days) comes back before the session ends,
 once everything else has had its turn, and again until a grade moves it out
 of today; the count grows by one each time. A deck studied ahead (`cram`)
-asks each card once.
+asks each card once. `practice · not scheduled` on a deck (or the palette's
+`practice…`) is reps for an exam: every card, shuffled, nothing written to the
+schedule, and a card you miss comes back until you get it.
 
 A card never tested comes up answered the first time, to learn, with one
 choice, `got it`; its test waits at the session's end. `got it` is

@@ -81,10 +81,10 @@ export function studyNodes(ids: readonly string[], back: string, opts: StudyOpti
   const items = studyItems(docsOf(paths), appNow(), { exams: examsAtPath, linked: cardsById(allDocs()), lay: (cards, now) => { laySlot(cards, reviewLog(), now, false); }, ...(opts.only ? opts : { held: (i: import('../schedule/index.js').CardItem) => held.has(itemKey(i)), ...opts }) });
   const title = ids.length === 1 ? titleOf(id, s.docs, s.vault) : itemsLabel(ids.length);
   if (!items.length) {
-    notify(`${opts.cram ? 'no cards' : 'nothing due'} · ${title}`);
+    notify(`${opts.cram || opts.practice ? 'no cards' : 'nothing due'} · ${title}`);
     return 0;
   }
-  useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items, deck: { id, title }, ...(opts.cram ? { cram: true } : {}) } });
+  useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items, deck: { id, title }, ...(opts.cram ? { cram: true } : {}), ...(opts.practice ? { practice: true } : {}) } });
   openNode(SESSION, openOpts);
   return items.length;
 }

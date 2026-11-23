@@ -24052,3 +24052,80 @@ export async function smokeClaude(vault: Vault): Promise<void> {
     await invoke('plugin_cache_remove', { collection: null, plugin: 'claude', key: 'anthropic-api-key' }).catch(() => {});
   }
 }
+
+/**
+ * `ILMI_SMOKE=practice`: a deck practised for an exam (`session.practice`): the deck bar's `practice · not scheduled`,
+ * the session's header and tag, the buttons with nothing of the schedule on them, again asked once more at the end,
+ * the end's notice, and every file of the collection as it was.
+ */
+export async function smokePractice(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke practice: ${s}`);
+  const shot = async (name: string, ms = 1500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  try {
+    useApp.getState().setTheme('light');
+    await poll(() => useApp.getState().files.length === 66, 'the sample is in the collection', 15000);
+    const texts = async () => Object.fromEntries(await Promise.all(vault.documents().map(async (p) => [p, (await vault.read(p, true)).text] as const)));
+    const before = await texts();
+    // the smallest deck with a few cards
+    const docs = useApp.getState().docs;
+    const deck = Object.keys(docs).filter((p) => docs[p]?.type === 'deck' && (docs[p]?.cards ?? 0) >= 4).sort((a, b) => (docs[a]!.cards ?? 0) - (docs[b]!.cards ?? 0))[0];
+    must(deck, `a deck to practise: ${deck} (${deck ? docs[deck]!.cards : 0} cards)`);
+    openNode(deck!);
+    await poll(() => q('.deck-study .ds-study'), 'the deck lens');
+    q<HTMLInputElement>('.ds-practice input')!.click();
+    await poll(() => q('.deck-study .ds-study')?.textContent?.startsWith('practice'), 'checked, the button says practice');
+    must(!q('.ds-cram:not(.ds-practice)'), 'include not due is gone: practice has every card');
+    await shot('practice-deck');
+    q<HTMLElement>('.deck-study .ds-study')!.click();
+    await poll(() => q('.recall-wrap .card .face.front'), 'a session over the deck');
+    const s = useApp.getState().session!;
+    must(s.practice === true && !s.cram, 'the session is practice');
+    must(q('.recall-meta .sess-deck')?.textContent?.includes('· practice'), `the header says so: ${q('.recall-meta .sess-deck')?.textContent}`);
+    must(q('.cm-practice')?.textContent === 'practice · not scheduled', 'the card says nothing is scheduled');
+    must(!q('.cm-learn:not(.cm-practice)') && !q('[data-act="learnt"]'), 'no card is up to learn: each is a test');
+    const total = s.items.length;
+    await sleep(600);
+    key(' ');
+    await poll(() => q('.recall-wrap .card[data-revealed="1"]'), 'space reveals');
+    const gaps = qa('.grades button .gap').map((g) => g.textContent ?? '');
+    must(gaps.join('|') === 'asked again|||', `the buttons say only that again asks once more (${gaps.join(' · ')})`);
+    await shot('practice-grades');
+    const first = q('.recall-wrap .card .face.front')?.textContent;
+    key('1');
+    await poll(() => useApp.getState().session!.items.length === total + 1, 'again adds the card to the end');
+    for (let i = 1; i < total; i++) {
+      await poll(() => q('.recall-wrap .card[data-revealed="0"]'), `card ${i + 1} up`);
+      key(' ');
+      await poll(() => q('.recall-wrap .card[data-revealed="1"]'), `card ${i + 1} revealed`);
+      key('3');
+    }
+    await poll(() => q('.recall-wrap .card[data-revealed="0"] .face.front')?.textContent === first, 'the card missed is asked again at the end');
+    key(' ');
+    await poll(() => q('.recall-wrap .card[data-revealed="1"]'), 'revealed');
+    key('3');
+    await poll(() => qa('.notice, .note').some((n) => n.textContent?.includes('nothing scheduled')) || null, `the end says: ${plural(total + 1, 'rep')} over ${plural(total, 'card')}, nothing scheduled`);
+    await shot('practice-end');
+    await sleep(2000);
+    const after = await texts();
+    const changed = Object.keys(before).filter((p) => before[p] !== after[p]);
+    must(changed.length === 0, `no file changed (${changed.join(', ') || 'none'})`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;

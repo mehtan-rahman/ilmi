@@ -99,7 +99,7 @@ const reviewed = (n: number): CardItem[] => {
   return out;
 };
 let seq = 500;
-const start = async (items: QueueItem[], more: { cram?: boolean } = {}) => {
+const start = async (items: QueueItem[], more: { cram?: boolean; practice?: boolean } = {}) => {
   useApp.setState({
     vault: dir, tree: vault.tree, files: vault.documents(), docs, order: vault.order, reveal: null, examFilter: null, log: [], budget: 0,
     learnNew: false, phone: false, queue: [], panes: openTab(emptyPanes(), ':session'), session: { seq: ++seq, items, ...more },
@@ -318,5 +318,24 @@ describe('what does not bring a card back', () => {
     await grade(1);
     expect(end()).toContain('all done, 2 items');
     expect(useApp.getState().session!.items).toHaveLength(2);
+  });
+
+  it('practice: nothing is written, the buttons say nothing of the schedule, and again asks the card once more until it is good', async () => {
+    const [a, b] = reviewed(2);
+    const before = [await line(a!), await line(b!)];
+    await start([a!, b!], { practice: true });
+    expect(host.querySelector('.cm-practice')?.textContent).toBe('practice · not scheduled');
+    const asked = front();
+    await grade(1);
+    expect(count()).toBe('2 / 3');
+    await grade(3);
+    // the card missed, asked again; missed again, once more
+    expect(front()).toBe(asked);
+    await grade(1);
+    expect(count()).toBe('4 / 4');
+    await grade(4);
+    expect(end()).toContain('all done, 2 items');
+    expect([await line(a!), await line(b!)]).toEqual(before);
+    expect(logged).toHaveLength(0);
   });
 });

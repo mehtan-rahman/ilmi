@@ -6,6 +6,16 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-23 — practice: reps for an exam, nothing scheduled (milestone 92)
+
+The user: "Can you add an exam / cram review mode where i cna just get my reps in withs ome cards for the practrice?"
+Cram already existed (`include not due`), but it writes every grade as an early review and asks each card once. Practice
+is the other thing: a checkbox beside it on a deck, and `practice…` in the palette; every card shuffled, grades not
+written, again asks the card once more at the end. PLAN 92 has the details.
+
+**Checks.** The whole suite (2716 passed, 174 files); `ILMI_SMOKE=practice` 27 ok, shots looked at, no file changed.
+Also in this session: the remote's reading of the page no longer takes a deck's card view for a session (0a8c675).
+
 ## 2026-11-23 — the remote used without looking: gestures and haptics (milestone 90)
 
 The user: "can you make it such that there isn't a 2x2 grid in either portrait or landscape? so that i dont have to

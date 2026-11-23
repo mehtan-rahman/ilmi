@@ -582,6 +582,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const setQ = (v: string) => { mem.q = v; setQText(v); };
   const [editing, setEditing] = useState<Editing>(null);
   const [cram, setCram] = useState(false);
+  // reps for an exam: every card shuffled, nothing written (`session.practice`)
+  const [practice, setPractice] = useState(false);
   const [similar, setSimilar] = useState(false);
   const [menu, setMenu] = useState<RowMenu | null>(null);
   const [bulkMenu, setBulkMenu] = useState<'move' | 'pri' | 'reset' | null>(null);
@@ -771,7 +773,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const editIn = (r: DeckRow) => openCards(r.path, r.block, r.id);
 
   const study = (only?: ReadonlySet<string>) => {
-    studyDeck(home, { cram, ...(only ? { only } : {}) });
+    studyDeck(home, { ...(practice ? { practice } : { cram }), ...(only ? { only } : {}) });
   };
 
   // keys while no field has focus: / search, j k move, ⏎ edit, m new, ⌫ delete (the selection, else the cursor's row), ⌘A all, escape lets go
@@ -881,11 +883,17 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     <div className="deck-browser" ref={top}>
       <div className="deck-study">
         <button type="button" className="ds-study" data-able={rows.length ? '1' : '0'} onClick={() => study()}>
-          study <span className="ds-n">{cram ? notSuspended : due}</span>
+          {practice ? 'practice' : 'study'} <span className="ds-n">{cram || practice ? notSuspended : due}</span>
         </button>
-        <label className="ds-cram">
-          <input type="checkbox" checked={cram} onChange={(e) => setCram(e.target.checked)} />
-          <span className="lbl">include not due</span>
+        {!practice && (
+          <label className="ds-cram">
+            <input type="checkbox" checked={cram} onChange={(e) => setCram(e.target.checked)} />
+            <span className="lbl">include not due</span>
+          </label>
+        )}
+        <label className="ds-cram ds-practice" title="every card, shuffled; again asks it once more; no grade is written to the schedule">
+          <input type="checkbox" checked={practice} onChange={(e) => setPractice(e.target.checked)} />
+          <span className="lbl">practice · not scheduled</span>
         </label>
         <span className="grow" />
         {!phone && <button type="button" className="deck-add" onClick={newCard}><Plus text="+ card" /> <kbd className="kbd">m</kbd></button>}
@@ -953,7 +961,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
             ) : (
               <button type="button" data-act="pri" onClick={() => { setPriText(''); setBulkMenu('pri'); }}>set priority</button>
             )}
-            <button type="button" data-act="study" onClick={() => study(new Set(chosen.map((r) => r.key)))}>study these</button>
+            <button type="button" data-act="study" onClick={() => study(new Set(chosen.map((r) => r.key)))}>{practice ? 'practice these' : 'study these'}</button>
             {selecting && <button type="button" data-act="done" onClick={() => { setSelecting(false); setBulkMenu(null); setSel(NO_SELECTION); }}>done</button>}
             {bulkMenu === 'move' && (
               <div className="db-move sub-scroll">

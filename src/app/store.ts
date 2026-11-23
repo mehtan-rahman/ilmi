@@ -251,6 +251,8 @@ export interface Session {
   marks?: SessionMarks;
   /** Studied ahead of the schedule (a cram): a card graded into its steps is not asked again in it. */
   cram?: boolean;
+  /** Reps, not reviews (`practice`): no grade is written, every card is asked as a test, one graded again is asked once more at the end. */
+  practice?: boolean;
 }
 
 /**

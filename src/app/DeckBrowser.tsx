@@ -113,7 +113,7 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
   const save = (again: boolean, sure = false) => {
     if (text === null) return;
     if (plan && asks(plan) && !sure && asking === null) {
-      const lost = plan.dropped.filter((d) => d.reps > 0).map((d) => `${d.reverse ? 'the reverse' : `blank ${d.n}`} (${plural(d.reps, 'review')})`).join(', ');
+      const lost = plan.dropped.filter((d) => d.reps > 0).map((d) => `${d.reverse ? 'the reverse' : `cloze ${d.n}`} (${plural(d.reps, 'review')})`).join(', ');
       setAsking(`drops the schedule of ${lost}`);
       return;
     }
@@ -172,7 +172,7 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
           <FaceField
             key={`f${gen}`}
             value={faces.front}
-            placeholder={two ? 'front' : 'text, ⌘B for a blank'}
+            placeholder={two ? 'front' : 'text, ⌘B for a cloze'}
             autoFocus
             blanks={!two}
             onChange={(front) => { setFaces((f) => ({ ...f, front })); setAsking(null); }}

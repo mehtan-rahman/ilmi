@@ -254,7 +254,7 @@ describe('the editor', () => {
     expect(Array.from(faces).map((f) => f.textContent)).toEqual([`${BLANK_MARK} and b`, 'a']);
     await key('Enter', { metaKey: true });
     expect(onSave).not.toHaveBeenCalled();
-    expect(host.querySelector('.de-ask')?.textContent).toBe('drops the schedule of blank 2 (3 reviews)');
+    expect(host.querySelector('.de-ask')?.textContent).toBe('drops the schedule of cloze 2 (3 reviews)');
     await key('Enter', { metaKey: true });
     expect(onSave).toHaveBeenCalledWith(`${BLANK_MARK} and b :: a`, 50, false);
   });

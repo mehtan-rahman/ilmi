@@ -879,7 +879,7 @@ function CardBlock({ path, index, doc, group, dir, now }: { path: string; index:
       {(both ? (dir === 'r' ? ['r', 'f'] as const : ['f', 'r'] as const) : [null]).map((d, k, all) => (
         <Block key={d ?? 'one'} title={d === null ? 'schedule' : d === 'f' ? 'front to back' : 'back to front'}>
           {d === null
-            ? <SchedKV sched={sched} none={scheduled ? 'per blank' : 'new'} now={now} />
+            ? <SchedKV sched={sched} none={scheduled ? 'per cloze' : 'new'} now={now} />
             : <SchedKV sched={d === 'f' ? sched : reverse} none={d === 'r' && b.reverse?.suspended ? 'new, suspended' : 'new'} now={now} />}
           {k === all.length - 1 && (
             <div className="frozen-row">

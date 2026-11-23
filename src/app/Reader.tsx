@@ -1013,12 +1013,12 @@ export function editorMenu(view: EditorView, e: MouseEvent, opts: { table?: bool
     items.push({ label: '-' });
     if (can) {
       const made = (cmd: Command) => () => { hapticTick(); run(cmd)(); };
-      items.push({ label: 'blank', act: 'blank', run: made(makeBlank()) });
-      for (const g of groups.slice(0, 9)) items.push({ label: `blank · with ${g}`, act: `blank-${g}`, run: made(makeBlank(g)) });
+      items.push({ label: 'cloze', act: 'blank', run: made(makeBlank()) });
+      for (const g of groups.slice(0, 9)) items.push({ label: `cloze · with ${g}`, act: `blank-${g}`, run: made(makeBlank(g)) });
     }
     if (inside) {
       for (const g of groups.filter((g) => g !== inside.n).slice(0, 9)) items.push({ label: `move to group ${g}`, act: `regroup-${g}`, run: run(regroupBlank(g)) });
-      items.push({ label: 'remove blank', act: 'unblank', run: run(removeBlank) });
+      items.push({ label: 'remove cloze', act: 'unblank', run: run(removeBlank) });
     }
     if (items[items.length - 1]!.label === '-') items.pop();
   }

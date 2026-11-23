@@ -76,10 +76,10 @@ export function BlankRow({ view, inline }: { view: EditorView; inline?: boolean;
   const run = (cmd: Command) => () => { if (cmd(view.state, view.dispatch.bind(view))) hapticTick(); view.focus(); };
   const keep = (e: { preventDefault(): void }) => e.preventDefault();
   const row = (
-    <div className="blank-row" data-inline={inline ? '1' : undefined} role="toolbar" aria-label="blanks" onMouseDown={keep} onTouchStart={keep} onPointerDown={keep}>
-      <button type="button" data-act="blank" disabled={!c.blank} onClick={run(makeBlank())}>blank</button>
+    <div className="blank-row" data-inline={inline ? '1' : undefined} role="toolbar" aria-label="clozes" onMouseDown={keep} onTouchStart={keep} onPointerDown={keep}>
+      <button type="button" data-act="blank" disabled={!c.blank} onClick={run(makeBlank())}>cloze</button>
       {c.withGroups.map((g) => <button key={g} type="button" data-act={`blank-${g}`} onClick={run(makeBlank(g))}>with {g}</button>)}
-      {c.remove && <button type="button" data-act="unblank" onClick={run(removeBlank)}>remove blank</button>}
+      {c.remove && <button type="button" data-act="unblank" onClick={run(removeBlank)}>remove cloze</button>}
     </div>
   );
   return inline ? row : createPortal(row, document.body);

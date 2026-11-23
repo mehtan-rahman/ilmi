@@ -103,8 +103,8 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
   // (under a finger there is no ⌘B and no right-click: the row of blanks is what is pressed, `BlankRow`. A phone's
   // sheet has the row under its passage, and the row says it all)
   const preview: ReactNode = mobile
-    ? <span className="hint">select the words, then press blank</span>
-    : <span className="hint">select the words, then <kbd className="kbd">⌘B</kbd> or right-click · blank</span>;
+    ? <span className="hint">select the words, then press cloze</span>
+    : <span className="hint">select the words, then <kbd className="kbd">⌘B</kbd> or right-click · cloze</span>;
 
   return (
     <div className="composer">

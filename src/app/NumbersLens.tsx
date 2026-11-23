@@ -302,7 +302,7 @@ export function NumbersView({ home }: { home: string }) {
   const root = useApp((s) => s.vault);
   // where a card lives: its document's title, and the line when a card has several
   const LINE_WORD: Record<string, string> = { r: 'back to front' };
-  const whereOf = (path: string, key?: string) => [titleOf(path, docs, root), key ? LINE_WORD[key] ?? `blank ${key.slice(1)}` : ''].filter(Boolean).join(', ');
+  const whereOf = (path: string, key?: string) => [titleOf(path, docs, root), key ? LINE_WORD[key] ?? `cloze ${key.slice(1)}` : ''].filter(Boolean).join(', ');
   const open = (l: { path: string; block: number; card: { id?: string } }) => {
     // a deck's lens showing its numbers turns to its cards, where the card is
     useApp.setState((s) => ({ lensViews: { ...s.lensViews, [l.path]: 'cards' } }));

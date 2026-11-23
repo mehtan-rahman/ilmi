@@ -336,7 +336,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
 
   const schedule = (
     <>
-      {groupNo !== null && <span>blank {groupNo} of {item.groups}</span>}
+      {groupNo !== null && <span>cloze {groupNo} of {item.groups}</span>}
       {item.dir === 'r' && <span className="cm-dir">back to front</span>}
       <span>{plural(sched?.reps ?? 0, 'review')}</span>
       {sched?.stability !== undefined && <span>stability {Math.round(sched.stability)}d</span>}

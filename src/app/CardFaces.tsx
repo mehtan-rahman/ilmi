@@ -37,7 +37,7 @@ const facesFor = (text: string): Faces => facesOf(text) ?? { form: 'qa', front: 
 
 /** The words that ask first: which reviewed schedules the edit drops. */
 export function askLine(plan: Plan): string {
-  const lost = plan.dropped.filter((d) => d.reps > 0).map((d) => `${d.reverse ? 'the reverse' : `blank ${d.n}`} (${plural(d.reps, 'review')})`).join(', ');
+  const lost = plan.dropped.filter((d) => d.reps > 0).map((d) => `${d.reverse ? 'the reverse' : `cloze ${d.n}`} (${plural(d.reps, 'review')})`).join(', ');
   return `drops the schedule of ${lost}`;
 }
 
@@ -184,7 +184,7 @@ export function CardFaces({ card, onSave, onDone, autoFocus, handle, children, k
           <FaceField
             key={`f${gen}`}
             value={faces.front}
-            placeholder={two ? 'front' : 'text, ⌘B for a blank'}
+            placeholder={two ? 'front' : 'text, ⌘B for a cloze'}
             autoFocus={!!autoFocus}
             blanks={!two}
             onChange={(front) => { setFaces((f) => ({ ...f, front })); setAsking(null); }}

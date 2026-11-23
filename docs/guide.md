@@ -536,7 +536,7 @@ row) is left out, the count follows, and `place` needs one on. A deck holds
 its own cards only, so a sub-deck left on under a parent turned off still
 lands in the parent's folder, without the parent's deck. `place` writes one
 deck file per Anki deck that is on, `Parent::Child` as `Parent/Child.md`. A basic note is `front :: back`,
-a reversed note `:::`, a cloze note its text with the blanks kept; a review
+a reversed note `:::`, a cloze note its text with the clozes kept; a review
 card's progress seeds the card's `sr` line (due, interval, reps, lapses, a
 difficulty from the ease). Hints, sounds, images, a reversed note's second
 schedule, and empty notes are dropped and counted; media is not copied.
@@ -670,55 +670,56 @@ with words selected `bold`, `italic`, `code` and `strikethrough`. A card's
 text is written in this same editor wherever it is written: a deck's row,
 the card view, the new card's question and answer and a phone's front and back (and both terms of
 a card that goes both ways), so the menu, the formatting keys, formulas
-and tables are the same there. A cloze's menu has `blank` where a note's
-has the table.
+and tables are the same there. A cloze card's menu has `cloze` where a
+note's has the table.
 
-### Blanks
+### Clozes
 
-A cloze's blanks are made, not typed. In a new card's passage, or a cloze
-opened in a deck or the card view, select the words and press ⌘B (with
+A card's clozes are made, not typed. In a new card's passage, or a cloze
+card opened in a deck or the card view, select the words and press ⌘B (with
 nothing selected, the word at the caret), or right-click and choose
-`blank`. The answer is marked and a small number where it opens says which
+`cloze`. The answer is marked and a small number where it opens says which
 group it is; the braces the file keeps (`{{c1::…}}`) are not drawn. Each ⌘B
-is a group of its own, asked separately. `blank · with 2` on the menu puts
+is a group of its own, asked separately. `cloze · with 2` on the menu puts
 the selection in a group there already is (asked together with it), `move to
-group` moves the blank you pressed in, `remove blank` takes it away. So does
-backspace at a blank's start: the blank goes, its words stay. Typed braces
-still work, and become a blank as they close.
+group` moves the cloze you pressed in, `remove cloze` takes it away. So does
+backspace at a cloze's start: the cloze goes, its words stay. Typed braces
+still work, and become a cloze as they close.
 
-A word missed when a blank was made is added to it the same way: select the
-word (with the blank or without it) and choose `blank · with N`, N the
-blank's own group. Where the selection lies next to a blank of that group,
-overlaps it or holds it, the blank grows to cover the selection; it is one
-blank after, not a blank inside a blank nor two beside each other. The
+A word missed when a cloze was made is added to it the same way: select the
+word (with the cloze or without it) and choose `cloze · with N`, N the
+cloze's own group. Where the selection lies next to a cloze of that group,
+overlaps it or holds it, the cloze grows to cover the selection; it is one
+cloze after, not a cloze inside a cloze nor two beside each other. The
 group keeps its number, so the card keeps its schedule.
 
 On an iPad and a phone a long press in text you are typing brings the
 system's own bubble, not this menu, so the same choices are a row of buttons
-that stands on the keyboard while a cloze's text has the caret: `blank`,
-`with 1`, `with 2` … for the groups there are, and `remove blank` when the
+that stands on the keyboard while a cloze card's text has the caret: `cloze`,
+`with 1`, `with 2` … for the groups there are, and `remove cloze` when the
 caret is in one. Double tap a word (or drag the handles) and press one. To
 get at a card's text there: in a session, once the answer is up, `edit` at
 the end of the line under the card, or a tap on the card; in a deck, a long
 press on the card's row and `edit`.
 
-A card of several lines is one text: a blank can start on one line and end
-on another, and ⌘A then ⌘B blanks all of it.
+A card of several lines is one text: a cloze can start on one line and end
+on another, and ⌘A then ⌘B makes all of it one.
 
-A blank can hold blanks. Select a stretch that has blanks in it and press
-⌘B: the new blank is the whole stretch, the ones inside keep their own
+A cloze can hold clozes. Select a stretch that has clozes in it and press
+⌘B: the new cloze is the whole stretch, the ones inside keep their own
 groups. Asked, the whole hides everything in it; when one inside is asked,
 the rest is shown around it. A line to recite whole and also piece by
-piece is one card: blank each piece, then select all of it and blank that.
+piece is one card: a cloze of each piece, then select all of it and make a
+cloze of that.
 The inspector's box for a selected card still shows the text as the file
 has it, braces and all.
 
-### Formulas with blanks
+### Formulas with clozes
 
-A blank can sit inside a formula: `$y = {{c1::x^{2}}}$`, or a whole line of
-an `align` environment. Inside math only the numbered form is a blank and it
+A cloze can sit inside a formula: `$y = {{c1::x^{2}}}$`, or a whole line of
+an `align` environment. Inside math only the numbered form is a cloze and it
 closes at the braces that balance, so `\binom{n}{{k}}` stays TeX. The formula
-is rendered once with the blank as a box, then with the answer on the accent;
+is rendered once with the cloze as a box, then with the answer on the accent;
 in the composer, `⌘B` on a selection inside a formula writes the numbered form.
 
 ### A list item as a card
@@ -741,7 +742,7 @@ before it), formulas and inline code stay left to right inside an Arabic
 sentence, and Arabic is set in Noto Naskh Arabic (IBM Plex Sans Arabic in the
 chrome), bundled, with lines tall enough for the ḥarakāt. Nothing about
 direction is written to the files. A cloze whose answer is only a case
-ending (`غَائِبَات{{c1::ٍ}}`) shows its blank on the letter it sits on.
+ending (`غَائِبَات{{c1::ٍ}}`) shows its cloze on the letter it sits on.
 
 ## The day
 
@@ -759,7 +760,7 @@ choice, `got it`; its test waits at the session's end. `got it` is
 remembered in the collection: leave the queue, close the app, or pick up
 another device after a sync, and the card is asked as a test, not shown to
 learn again. A card is learnt once: a both-ways card's other direction and
-a cloze's other blanks, which come on later days, are asked as tests too.
+a cloze card's other clozes, which come on later days, are asked as tests too.
 A card graded into its learning steps is asked at the end of
 whatever session you start next that day, not only the one you graded it
 in. Undo after later, dismiss or suspend takes back only that; a card
@@ -934,7 +935,7 @@ Two devices changing different cards in one file merge clean. The same card
 graded on both keeps the later grade; a source read on on both keeps the
 later pass. A card reworded on one device and graded on the other is one
 card, with the words of the one and the grade of the other; two directions
-of a card, or two blanks of a cloze, each graded on one device are both kept. A paragraph edited on both keeps both versions, one block after
+of a card, or two clozes of a card, each graded on one device are both kept. A paragraph edited on both keeps both versions, one block after
 the other, under a notice naming the file and the heading; `2 conflicts` in
 the strip opens the files. A file edited on one side and deleted on the
 other keeps the edit; the order chosen for a folder takes the pulled side;
@@ -1279,7 +1280,7 @@ An iPhone taps back as you go: a firm tap when a card's answer is shown; by the
 grade when you give one (`again` the system's error, three knocks, `hard` a
 heavy tap, `good` a sharp one, `easy` a light one); the system's success when the queue is walked
 to its end; and a tick for a topic's `next`, `later` or `dismiss`, a new
-card's `got it`, a blank made, a passage kept, a highlight, and a menu opened
+card's `got it`, a cloze made, a passage kept, a highlight, and a menu opened
 by a long press. `haptics` in the settings turns it off. The row is there
 only on a device that can do it (no iPad can), and what you choose is kept on
 that phone.
@@ -1287,7 +1288,7 @@ that phone.
 `+` opens the composer with front and back and names the deck at its foot,
 over the buttons: the deck in front, else the one you chose last on this
 phone. A tap on the name lists the others. `save, another` keeps it open; on a
-cloze, `blank` makes a blank of the selection.
+cloze card, `cloze` makes a cloze of the selection.
 
 Nothing sits over the keyboard on an iPhone or an iPad but what the app puts
 there (the composer's buttons): the bar a web page gets (`previous`, `next`,

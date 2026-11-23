@@ -343,6 +343,10 @@ describe('the mac\'s reading of the session', () => {
   it('the end says itself; outside a session, enter queue when there is something to do', () => {
     drawn('<div class="recall-wrap"><div class="empty center session-end">all done, 12 items · back to the queue</div></div>');
     expect(readView().view).toMatchObject({ kind: 'none', note: 'all done, 12 items · back to the queue', main: [] });
+    // a deck's card view, browsed with ‹ ›, is not a session (its count was taken for one, and nothing could be pressed)
+    drawn('<div class="recall-wrap card-view"><div class="recall-meta"><span class="sess-count cv-count">1 / 35</span></div><div class="card"></div></div>');
+    useApp.setState({ vault: '/c', queue: [], budget: 0 });
+    expect(readView().view).toMatchObject({ kind: 'none', count: '', note: 'nothing to do today' });
     drawn('<div class="queue"></div>');
     useApp.setState({ vault: '/c', queue: [], budget: 0 });
     expect(readView().view).toMatchObject({ kind: 'none', note: 'nothing to do today', main: [] });

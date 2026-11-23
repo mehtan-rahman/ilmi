@@ -52,7 +52,8 @@ export function readView(doc: Document = document): { view: Omit<RemoteView, 'v'
     els.set(b.id, el);
     into.push(b);
   };
-  const root = Array.from(doc.querySelectorAll<HTMLElement>('.recall-wrap, .doc-session')).find(visible);
+  // a deck's card view (`CardPane.tsx`) is a recall-wrap too, with a count, but it is browsing, not a session
+  const root = Array.from(doc.querySelectorAll<HTMLElement>('.recall-wrap:not(.card-view), .doc-session')).find(visible);
   if (!root) {
     const walk = walkOf(s.queue, appNow(), s.budget, null, s.queueFocus, s.focusBudget).length;
     const view = { title: s.vault ? '' : 'no collection open', count: '', kind: 'none', note: walk ? '' : s.vault ? 'nothing to do today' : '', main, nav };

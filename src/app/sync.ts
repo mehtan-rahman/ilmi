@@ -165,8 +165,16 @@ function serial<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** A fetch or push that failed at the transport: libgit2's `Net`, `Ssl` and `Http` classes (`unsupported URL protocol; class=Net (12)`), or the words such failures use. */
-const isNetwork = (e: unknown) => {
+const said = (e: unknown): string => e instanceof Error ? e.message : String(e);
+
+/** What git said the last time the remote was not reached, for a sync asked for to show (the strip says only offline). */
+let unreached = '';
+export const lastUnreached = (): string => unreached;
+
+export const isNetwork = (e: unknown) => {
   const m = e instanceof Error ? e.message : String(e);
+  // the remote reached and refusing the token (src-tauri's `plain`) is not offline: it is said, with what to do
+  if (/^the remote does not accept this token|^this token may not read or write/.test(m)) return false;
   return /class=(Net|Ssl|Http) \(/.test(m)
     || /resolve|connect|timed out|network|unreachable|failed to|could not|unexpected|SSL|TLS|authentication|401|403|404|no such file|not found/i.test(m);
 };
@@ -310,11 +318,11 @@ async function pullNow(at: string): Promise<void> {
       await invoke<Status>('sync_fetch', { root: repoOf(at), token: s.token || null });
     } catch (e) {
       if (!isNetwork(e)) throw e;
-      if (root === at) patch({ offline: true });
+      if (root === at) { patch({ offline: true }); unreached = said(e); }
       return;
     }
     reached = true;
-    if (root === at) patch({ offline: false, at: Date.now() });
+    if (root === at) { patch({ offline: false, at: Date.now() }); unreached = ''; }
     lastPull = Date.now();
     const m = await invoke<Merge>('sync_merge', { root: repoOf(at) });
     const changed = [...m.pulled];
@@ -373,7 +381,7 @@ async function pushNow(at: string, retry = true): Promise<void> {
         return;
       }
       if (!isNetwork(e)) throw e;
-      if (root === at) patch({ offline: true });
+      if (root === at) { patch({ offline: true }); unreached = said(e); }
     }
   } finally {
     if (root === at) patch({ busy: null });

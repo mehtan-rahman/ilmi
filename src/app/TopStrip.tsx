@@ -16,7 +16,7 @@ import { toggleInspector, toggleSidebar } from './vault.js';
 import { shapeOf } from './platform.js';
 import { inspectorShown, sidebarShown } from './layout.js';
 import { appNow } from './clock.js';
-import { openConflicts, syncAge, syncNow, syncWord } from './sync.js';
+import { openConflicts, lastUnreached, syncAge, syncNow, syncWord } from './sync.js';
 import { crdtNow } from './crdt.js';
 import { notify } from './land.js';
 import { Glyph, Icon } from './icons.js';
@@ -36,7 +36,11 @@ function useTick(at: number | null): number {
 
 /** The strip's word pressed: a sync now, whichever way the collection syncs; what went wrong is said, not kept to the log. */
 export function syncAsked(): void {
-  void Promise.all([syncNow(), crdtNow()]).catch((e: unknown) => notify(`sync: ${e instanceof Error ? e.message : String(e)}`));
+  void Promise.all([syncNow(), crdtNow()]).then(() => {
+    // still not reached: why, as git said it, rather than the strip's one word
+    const why = useApp.getState().sync.offline ? lastUnreached() : '';
+    if (why) notify(`offline · ${why}`);
+  }, (e: unknown) => notify(`sync: ${e instanceof Error ? e.message : String(e)}`));
 }
 
 /**
